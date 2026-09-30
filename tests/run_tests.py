@@ -151,7 +151,8 @@ if os.path.exists(GRID):
         import shapefile
         vp = next((c for c in (os.path.join(os.path.dirname(GRID), "verification_points"),
                                os.path.join(os.path.dirname(GRID), "..", "verification_points"))
-                   if os.path.isdir(c)), None)
+                   if os.path.isdir(c)), None) or os.path.join(os.path.dirname(__file__), "data", "verification_points")
+        if not os.path.isdir(vp): vp = None
         if vp:
             st = shapefile.Reader(dbf=open(os.path.join(vp, "stereo.dbf"), "rb")).records()
             wg = shapefile.Reader(dbf=open(os.path.join(vp, "wgs84.dbf"), "rb")).records()

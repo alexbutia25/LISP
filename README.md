@@ -9,9 +9,26 @@ Suită modulară AutoLISP + DCL pentru AutoCAD (în stilul TopoLT):
 | `EXPKMZ` | Export parcelă închisă în KMZ/KML (Stereo 70 → WGS84) + deschidere în Google Earth Pro |
 | `INSCADRU` | Format A4…A0 (portrait/landscape), cadru și indicator la scară |
 
+## Interfața
+
+![Meniul principal TopoKit](docs/macheta_topokit.png)
+
+*Machetă aproximativă a dialogului `TOPOKIT`. Imaginile sunt desenate de codul LISP real, prin
+simularea funcțiilor `vector_image` / `fill_image`. Fonturile și dimensiunile exacte diferă în AutoCAD.*
+
+- **Antet:** siglă (teodolit și rețea de triangulație) și o linie de separare colorată.
+- **Pictograme pentru fiecare modul.** Pictograma corecției topologice marchează cu verde punctele de
+  intersecție, calculate chiar cu funcțiile din `ADDVTX`.
+- **Previzualizarea planșei:** proporțiile formatului, orientarea, cadrul interior, indicatorul și caroiajul
+  se redesenează la orice modificare, atât în meniul principal, cât și în dialogul `INSCADRU`:
+
+  ![Previzualizare A4 portrait, A3 landscape cu caroiaj, A0 landscape cu caroiaj](docs/previzualizare_plansa.png)
+- **Opțiuni grupate pe module**, taste rapide (Alt+C / E / I / D) și o bară de stare cu toleranța,
+  metoda de transformare (grilă sau Helmert) și planșa curentă.
+
 ## Instalare
 
-1. Copiați `TopoKit.lsp` și `TopoKit.dcl` în același folder (de preferat unul din *Support File Search Path*).
+1. Copiați `TopoKit.lsp`, `TopoKit.dcl` și `stereo70_etrs89A.gsb` în același folder (de preferat unul din *Support File Search Path*).
 2. În AutoCAD: `APPLOAD` → `TopoKit.lsp` (sau adăugați-l în *Startup Suite*).
 3. Rulați `TOPOKIT`.
 
@@ -63,11 +80,12 @@ datele extinse sunt copiate), deci primesc un handle nou.
    | Grila NTv2 din LISP – față de PROJ `hgridshift` (296 de puncte aleatoare) | < 0.01 mm |
    | Helmert – față de grilă, pe teritoriul României | 0.3 m median, ~1.5 m (p99) |
 
-   **Instalarea grilei:** descărcați `grids/stereo70_etrs89A.gsb` din
-   [tudorbarascu/stereo70-etrs89](https://github.com/tudorbarascu/stereo70-etrs89). Grila a fost generată de
-   Daniel Urdă ([ntv2generator](https://github.com/danieluct/ntv2generator)). Copiați fișierul lângă `TopoKit.lsp`,
-   într-o cale de suport AutoCAD sau în folderul desenului. Dialogul `TOPOKIT` arată dacă grila a fost găsită.
-   Grila nu este inclusă în acest depozit, pentru că sursa ei nu precizează o licență.
+   **Grila este inclusă în depozit** (`stereo70_etrs89A.gsb`, 5.7 MB). Păstrați-o în același folder cu
+   `TopoKit.lsp`; se caută și în căile de suport AutoCAD și în folderul desenului. Dialogul `TOPOKIT` arată
+   dacă a fost găsită. Sursa este [tudorbarascu/stereo70-etrs89](https://github.com/tudorbarascu/stereo70-etrs89),
+   iar grila a fost generată de Daniel Urdă ([ntv2generator](https://github.com/danieluct/ntv2generator)) din grila
+   ANCPI. Sursa nu precizează o licență. Punctele de control folosite la testare sunt în
+   `tests/data/verification_points/`.
 
    Coordonatele rezultate sunt în ETRS89. Față de WGS84 actual (ITRF), ETRS89 diferă cu ~0.8 m în 2026
    din cauza derivei plăcii eurasiatice. Diferența este sub precizia imaginilor Google Earth, care au de
@@ -117,6 +135,5 @@ cere confirmare înainte de export.
 - `python3 tests/run_tests.py` rulează testele offline, fără AutoCAD, printr-un interpretor AutoLISP
   minimal. Testele acoperă conversia Stereo 70 → WGS84 comparată cu PROJ (dacă `pyproj` este instalat),
   comanda `ADDVTX` pe entități simulate (linii, arce, contacte în T, suprapuneri, polilinii 3D),
-  caroiajul, validitatea XML a KML-ului și, dacă grila este disponibilă (`TOPOKIT_GRID=/cale/stereo70_etrs89A.gsb`),
-  citirea NTv2 față de punctele de control și față de PROJ. Interfața DCL și apelurile ActiveX pot fi testate
+  caroiajul, validitatea XML a KML-ului și citirea grilei NTv2 față de punctele de control și față de PROJ. Interfața DCL și apelurile ActiveX pot fi testate
   doar în AutoCAD.

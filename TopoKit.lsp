@@ -54,7 +54,7 @@
 ;; Numele stratului dedicat cadrului
 (setq *TK:LAYCADRU* "L_CADRU")
 ;; Resetează starea de rulare la reîncărcarea fișierului
-(setq *TK:ACTIVE* nil *TK:FH* nil *TK:DLGRUN* nil *TK:GRID* nil)
+(setq *TK:ACTIVE* nil *TK:FH* nil *TK:DLGRUN* nil *TK:GRID* nil *TK:DLGMAIN* nil)
 
 ;;; ==========================================================================
 ;;;  FUNCȚII UTILITARE GENERALE
@@ -373,7 +373,7 @@
 ;; TK:IntLL - intersecția a două segmente drepte AB și CD.
 ;; Segmentele paralele/colineare nu au punct unic (tratate prin contacte).
 (defun TK:IntLL (a b c d / r s den w tt uu lr ls)
-  (setq r (TK:v- b a) s (TK:v- d c) den (TK:Cross r s)
+  (setq r (TK:v- b a) s (TK:v- d c) den (float (TK:Cross r s))
         lr (distance a b) ls (distance c d))
   (if (> (abs den) (* 1e-12 lr ls))
     (progn
@@ -1316,74 +1316,140 @@
     "//  TopoKit.dcl  -  Interfata grafica (DCL) pentru suita TopoKit (AutoLISP)"
     "//  Instrumente pentru topografie si cadastru:"
     "//    1. Corectie topologica (vertex-uri la intersectii de polilinii)"
-    "//    2. Export parcela inchisa in KMZ/KML (Stereo 70 -> WGS84)"
+    "//    2. Export parcela inchisa in KMZ/KML (Stereo 70 -> ETRS89/WGS84)"
     "//    3. Inserare format, cadru si indicator la scara (A4 - A0)"
+    "//"
+    "//  Imaginile (sigla, pictogramele si previzualizarea plansei) sunt desenate"
+    "//  din TopoKit.lsp cu vector_image / fill_image."
     "//"
     "//  Fisierul este optional: daca nu este gasit in caile de suport AutoCAD,"
     "//  TopoKit.lsp genereaza automat o copie identica intr-un fisier temporar."
     "// ==========================================================================="
     ""
+    "// ---- elemente reutilizabile -------------------------------------------------"
+    "tk_icon : image {"
+    "  width = 34;"
+    "  height = 6.5;"
+    "  fixed_width = true;"
+    "  fixed_height = true;"
+    "  alignment = centered;"
+    "  color = -15;"
+    "}"
+    ""
+    "tk_action : button {"
+    "  height = 2.2;"
+    "  fixed_height = true;"
+    "  width = 30;"
+    "  fixed_width = true;"
+    "  alignment = centered;"
+    "}"
+    ""
+    "tk_modul : boxed_column {"
+    "  width = 42;"
+    "  fixed_width = true;"
+    "}"
+    ""
     "// ---------------------------------------------------------------------------"
     "//  Dialogul principal (comenzile TOPOKIT / MYTOPO)"
     "// ---------------------------------------------------------------------------"
     "topokit_main : dialog {"
-    "  label = \"TopoKit - Instrumente Topografie & Cadastru\";"
-    "  : text { label = \"Alegeti modulul dorit. Setarile sunt memorate pe durata sesiunii AutoCAD.\"; }"
+    "  label = \"TopoKit - Topografie & Cadastru\";"
+    ""
+    "  // ---------------- antet: sigla + titlu ----------------"
     "  : row {"
-    "    // ---------------- 1. Corectie topologica ----------------"
-    "    : boxed_column {"
-    "      label = \"1. Corectie Topologica\";"
-    "      width = 36;"
-    "      : text_part { label = \"Insereaza vertex-uri in toate punctele\"; }"
-    "      : text_part { label = \"de intersectie dintre poliliniile\"; }"
-    "      : text_part { label = \"selectate (LWPOLYLINE / POLYLINE).\"; }"
-    "      spacer;"
-    "      : toggle { key = \"tg_contact\"; label = \"Include punctele de contact (T / suprapuneri)\"; }"
-    "      : edit_box { key = \"eb_tol\"; label = \"Toleranta (unitati desen):\"; edit_width = 10; }"
-    "      spacer_1;"
-    "      : button { key = \"bt_addvtx\"; label = \"Corectie Topologica\"; height = 2; fixed_height = true; }"
-    "    }"
-    "    // ---------------- 2. Export KMZ ----------------"
-    "    : boxed_column {"
-    "      label = \"2. Export KMZ (Stereo 70 -> WGS84)\";"
-    "      width = 36;"
-    "      : edit_box { key = \"eb_nume\"; label = \"Nume parcela:\"; edit_width = 18; }"
-    "      : radio_row {"
-    "        key = \"rr_kmz\";"
-    "        : radio_button { key = \"rb_kmz\"; label = \"KMZ\"; }"
-    "        : radio_button { key = \"rb_kml\"; label = \"KML\"; }"
-    "      }"
-    "      : toggle { key = \"tg_puncte\"; label = \"Exporta si punctele de contur\"; }"
-    "      : toggle { key = \"tg_swap\"; label = \"Axe inversate (X desen = Nord)\"; }"
-    "      : toggle { key = \"tg_ge\"; label = \"Deschide in Google Earth Pro\"; }"
-    "      : toggle { key = \"tg_grid\"; label = \"Grila NTv2 ANCPI (precizie cm)\"; }"
-    "      : text { key = \"tx_grid\"; label = \"\"; width = 34; }"
-    "      spacer_1;"
-    "      : button { key = \"bt_kmz\"; label = \"Export KMZ\"; height = 2; fixed_height = true; }"
-    "    }"
-    "    // ---------------- 3. Format & cadru ----------------"
-    "    : boxed_column {"
-    "      label = \"3. Inserare Format & Cadru\";"
-    "      width = 36;"
-    "      : popup_list { key = \"pl_format\"; label = \"Format:\"; edit_width = 12; }"
-    "      : radio_row {"
-    "        key = \"rr_orient\";"
-    "        : radio_button { key = \"rb_port\"; label = \"Portrait\"; }"
-    "        : radio_button { key = \"rb_land\"; label = \"Landscape\"; }"
-    "      }"
-    "      : popup_list { key = \"pl_scara\"; label = \"Scara:\"; edit_width = 12; }"
-    "      : toggle { key = \"tg_caroiaj\"; label = \"Caroiaj de coordonate (10 cm)\"; }"
-    "      : text { key = \"tx_dim\"; label = \"\"; width = 34; }"
-    "      spacer_1;"
-    "      : button { key = \"bt_cadru\"; label = \"Inserare Format & Cadru\"; height = 2; fixed_height = true; }"
+    "    : image { key = \"img_logo\"; width = 9; height = 3.6; fixed_width = true; fixed_height = true; color = -15; }"
+    "    : column {"
+    "      fixed_height = true;"
+    "      : text { label = \"TopoKit  -  Instrumente pentru topografie si cadastru\"; }"
+    "      : text { label = \"Stereo 70  >  ETRS89 / WGS84   |   Formate A4 - A0   |   Corectie topologica\"; }"
     "    }"
     "  }"
-    "  spacer;"
+    "  : image { key = \"img_sep\"; height = 0.35; fixed_height = true; color = -15; }"
+    ""
     "  : row {"
-    "    alignment = centered;"
-    "    fixed_width = true;"
-    "    : button { key = \"bt_despre\"; label = \"Despre...\"; width = 14; fixed_width = true; }"
-    "    : button { key = \"cancel\"; label = \"Inchide\"; width = 14; fixed_width = true; is_cancel = true; }"
+    "    // ---------------- 1. Corectie topologica ----------------"
+    "    : tk_modul {"
+    "      label = \" 1   Corectie Topologica \";"
+    "      : tk_icon { key = \"img_topo\"; }"
+    "      : paragraph {"
+    "        : text_part { label = \"Adauga vertex-uri la intersectiile si\"; }"
+    "        : text_part { label = \"contactele poliliniilor selectate.\"; }"
+    "        : text_part { label = \"Cotele Z si arcele raman neschimbate.\"; }"
+    "      }"
+    "      : boxed_column {"
+    "        label = \"Optiuni\";"
+    "        : toggle { key = \"tg_contact\"; label = \"Puncte de contact (T, suprapuneri)\"; mnemonic = \"P\"; }"
+    "        : edit_box { key = \"eb_tol\"; label = \"Toleranta [m]:\"; edit_width = 10; mnemonic = \"T\"; }"
+    "        : spacer { height = 3.2; }"
+    "      }"
+    "      : spacer { height = 0.3; }"
+    "      : tk_action { key = \"bt_addvtx\"; label = \"Corectie Topologica\"; mnemonic = \"C\"; }"
+    "      : text { label = \"Comanda directa: ADDVTX\"; alignment = centered; }"
+    "    }"
+    ""
+    "    // ---------------- 2. Export KMZ ----------------"
+    "    : tk_modul {"
+    "      label = \" 2   Export Google Earth \";"
+    "      : tk_icon { key = \"img_kmz\"; }"
+    "      : paragraph {"
+    "        : text_part { label = \"Conturul parcelei (polilinie inchisa)\"; }"
+    "        : text_part { label = \"in KMZ: Stereo 70 > ETRS89 / WGS84.\"; }"
+    "        : text_part { key = \"tx_grid\"; label = \"\"; width = 38; }"
+    "      }"
+    "      : boxed_column {"
+    "        label = \"Optiuni\";"
+    "        : edit_box { key = \"eb_nume\"; label = \"Nume parcela:\"; edit_width = 17; mnemonic = \"N\"; }"
+    "        : radio_row {"
+    "          key = \"rr_kmz\";"
+    "          : radio_button { key = \"rb_kmz\"; label = \"KMZ\"; }"
+    "          : radio_button { key = \"rb_kml\"; label = \"KML\"; }"
+    "        }"
+    "        : toggle { key = \"tg_grid\";   label = \"Grila NTv2 ANCPI (precizie cm)\"; mnemonic = \"G\"; }"
+    "        : toggle { key = \"tg_puncte\"; label = \"Exporta si punctele de contur\"; }"
+    "        : toggle { key = \"tg_swap\";   label = \"Axe inversate (X desen = Nord)\"; }"
+    "        : toggle { key = \"tg_ge\";     label = \"Deschide in Google Earth Pro\"; }"
+    "      }"
+    "      : spacer { height = 0.3; }"
+    "      : tk_action { key = \"bt_kmz\"; label = \"Export KMZ\"; mnemonic = \"E\"; }"
+    "      : text { label = \"Comanda directa: EXPKMZ\"; alignment = centered; }"
+    "    }"
+    ""
+    "    // ---------------- 3. Format si cadru ----------------"
+    "    : tk_modul {"
+    "      label = \" 3   Format si Cadru \";"
+    "      : tk_icon { key = \"img_cadru\"; }"
+    "      : paragraph {"
+    "        : text_part { key = \"tx_dim\"; label = \"\"; width = 38; }"
+    "        : text_part { label = \"Cadru, spatiu util si indicator pe\"; }"
+    "        : text_part { label = \"stratul L_CADRU, in Model Space.\"; }"
+    "      }"
+    "      : boxed_column {"
+    "        label = \"Optiuni\";"
+    "        : popup_list { key = \"pl_format\"; label = \"Format:\"; edit_width = 13; mnemonic = \"F\"; }"
+    "        : radio_row {"
+    "          key = \"rr_orient\";"
+    "          : radio_button { key = \"rb_port\"; label = \"Portrait\"; }"
+    "          : radio_button { key = \"rb_land\"; label = \"Landscape\"; }"
+    "        }"
+    "        : popup_list { key = \"pl_scara\"; label = \"Scara:\"; edit_width = 13; mnemonic = \"S\"; }"
+    "        : toggle { key = \"tg_caroiaj\"; label = \"Caroiaj de coordonate (10 cm)\"; }"
+    "        : spacer { height = 1.1; }"
+    "      }"
+    "      : spacer { height = 0.3; }"
+    "      : tk_action { key = \"bt_cadru\"; label = \"Inserare Format si Cadru\"; mnemonic = \"I\"; }"
+    "      : text { label = \"Comanda directa: INSCADRU\"; alignment = centered; }"
+    "    }"
+    "  }"
+    ""
+    "  : spacer { height = 0.3; }"
+    "  : boxed_row {"
+    "    label = \"Stare\";"
+    "    : text { key = \"tx_status\"; label = \"\"; width = 100; }"
+    "  }"
+    "  : row {"
+    "    : text { label = \"Setarile sunt memorate pe durata sesiunii AutoCAD.\"; }"
+    "    : button { key = \"bt_despre\"; label = \"Despre...\"; mnemonic = \"D\"; width = 13; fixed_width = true; }"
+    "    : button { key = \"cancel\"; label = \"Inchide\"; width = 13; fixed_width = true; is_cancel = true; }"
     "  }"
     "  errtile;"
     "}"
@@ -1394,29 +1460,45 @@
     "topokit_cadru : dialog {"
     "  label = \"TopoKit - Inserare Format, Cadru & Indicator\";"
     "  : row {"
-    "    : boxed_column {"
-    "      label = \"Format si scara\";"
-    "      : popup_list { key = \"pl_format\"; label = \"Format pagina:\"; edit_width = 12; }"
-    "      : boxed_radio_row {"
-    "        key = \"rr_orient\";"
-    "        label = \"Orientare\";"
-    "        : radio_button { key = \"rb_port\"; label = \"Portrait\"; }"
-    "        : radio_button { key = \"rb_land\"; label = \"Landscape\"; }"
+    "    : column {"
+    "      : boxed_column {"
+    "        label = \"Previzualizare\";"
+    "        : image { key = \"img_cadru\"; width = 34; height = 10; fixed_width = true; fixed_height = true; color = -15; alignment = centered; }"
+    "        : text { key = \"tx_dim\"; label = \"\"; width = 34; alignment = centered; }"
     "      }"
-    "      : popup_list { key = \"pl_scara\"; label = \"Scara desenului:\"; edit_width = 12; }"
-    "      : toggle { key = \"tg_caroiaj\"; label = \"Caroiaj de coordonate (10 cm)\"; }"
-    "      : text { key = \"tx_dim\"; label = \"\"; width = 38; }"
+    "      : boxed_column {"
+    "        label = \"Format si scara\";"
+    "        : popup_list { key = \"pl_format\"; label = \"Format pagina:\"; edit_width = 13; mnemonic = \"F\"; }"
+    "        : radio_row {"
+    "          key = \"rr_orient\";"
+    "          : radio_button { key = \"rb_port\"; label = \"Portrait\"; }"
+    "          : radio_button { key = \"rb_land\"; label = \"Landscape\"; }"
+    "        }"
+    "        : popup_list { key = \"pl_scara\"; label = \"Scara desenului:\"; edit_width = 13; mnemonic = \"S\"; }"
+    "        : toggle { key = \"tg_caroiaj\"; label = \"Caroiaj de coordonate (10 cm)\"; }"
+    "      }"
     "    }"
-    "    : boxed_column {"
-    "      label = \"Indicator (cartus)\";"
-    "      : edit_box { key = \"eb_benef\";   label = \"Beneficiar:\";   edit_width = 30; }"
-    "      : edit_box { key = \"eb_lucrare\"; label = \"Lucrarea:\";     edit_width = 30; }"
-    "      : edit_box { key = \"eb_titlu\";   label = \"Titlu plansa:\"; edit_width = 30; }"
-    "      : edit_box { key = \"eb_exec\";    label = \"Executant:\";    edit_width = 30; }"
-    "      : edit_box { key = \"eb_plansa\";  label = \"Plansa nr.:\";   edit_width = 30; }"
+    "    : column {"
+    "      : boxed_column {"
+    "        label = \"Indicator (cartus)\";"
+    "        : edit_box { key = \"eb_benef\";   label = \"Beneficiar:\";   edit_width = 32; mnemonic = \"B\"; }"
+    "        : edit_box { key = \"eb_lucrare\"; label = \"Lucrarea:\";     edit_width = 32; mnemonic = \"L\"; }"
+    "        : edit_box { key = \"eb_titlu\";   label = \"Titlu plansa:\"; edit_width = 32; mnemonic = \"T\"; }"
+    "        : edit_box { key = \"eb_exec\";    label = \"Executant:\";    edit_width = 32; mnemonic = \"E\"; }"
+    "        : edit_box { key = \"eb_plansa\";  label = \"Plansa nr.:\";   edit_width = 32; mnemonic = \"P\"; }"
+    "        : spacer { height = 0.5; }"
+    "        : paragraph {"
+    "          : text_part { label = \"Scara, formatul, data si autorul se completeaza\"; }"
+    "          : text_part { label = \"automat. Textele se pot modifica ulterior cu EATTEDIT.\"; }"
+    "        }"
+    "      }"
+    "      : spacer { height = 0.5; }"
+    "      : paragraph {"
+    "        : text_part { label = \"Dupa OK indicati coltul stanga-jos al formatului\"; }"
+    "        : text_part { label = \"in Model Space.\"; }"
+    "      }"
     "    }"
     "  }"
-    "  : text { label = \"Dupa OK indicati coltul stanga-jos al formatului in Model Space.\"; }"
     "  ok_cancel;"
     "  errtile;"
     "}"))
@@ -1436,19 +1518,206 @@
      (close fh)
      (setq *TK:DCLTMP* f))))
 
-;; TK:UpdDim - afișează în dialog dimensiunile formatului pe hârtie și în teren
-(defun TK:UpdDim (/ fm sc wh f)
-  (setq fm (nth (atoi (get_tile "pl_format")) *TK:FORMATE*)
-        sc (nth (atoi (get_tile "pl_scara")) *TK:SCARI*)
-        wh (TK:FormatWH fm (if (= (get_tile "rr_orient") "rb_port") "P" "L"))
-        f  (/ sc 1000.0))
-  (set_tile "tx_dim" (strcat (rtos (car wh) 2 0) " x " (rtos (cadr wh) 2 0) " mm  =>  "
-                             (rtos (* f (car wh)) 2 2) " x " (rtos (* f (cadr wh)) 2 2) " m")))
+;;; --------------------------------------------------------------------------
+;;;  Desen în dalele de tip "image" ale dialogului (sigla, pictograme,
+;;;  previzualizarea planșei). Se lucrează într-un spațiu logic W x H cu axa
+;;;  Y în sus, scalat uniform și centrat în dală. Culorile sunt indici ACI:
+;;;  255 alb, 254..250 nuanțe de gri, 1 roșu, 3 verde, 5 albastru,
+;;;  150/152 albastru-azuriu, 50 galben, -15 fundalul dialogului.
+;;; --------------------------------------------------------------------------
+
+;; TK:ImgBegin - începe desenarea în dala KEY, pentru spațiul logic W x H
+(defun TK:ImgBegin (key w h / dx dy sc)
+  (setq dx (dimx_tile key) dy (dimy_tile key)
+        sc (min (/ (float dx) w) (/ (float dy) h))
+        *TK:IMG* (list sc (/ (- dx (* sc w)) 2.0) (/ (- dy (* sc h)) 2.0) h))
+  (start_image key)
+  (fill_image 0 0 dx dy -15))
+
+;; TK:ImgEnd - încheie desenarea în dala curentă
+(defun TK:ImgEnd () (end_image))
+
+;; TK:IX / TK:IY - coordonate logice -> pixeli (Y logic în sus, pixeli în jos)
+(defun TK:IX (x) (fix (+ 0.5 (nth 1 *TK:IMG*) (* x (car *TK:IMG*)))))
+(defun TK:IY (y) (fix (+ 0.5 (nth 2 *TK:IMG*) (* (- (nth 3 *TK:IMG*) y) (car *TK:IMG*)))))
+
+;; TK:IPoly - polilinie prin punctele PTS (culoarea C); CLOSED o închide;
+;; TH = grosimea în pixeli (1 sau 2)
+(defun TK:IPoly (pts c closed th / q a b)
+  (if closed (setq pts (append pts (list (car pts)))))
+  (setq q (list (TK:IX (caar pts)) (TK:IY (cadar pts))))
+  (foreach p (cdr pts)
+    (setq a q b (list (TK:IX (car p)) (TK:IY (cadr p))))
+    (vector_image (car a) (cadr a) (car b) (cadr b) c)
+    (if (> th 1)
+      (progn
+        (vector_image (1+ (car a)) (cadr a) (1+ (car b)) (cadr b) c)
+        (vector_image (car a) (1+ (cadr a)) (car b) (1+ (cadr b)) c)))
+    (setq q b)))
+
+;; TK:ILine - segment între (x1,y1) și (x2,y2)
+(defun TK:ILine (x1 y1 x2 y2 c th) (TK:IPoly (list (list x1 y1) (list x2 y2)) c nil th))
+
+;; TK:IRect - dreptunghi plin între colțurile (x1,y1) și (x2,y2)
+(defun TK:IRect (x1 y1 x2 y2 c / px py)
+  (setq px (TK:IX (min x1 x2)) py (TK:IY (max y1 y2)))
+  (fill_image px py (max 1 (- (TK:IX (max x1 x2)) px)) (max 1 (- (TK:IY (min y1 y2)) py)) c))
+
+;; TK:IBox - contur dreptunghiular
+(defun TK:IBox (x1 y1 x2 y2 c th)
+  (TK:IPoly (list (list x1 y1) (list x2 y1) (list x2 y2) (list x1 y2)) c T th))
+
+;; TK:IDot - punct (pătrat plin de latură 2R+1 pixeli)
+(defun TK:IDot (x y r c)
+  (fill_image (- (TK:IX x) r) (- (TK:IY y) r) (1+ (* 2 r)) (1+ (* 2 r)) c))
+
+;; TK:IEllipse - elipsă (sau cerc) cu centrul (cx,cy) și semiaxele RX, RY
+(defun TK:IEllipse (cx cy rx ry c th / k pts)
+  (setq k 0)
+  (repeat 36
+    (setq pts (cons (list (+ cx (* rx (cos (* k (/ pi 18.0))))) (+ cy (* ry (sin (* k (/ pi 18.0)))))) pts)
+          k (1+ k)))
+  (TK:IPoly pts c T th))
+
+;; TK:ICard - "cartonaș" alb cu chenar gri, fundalul pictogramelor
+(defun TK:ICard (w h)
+  (TK:IRect 1 1 (- w 1) (- h 1) 255)
+  (TK:IBox 1 1 (- w 1) (- h 1) 253 1))
+
+;; TK:DrawLogo - sigla: teodolit pe trepied și o rețea de triangulație
+(defun TK:DrawLogo (key)
+  (TK:ImgBegin key 100 40)
+  (TK:IRect 0 0 100 40 152)
+  ;; trepied și instrument
+  (TK:IPoly '((22 25) (12 4)) 255 nil 2)
+  (TK:IPoly '((26 25) (26 4)) 255 nil 2)
+  (TK:IPoly '((30 25) (40 4)) 255 nil 2)
+  (TK:IRect 20 25 32 33 255)
+  (TK:IRect 17 33 35 36 255)
+  (TK:IDot 26 29 1 152)
+  ;; rețea de triangulație
+  (TK:IPoly '((52 9) (70 32) (90 13)) 50 T 2)
+  (TK:IPoly '((70 32) (72 17) (52 9)) 50 nil 1)
+  (TK:ILine 72 17 90 13 50 1)
+  (foreach p '((52 9) (70 32) (90 13) (72 17)) (TK:IDot (car p) (cadr p) 2 255))
+  (TK:ImgEnd))
+
+;; TK:DrawSep - linie de separare colorată sub antet
+(defun TK:DrawSep (key)
+  (TK:ImgBegin key 100 2)
+  (fill_image 0 0 (dimx_tile key) (dimy_tile key) -15)
+  (fill_image 0 (/ (dimy_tile key) 2) (dimx_tile key) 2 152)
+  (TK:ImgEnd))
+
+;; TK:DrawTopoIcon - două polilinii care se intersectează; vertex-urile noi
+;; (calculate chiar cu TK:IntLL) sunt marcate cu verde
+(defun TK:DrawTopoIcon (key / a b *TK:TOL* ins)
+  (setq *TK:TOL* 0.001
+        a '((14.0 12.0) (52.0 48.0) (92.0 18.0) (146.0 46.0))
+        b '((12.0 40.0) (60.0 12.0) (108.0 46.0) (148.0 14.0)))
+  (TK:ImgBegin key 160 60)
+  (TK:ICard 160 60)
+  (TK:IPoly a 5 nil 2)
+  (TK:IPoly b 1 nil 2)
+  (mapcar '(lambda (p1 p2)
+             (mapcar '(lambda (q1 q2) (setq ins (append ins (TK:IntLL p1 p2 q1 q2)))) b (cdr b)))
+          a (cdr a))
+  (foreach p (append a b) (TK:IDot (car p) (cadr p) 2 251))
+  (foreach p ins (TK:IDot (car p) (cadr p) 4 255) (TK:IDot (car p) (cadr p) 3 3))
+  (TK:ImgEnd))
+
+;; TK:DrawKmzIcon - planul Stereo 70 cu parcela, săgeată și globul pământesc
+(defun TK:DrawKmzIcon (key / x)
+  (TK:ImgBegin key 160 60)
+  (TK:ICard 160 60)
+  ;; planul cu rețea de coordonate și parcela
+  (TK:IRect 8 8 56 52 255)
+  (setq x 8)
+  (repeat 5 (TK:ILine x 8 x 52 254 1) (TK:ILine 8 (+ 8 (- x 8)) 56 (+ 8 (- x 8)) 254 1) (setq x (+ x 11)))
+  (TK:IBox 8 8 56 52 252 1)
+  (TK:IPoly '((17 15) (45 19) (49 41) (30 46) (20 36)) 1 T 2)
+  ;; săgeata de transformare
+  (TK:ILine 64 30 90 30 152 2)
+  (TK:IPoly '((84 36) (91 30) (84 24)) 152 nil 2)
+  ;; globul: contur, meridiane și paralele
+  (TK:IEllipse 124 30 24 24 150 2)
+  (TK:IEllipse 124 30 13 24 150 1)
+  (TK:ILine 124 6 124 54 150 1)
+  (TK:ILine 100 30 148 30 150 1)
+  (TK:ILine 104 42 144 42 150 1)
+  (TK:ILine 104 18 144 18 150 1)
+  ;; parcela și reperul pe glob
+  (TK:IPoly '((116 34) (126 36) (127 44) (118 45)) 1 T 2)
+  (TK:IEllipse 136 49 4 4 1 2)
+  (TK:ILine 136 45 136 38 1 2)
+  (TK:ImgEnd))
+
+;; TK:DrawSheet - previzualizarea planșei în dala KEY: foaia la proporția
+;; formatului, cadrul interior, indicatorul și (opțional) caroiajul
+(defun TK:DrawSheet (key fm ori grd / wh w h m mo x1 y1 x2 y2 gx gy ar)
+  (setq wh (TK:FormatWH fm ori) w (car wh) h (cadr wh)
+        m  (* 0.07 (max w h))
+        mo (if (member (car fm) '("A4" "A3")) 5.0 10.0)
+        ar (* 0.018 (max w h)))                       ; brațul crucilor, proporțional
+  (TK:ImgBegin key (+ w m m) (+ h m m))
+  ;; umbră și foaie
+  (TK:IRect (+ m (* 0.02 w)) (- m (* 0.02 w)) (+ m w (* 0.02 w)) (- (+ m h) (* 0.02 w)) 252)
+  (TK:IRect m m (+ m w) (+ m h) 255)
+  (TK:IBox m m (+ m w) (+ m h) 251 1)
+  ;; cadrul interior
+  (setq x1 (+ m 20.0) y1 (+ m mo) x2 (- (+ m w) mo) y2 (- (+ m h) mo))
+  ;; caroiaj (cruci la 100 mm pe hârtie), în afara indicatorului
+  (if (= grd "1")
+    (progn
+      (setq gx (+ x1 50.0))
+      (while (< gx x2)
+        (setq gy (+ y1 50.0))
+        (while (< gy y2)
+          (if (not (and (> gx (- x2 185.0)) (< gy (+ y1 55.0))))
+            (progn (TK:ILine (- gx ar) gy (+ gx ar) gy 150 1) (TK:ILine gx (- gy ar) gx (+ gy ar) 150 1)))
+          (setq gy (+ gy 100.0)))
+        (setq gx (+ gx 100.0)))))
+  (TK:IBox x1 y1 x2 y2 250 2)
+  ;; indicatorul (180 x 50 mm) în colțul dreapta-jos
+  (TK:IRect (- x2 180.0) y1 x2 (+ y1 50.0) 254)
+  (foreach d '(10.0 20.0 30.0 40.0) (TK:ILine (- x2 180.0) (+ y1 d) x2 (+ y1 d) 252 1))
+  (TK:ILine (- x2 145.0) (+ y1 20.0) (- x2 145.0) (+ y1 50.0) 252 1)
+  (TK:ILine (- x2 80.0) y1 (- x2 80.0) (+ y1 20.0) 252 1)
+  (TK:ILine (- x2 40.0) y1 (- x2 40.0) (+ y1 20.0) 252 1)
+  (TK:IBox (- x2 180.0) y1 x2 (+ y1 50.0) 250 1)
+  (TK:ImgEnd))
+
+;; TK:UpdStatus - bara de stare a dialogului principal
+(defun TK:UpdStatus (/ fm sc)
+  (if *TK:DLGMAIN*
+    (progn
+      (setq fm (nth (atoi (get_tile "pl_format")) *TK:FORMATE*)
+            sc (nth (atoi (get_tile "pl_scara")) *TK:SCARI*))
+      (set_tile "tx_status"
+        (strcat "Toleranta: " (get_tile "eb_tol") " m     |     Transformare: "
+                (cond ((/= (get_tile "tg_grid") "1") "Helmert 7p (~0.3-1.5 m)")
+                      ((TK:GridFind) "grila NTv2 ANCPI (~1 cm)")
+                      (T "grila LIPSA -> Helmert 7p (~0.3-1.5 m)"))
+                "     |     Plansa: " (car fm) (if (= (get_tile "rr_orient") "rb_port") " Portrait" " Landscape")
+                " 1:" (itoa sc))))))
+
+;; TK:UpdDim - actualizează dimensiunile formatului, previzualizarea
+;; planșei și bara de stare după orice modificare a opțiunilor de format
+(defun TK:UpdDim (/ fm sc wh f ori)
+  (setq fm  (nth (atoi (get_tile "pl_format")) *TK:FORMATE*)
+        sc  (nth (atoi (get_tile "pl_scara")) *TK:SCARI*)
+        ori (if (= (get_tile "rr_orient") "rb_port") "P" "L")
+        wh  (TK:FormatWH fm ori)
+        f   (/ sc 1000.0))
+  (set_tile "tx_dim" (strcat (car fm) ": " (rtos (car wh) 2 0) "x" (rtos (cadr wh) 2 0) " mm = "
+                             (rtos (* f (car wh)) 2 2) " x " (rtos (* f (cadr wh)) 2 2) " m"))
+  (TK:DrawSheet "img_cadru" fm ori (get_tile "tg_caroiaj"))
+  (TK:UpdStatus))
 
 ;; TK:InitCadruTiles - inițializează controalele comune de format/scară
 (defun TK:InitCadruTiles ()
   (start_list "pl_format")
-  (foreach x *TK:FORMATE* (add_list (car x)))
+  (foreach x *TK:FORMATE* (add_list (strcat (car x) "  (" (rtos (cadr x) 2 0) " x " (rtos (caddr x) 2 0) " mm)")))
   (end_list)
   (start_list "pl_scara")
   (foreach s *TK:SCARI* (add_list (strcat "1:" (itoa s))))
@@ -1457,7 +1726,7 @@
   (set_tile "pl_scara" (itoa *TK:SCARA*))
   (set_tile "rr_orient" (if (= *TK:ORIENT* "P") "rb_port" "rb_land"))
   (set_tile "tg_caroiaj" *TK:CAROIAJ*)
-  (foreach k '("pl_format" "pl_scara" "rb_port" "rb_land") (action_tile k "(TK:UpdDim)"))
+  (foreach k '("pl_format" "pl_scara" "rb_port" "rb_land" "tg_caroiaj") (action_tile k "(TK:UpdDim)"))
   (TK:UpdDim))
 
 ;; TK:ReadCadruTiles - citește controalele comune de format/scară
@@ -1546,16 +1815,23 @@
      (set_tile "tg_swap" *TK:SWAPXY*)
      (set_tile "tg_ge" *TK:OPENGE*)
      (set_tile "tg_grid" *TK:USEGRID*)
-     (set_tile "tx_grid" (if (TK:GridFind) "Grila NTv2: gasita" "Grila NTv2: lipsa (se foloseste Helmert)"))
-     ;; modulul 3
+     (set_tile "tx_grid" (if (TK:GridFind) "Grila NTv2 gasita: precizie ~1 cm" "Grila NTv2 lipsa: precizie ~1 m"))
+     ;; imagini
+     (TK:DrawLogo "img_logo")
+     (TK:DrawSep "img_sep")
+     (TK:DrawTopoIcon "img_topo")
+     (TK:DrawKmzIcon "img_kmz")
+     ;; modulul 3 (inclusiv previzualizarea planșei) și bara de stare
+     (setq *TK:DLGMAIN* T)
      (TK:InitCadruTiles)
+     (foreach k '("eb_tol" "tg_grid") (action_tile k "(TK:UpdStatus)"))
      ;; butoane
      (action_tile "bt_addvtx" "(if (TK:MainSave) (done_dialog 1))")
      (action_tile "bt_kmz"    "(if (TK:MainSave) (done_dialog 2))")
      (action_tile "bt_cadru"  "(if (TK:MainSave) (done_dialog 3))")
      (action_tile "bt_despre" "(TK:About)")
      (action_tile "cancel"    "(done_dialog 0)")
-     (setq res (start_dialog))
+     (setq res (start_dialog) *TK:DLGMAIN* nil)
      (unload_dialog id)
      ;; modulul ales rulează după închiderea dialogului (necesită selecții în desen)
      (setq *TK:DLGRUN* T)

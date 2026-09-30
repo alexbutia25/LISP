@@ -274,3 +274,4 @@ funcs[Sym('GETVAR')]=lambda v: None
 import fnmatch as _fn
 funcs[Sym('VL-LIST->STRING')]=lambda l: ''.join(chr(c) for c in lst(l))
 funcs[Sym('WCMATCH')]=lambda s,p: T if any(_fn.fnmatchcase(s,x) for x in p.split(',')) else None
+funcs[Sym('ATOI')]=lambda s: int(float(s or 0))

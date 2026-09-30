@@ -1,0 +1,5 @@
+*.gsb binary
+*.dbf binary
+*.shp binary
+*.shx binary
+*.png binary

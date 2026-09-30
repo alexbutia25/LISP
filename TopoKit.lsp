@@ -34,6 +34,7 @@
              (*TK:PUNCTE*  . "1")            ; exportă și punctele de contur
              (*TK:SWAPXY*  . "0")            ; 1 = X desen este Nordul
              (*TK:OPENGE*  . "1")            ; deschide în Google Earth Pro
+             (*TK:USEGRID* . "1")            ; folosește grila NTv2 (precizie cm)
              (*TK:FORMAT*  . 1)              ; index în *TK:FORMATE* (A3)
              (*TK:ORIENT*  . "L")            ; "P" portrait / "L" landscape
              (*TK:SCARA*   . 2)              ; index în *TK:SCARI* (1:500)
@@ -53,7 +54,7 @@
 ;; Numele stratului dedicat cadrului
 (setq *TK:LAYCADRU* "L_CADRU")
 ;; Resetează starea de rulare la reîncărcarea fișierului
-(setq *TK:ACTIVE* nil *TK:FH* nil *TK:DLGRUN* nil)
+(setq *TK:ACTIVE* nil *TK:FH* nil *TK:DLGRUN* nil *TK:GRID* nil)
 
 ;;; ==========================================================================
 ;;;  FUNCȚII UTILITARE GENERALE
@@ -91,6 +92,7 @@
 (defun TK:Error (msg)
   (if *TK:FH* (progn (vl-catch-all-apply 'close (list *TK:FH*)) (setq *TK:FH* nil)))
   (setq *TK:DLGRUN* nil)
+  (TK:GridClose)
   (TK:Stop)
   (if (and msg (not (wcmatch (strcase msg T) "*break*,*cancel*,*exit*")))
     (princ (strcat "\n** Eroare TopoKit: " msg " **")))
@@ -625,12 +627,24 @@
 ;;;      EPSG metoda 9809: lat0 = 46 N, lon0 = 25 E, k0 = 0.99975,
 ;;;      FE = FN = 500 000 m.
 ;;;   2. Geodezice (Krasovsky) -> carteziene geocentrice X,Y,Z (h = 0).
-;;;   3. Transformare Helmert cu 7 parametri S-42 (Pulkovo 1942(58)) -> WGS84
-;;;      (EPSG:15994, convenția "Coordinate Frame", precizie ~3 m):
+;;;   2. Trecerea de la datumul S-42 (Krasovsky) la ETRS89/WGS84, prin una
+;;;      din metodele de mai jos.
+;;;
+;;;   A. GRILA NTv2 (metoda implicită, precizie centimetrică):
+;;;      fișierul "stereo70_etrs89A.gsb" (sub-grila "ANCPI+TN", derivată din
+;;;      grila oficială de distorsiuni ANCPI/TransDatRO, pas 35" x 50").
+;;;      Deplasările în latitudine/longitudine se interpolează biliniar, ca în
+;;;      PROJ (+proj=hgridshift). Pe cele 11 puncte de control publicate
+;;;      împreună cu grila, diferența față de coordonatele ETRS89 este 2-13 mm.
+;;;      Fișierul binar este citit direct din LISP (ADODB.Stream).
+;;;
+;;;   B. HELMERT 7 PARAMETRI (rezervă: grila lipsește sau punctul este în
+;;;      afara zonei acoperite). EPSG:15994, convenția "Coordinate Frame":
 ;;;        tx = 2.329 m, ty = -147.042 m, tz = -92.080 m
 ;;;        rx = 0.309", ry = -0.325", rz = -0.497", ds = 5.69 ppm
-;;;   4. Carteziene -> latitudine/longitudine pe elipsoidul WGS84 (iterativ).
-;;;  Rezultatul coincide cu PROJ (EPSG:3844 -> EPSG:4326) la nivel de 1e-9 grade.
+;;;      geodezice -> carteziene -> Helmert -> geodezice WGS84 (iterativ).
+;;;      Coincide cu PROJ (EPSG:3844 -> 4326); față de grilă diferă cu
+;;;      0.3 m (median) până la ~1.5 m pe teritoriul României.
 ;;; ==========================================================================
 
 ;; TK:S70Const - calculează (o singură dată) constantele proiecției Stereo 70
@@ -717,15 +731,166 @@
         (+ -147.042 (* m (+ (- (* rz x)) y (* rx z))))
         (+ -92.080  (* m (+ (* ry x) (- (* rx y)) z)))))
 
+;;; --------------------------------------------------------------------------
+;;;  Citirea grilei NTv2 (fișier binar, little-endian)
+;;;  Structura: antet general (11 înregistrări x 16 octeți), antetul sub-grilei
+;;;  (11 x 16 octeți), apoi nodurile: 4 valori float32 fiecare (deplasare
+;;;  latitudine ["], deplasare longitudine ["], 2 precizii). Nodurile încep
+;;;  din colțul sud-est și avansează spre vest, apoi rând cu rând spre nord.
+;;;  În NTv2 longitudinea este pozitivă spre VEST.
+;;; --------------------------------------------------------------------------
+
+;; Numele fișierului grilă căutat automat
+(setq *TK:GRIDNAME* "stereo70_etrs89A.gsb")
+
+;; TK:BinOpen - deschide un fișier binar pentru citire (ADODB.Stream)
+(defun TK:BinOpen (f / st)
+  (if (setq st (vlax-create-object "ADODB.Stream"))
+    (if (vl-catch-all-error-p
+          (vl-catch-all-apply
+            '(lambda ()
+               (vlax-put-property st 'Type 1)          ; 1 = adTypeBinary
+               (vlax-invoke-method st 'Open)
+               (vlax-invoke-method st 'LoadFromFile f))))
+      (progn (vlax-release-object st) nil)
+      st)))
+
+;; TK:BinRead - citește N octeți de la poziția POS; returnează lista lor
+(defun TK:BinRead (st pos n)
+  (vlax-put-property st 'Position pos)
+  (vlax-safearray->list (vlax-variant-value (vlax-invoke-method st 'Read n))))
+
+;; TK:BinClose - închide fluxul binar
+(defun TK:BinClose (st)
+  (vl-catch-all-apply 'vlax-invoke-method (list st 'Close))
+  (vl-catch-all-apply 'vlax-release-object (list st)))
+
+;; TK:F32 - decodează un număr float32 IEEE-754 din 4 octeți (little-endian)
+(defun TK:F32 (b / ex m v)
+  (setq ex (+ (* 2 (logand (nth 3 b) 127)) (/ (nth 2 b) 128))
+        m  (+ (* 65536.0 (logand (nth 2 b) 127)) (* 256.0 (nth 1 b)) (nth 0 b))
+        v  (if (= ex 0)
+             (* m (expt 2.0 -149))
+             (* (+ 1.0 (/ m 8388608.0)) (expt 2.0 (- ex 127)))))
+  (if (>= (nth 3 b) 128) (- v) v))
+
+;; TK:F64 - decodează un număr float64 IEEE-754 din 8 octeți (little-endian)
+(defun TK:F64 (b / ex m v)
+  (setq ex (+ (* 16 (logand (nth 7 b) 127)) (/ (nth 6 b) 16))
+        m  (logand (nth 6 b) 15))
+  (foreach k '(5 4 3 2 1 0) (setq m (+ (* m 256.0) (nth k b))))
+  (setq v (if (= ex 0) 0.0 (* (+ 1.0 (/ m 4503599627370496.0)) (expt 2.0 (- ex 1023)))))
+  (if (>= (nth 7 b) 128) (- v) v))
+
+;; TK:I32 - întreg pozitiv pe 4 octeți (little-endian)
+(defun TK:I32 (b)
+  (+ (nth 0 b) (* 256 (nth 1 b)) (* 65536 (nth 2 b)) (* 16777216 (nth 3 b))))
+
+;; TK:Sub - sublista de N elemente a listei L începând de la poziția I
+(defun TK:Sub (l i n / r)
+  (repeat n (setq r (cons (nth i l) r) i (1+ i)))
+  (reverse r))
+
+;; TK:GridFind - caută fișierul grilă: căile de suport AutoCAD, folderul
+;; lui TopoKit.lsp și folderul desenului curent
+(defun TK:GridFind (/ lsp f)
+  (cond
+    ((findfile *TK:GRIDNAME*))
+    ((and (setq lsp (findfile "TopoKit.lsp"))
+          (findfile (setq f (strcat (vl-filename-directory lsp) "\\" *TK:GRIDNAME*))))
+     f)
+    ((and (= 1 (getvar "DWGTITLED"))
+          (findfile (setq f (strcat (getvar "DWGPREFIX") *TK:GRIDNAME*))))
+     f)))
+
+;; TK:GridOpen - deschide grila și citește antetele. Setează *TK:GRID* =
+;; (flux sLat nLat eLong wLong pasLat pasLong nrColoane nrRânduri) sau nil.
+(defun TK:GridOpen (/ f st h rec keys ncol nrow)
+  (setq *TK:GRID* nil)
+  (if (and (setq f (TK:GridFind)) (setq st (TK:BinOpen f)))
+    (progn
+      (setq h (TK:BinRead st 0 352))
+      ;; tabel (cheie . octeții valorii) pentru cele 22 de înregistrări
+      (setq rec 0)
+      (repeat 22
+        (setq keys (cons (cons (vl-string-trim " " (vl-list->string (TK:Sub h (* 16 rec) 8)))
+                               (TK:Sub h (+ (* 16 rec) 8) 8))
+                         keys)
+              rec (1+ rec)))
+      (if (and (assoc "GS_COUNT" keys) (assoc "LONG_INC" keys)
+               (wcmatch (strcase (vl-list->string (cdr (assoc "GS_TYPE" keys)))) "SECONDS*"))
+        (progn
+          (setq *TK:GRID*
+                 (mapcar '(lambda (k) (TK:F64 (cdr (assoc k keys))))
+                         '("S_LAT" "N_LAT" "E_LONG" "W_LONG" "LAT_INC" "LONG_INC"))
+                ncol (1+ (fix (+ 0.5 (/ (- (nth 3 *TK:GRID*) (nth 2 *TK:GRID*)) (nth 5 *TK:GRID*)))))
+                nrow (1+ (fix (+ 0.5 (/ (- (nth 1 *TK:GRID*) (nth 0 *TK:GRID*)) (nth 4 *TK:GRID*))))))
+          (if (= (* ncol nrow) (TK:I32 (cdr (assoc "GS_COUNT" keys))))
+            (setq *TK:GRID* (append (list st) *TK:GRID* (list ncol nrow) (list f)))
+            (setq *TK:GRID* nil))))
+      (if (not *TK:GRID*) (TK:BinClose st))))
+  *TK:GRID*)
+
+;; TK:GridClose - închide fișierul grilă (dacă este deschis)
+(defun TK:GridClose ()
+  (if *TK:GRID* (TK:BinClose (car *TK:GRID*)))
+  (setq *TK:GRID* nil))
+
+;; TK:GridNode - deplasările (dLat dLon) ale nodurilor (col,rând) și
+;; (col+1,rând), citite dintr-o singură operație (32 octeți consecutivi)
+(defun TK:GridNodes (col row / g b)
+  (setq g *TK:GRID*
+        b (TK:BinRead (car g) (+ 352 (* 16 (+ col (* row (nth 7 g))))) 32))
+  (list (list (TK:F32 (TK:Sub b 0 4)) (TK:F32 (TK:Sub b 4 4)))
+        (list (TK:F32 (TK:Sub b 16 4)) (TK:F32 (TK:Sub b 20 4)))))
+
+;; TK:GridShift - aplică grila punctului (lat lon) în radiani (Krasovsky).
+;; Returnează (lat lon) ETRS89 în radiani sau nil dacă punctul este în afara
+;; zonei acoperite (inclusiv celulele de margine cu noduri fără date).
+(defun TK:GridShift (geo / g lat lonw x y col row fx fy r0 r1 nd dlat dlon)
+  (if (setq g *TK:GRID*)
+    (progn
+      (setq lat  (* 648000.0 (/ (car geo) pi))          ; secunde de arc
+            lonw (- (* 648000.0 (/ (cadr geo) pi)))     ; pozitiv spre vest
+            x    (/ (- lonw (nth 3 g)) (nth 6 g))
+            y    (/ (- lat (nth 1 g)) (nth 5 g)))
+      (if (and (>= x 0.0) (>= y 0.0) (< x (1- (nth 7 g))) (< y (1- (nth 8 g))))
+        (progn
+          (setq col (fix x) row (fix y) fx (- x col) fy (- y row)
+                r0 (TK:GridNodes col row)
+                r1 (TK:GridNodes col (1+ row))
+                nd (append r0 r1))
+          ;; nodurile cu deplasare zero sunt în afara teritoriului acoperit
+          (if (not (vl-some '(lambda (n) (and (= 0.0 (car n)) (= 0.0 (cadr n)))) nd))
+            (progn
+              (setq dlat (+ (* (- 1.0 fx) (- 1.0 fy) (car (nth 0 nd))) (* fx (- 1.0 fy) (car (nth 1 nd)))
+                            (* (- 1.0 fx) fy (car (nth 2 nd))) (* fx fy (car (nth 3 nd))))
+                    dlon (+ (* (- 1.0 fx) (- 1.0 fy) (cadr (nth 0 nd))) (* fx (- 1.0 fy) (cadr (nth 1 nd)))
+                            (* (- 1.0 fx) fy (cadr (nth 2 nd))) (* fx fy (cadr (nth 3 nd)))))
+              (list (* pi (/ (+ lat dlat) 648000.0))
+                    (* pi (/ (- (+ lonw dlon)) 648000.0))))))))))
+
+;; TK:MethodText - descrierea metodei de transformare folosite la ultimul export
+(defun TK:MethodText ()
+  (cond
+    ((null *TK:GRID*) "Helmert 7 parametri EPSG:15994 (precizie ~0.3-1.5 m)")
+    ((> (cond (*TK:NHELM*) (0)) 0)
+     (strcat "grila NTv2 ANCPI (precizie centimetrica); " (itoa *TK:NHELM*)
+             " puncte in afara grilei transformate cu Helmert (~1 m)"))
+    (T "grila NTv2 ANCPI stereo70_etrs89A.gsb (precizie centimetrica)")))
+
 ;; TK:Stereo70ToWGS84 - conversia completă: (E N) Stereo 70 -> (lon lat)
-;; WGS84 în grade zecimale
+;; ETRS89/WGS84 în grade zecimale. Folosește grila NTv2 dacă este deschisă
+;; și acoperă punctul; altfel transformarea Helmert (contorizată în *TK:NHELM*).
 (defun TK:Stereo70ToWGS84 (en / geo fk fw ll)
-  (setq fk  (/ 1.0 298.3)
-        fw  (/ 1.0 298.257223563)
-        geo (TK:S70ToGeo en)
-        ll  (TK:CartToGeo
-              (TK:Helmert (TK:GeoToCart (car geo) (cadr geo) 0.0 6378245.0 (- (* 2.0 fk) (* fk fk))))
-              6378137.0 (- (* 2.0 fw) (* fw fw))))
+  (setq geo (TK:S70ToGeo en))
+  (if (not (setq ll (TK:GridShift geo)))
+    (setq fk  (/ 1.0 298.3)
+          fw  (/ 1.0 298.257223563)
+          ll  (TK:CartToGeo
+                (TK:Helmert (TK:GeoToCart (car geo) (cadr geo) 0.0 6378245.0 (- (* 2.0 fk) (* fk fk))))
+                6378137.0 (- (* 2.0 fw) (* fw fw)))
+          *TK:NHELM* (1+ (cond (*TK:NHELM*) (0)))))
   (list (TK:Deg (cadr ll)) (TK:Deg (car ll))))
 
 ;; TK:PtEN - coordonatele Stereo 70 (E N) ale unui punct din desen,
@@ -841,7 +1006,7 @@
           (strcat "    <name>" nm "</name>")
           (strcat "    <description>Suprafata (Stereo 70): " (rtos area 2 2) " mp&#10;Perimetru: " (rtos per 2 2)
                   " m&#10;Numar puncte: " (itoa (length vtx)) "&#10;Desen sursa: " (TK:XmlEsc (getvar "DWGNAME"))
-                  "&#10;Transformare: Stereo 70 (S-42 / Krasovsky 1940) -&gt; WGS84, Helmert 7 parametri</description>")
+                  "&#10;Transformare Stereo 70 -&gt; ETRS89/WGS84: " (TK:MethodText) "</description>")
           "    <styleUrl>#tkParcela</styleUrl>"
           "    <Polygon>"
           "      <tessellate>1</tessellate>"
@@ -946,6 +1111,11 @@
                 (/= "Da" (getkword "\nCoordonatele par in afara domeniului Stereo 70 (verificati axele). Continuati? [Da/Nu] <Nu>: "))))
          (princ "\nExport anulat."))
         (T
+         ;; grila NTv2 pentru precizie centimetrică (altfel Helmert)
+         (setq *TK:NHELM* 0)
+         (if (and (= *TK:USEGRID* "1") (not (TK:GridOpen)))
+           (princ (strcat "\nATENTIE: grila " *TK:GRIDNAME* " nu a fost gasita (copiati-o langa TopoKit.lsp)."
+                          "\nSe foloseste transformarea Helmert, precizie ~0.3-1.5 m.")))
          (setq dir  (TK:OutDir)
                file (strcat dir (TK:SafeName (vl-filename-base (getvar "DWGNAME"))) "_"
                             (TK:SafeName *TK:NUME*) "_" (TK:Stamp)
@@ -969,9 +1139,11 @@
          (if ok
            (progn
              (princ (strcat "\nExport finalizat: " file
-                            "\n" (itoa (length vtx)) " puncte, S = " (rtos area 2 2) " mp, P = " (rtos per 2 2) " m."))
+                            "\n" (itoa (length vtx)) " puncte, S = " (rtos area 2 2) " mp, P = " (rtos per 2 2) " m."
+                            "\nTransformare: " (TK:MethodText)))
              (if (= *TK:OPENGE* "1") (TK:OpenGE file)))
-           (princ (strcat "\nNu s-a putut scrie fisierul: " file)))))))
+           (princ (strcat "\nNu s-a putut scrie fisierul: " file)))
+         (TK:GridClose)))))
   (TK:Stop)
   (princ))
 
@@ -1184,6 +1356,8 @@
     "      : toggle { key = \"tg_puncte\"; label = \"Exporta si punctele de contur\"; }"
     "      : toggle { key = \"tg_swap\"; label = \"Axe inversate (X desen = Nord)\"; }"
     "      : toggle { key = \"tg_ge\"; label = \"Deschide in Google Earth Pro\"; }"
+    "      : toggle { key = \"tg_grid\"; label = \"Grila NTv2 ANCPI (precizie cm)\"; }"
+    "      : text { key = \"tx_grid\"; label = \"\"; width = 34; }"
     "      spacer_1;"
     "      : button { key = \"bt_kmz\"; label = \"Export KMZ\"; height = 2; fixed_height = true; }"
     "    }"
@@ -1314,7 +1488,8 @@
            *TK:KMZ*     (if (= (get_tile "rr_kmz") "rb_kml") "0" "1")
            *TK:PUNCTE*  (get_tile "tg_puncte")
            *TK:SWAPXY*  (get_tile "tg_swap")
-           *TK:OPENGE*  (get_tile "tg_ge"))
+           *TK:OPENGE*  (get_tile "tg_ge")
+           *TK:USEGRID* (get_tile "tg_grid"))
      (TK:ReadCadruTiles)
      T)))
 
@@ -1326,8 +1501,9 @@
                  "EXPKMZ   - export parcela in KMZ (Stereo 70 -> WGS84)\n"
                  "INSCADRU - format A4..A0, cadru si indicator la scara\n\n"
                  "Unitati desen: metri. X desen = Est, Y desen = Nord (implicit).\n"
-                 "Transformare: stereografica oblica Krasovsky + Helmert 7p\n"
-                 "(EPSG:3844 -> EPSG:4326, precizie ~3 m).")))
+                 "Transformare: stereografica oblica Krasovsky + grila NTv2\n"
+                 "ANCPI stereo70_etrs89A.gsb (precizie centimetrica);\n"
+                 "fara grila: Helmert 7 parametri (~0.3-1.5 m).")))
 
 ;; Corespondența dintre controalele dialogului și câmpurile indicatorului
 (setq *TK:CARTUSKEYS* '(("eb_benef" . *TK:BENEF*) ("eb_lucrare" . *TK:LUCRARE*)
@@ -1369,6 +1545,8 @@
      (set_tile "tg_puncte" *TK:PUNCTE*)
      (set_tile "tg_swap" *TK:SWAPXY*)
      (set_tile "tg_ge" *TK:OPENGE*)
+     (set_tile "tg_grid" *TK:USEGRID*)
+     (set_tile "tx_grid" (if (TK:GridFind) "Grila NTv2: gasita" "Grila NTv2: lipsa (se foloseste Helmert)"))
      ;; modulul 3
      (TK:InitCadruTiles)
      ;; butoane

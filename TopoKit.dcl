@@ -42,6 +42,8 @@ topokit_main : dialog {
       : toggle { key = "tg_puncte"; label = "Exporta si punctele de contur"; }
       : toggle { key = "tg_swap"; label = "Axe inversate (X desen = Nord)"; }
       : toggle { key = "tg_ge"; label = "Deschide in Google Earth Pro"; }
+      : toggle { key = "tg_grid"; label = "Grila NTv2 ANCPI (precizie cm)"; }
+      : text { key = "tx_grid"; label = ""; width = 34; }
       spacer_1;
       : button { key = "bt_kmz"; label = "Export KMZ"; height = 2; fixed_height = true; }
     }

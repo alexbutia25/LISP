@@ -45,17 +45,34 @@ datele extinse sunt copiate), deci primesc un handle nou.
 ## 2. Export KMZ – `EXPKMZ`
 
 1. Selectați o polilinie închisă (flag *Closed* sau capete care coincid).
-2. Vertex-urile sunt transformate din Stereo 70 în WGS84 direct în LISP:
+2. Vertex-urile sunt transformate din Stereo 70 în ETRS89/WGS84 direct în LISP:
    - **inversa proiecției stereografice oblice** (EPSG metoda 9809, sferă conformă Gauss) pe
      elipsoidul Krasovsky 1940: φ₀ = 46°N, λ₀ = 25°E, k₀ = 0.99975, FE = FN = 500 000 m;
-   - geodezice → carteziene geocentrice;
-   - **Helmert 7 parametri** S-42 → WGS84 (EPSG:15994, *Coordinate Frame*):
-     tx = 2.329 m, ty = −147.042 m, tz = −92.080 m, rx = 0.309″, ry = −0.325″, rz = −0.497″, ds = 5.69 ppm;
-   - carteziene → latitudine/longitudine WGS84 (iterativ).
+   - **grila de distorsiuni NTv2** `stereo70_etrs89A.gsb` (metoda implicită, **precizie centimetrică**).
+     Este sub-grila „ANCPI+TN”, derivată din grila oficială ANCPI/TransDatRO, cu pas de 35″ × 50″ (~1 km).
+     Deplasările se interpolează biliniar, exact ca în PROJ `hgridshift`. Fișierul binar este citit
+     direct din LISP (prin `ADODB.Stream`), așa că nu e nevoie de alte programe;
+   - **Helmert 7 parametri** (rezervă) S-42 → WGS84 (EPSG:15994, *Coordinate Frame*):
+     tx = 2.329 m, ty = −147.042 m, tz = −92.080 m, rx = 0.309″, ry = −0.325″, rz = −0.497″, ds = 5.69 ppm.
+     Se folosește dacă grila lipsește sau pentru punctele din afara zonei acoperite de grilă, de exemplu
+     la graniță. Numărul punctelor transformate astfel este raportat.
 
-   Rezultatul coincide cu PROJ (EPSG:3844 → EPSG:4326) până la ~1e-13°. Precizia absolută este
-   cea a parametrilor oficiali (~3 m), suficientă pentru vizualizare. Pentru lucrări de precizie
-   folosiți TransDatRO.
+   | Metodă | Precizie |
+   |---|---|
+   | Grila NTv2 – față de cele 11 puncte de control ETRS89 publicate cu grila | 2–13 mm |
+   | Grila NTv2 din LISP – față de PROJ `hgridshift` (296 de puncte aleatoare) | < 0.01 mm |
+   | Helmert – față de grilă, pe teritoriul României | 0.3 m median, ~1.5 m (p99) |
+
+   **Instalarea grilei:** descărcați `grids/stereo70_etrs89A.gsb` din
+   [tudorbarascu/stereo70-etrs89](https://github.com/tudorbarascu/stereo70-etrs89). Grila a fost generată de
+   Daniel Urdă ([ntv2generator](https://github.com/danieluct/ntv2generator)). Copiați fișierul lângă `TopoKit.lsp`,
+   într-o cale de suport AutoCAD sau în folderul desenului. Dialogul `TOPOKIT` arată dacă grila a fost găsită.
+   Grila nu este inclusă în acest depozit, pentru că sursa ei nu precizează o licență.
+
+   Coordonatele rezultate sunt în ETRS89. Față de WGS84 actual (ITRF), ETRS89 diferă cu ~0.8 m în 2026
+   din cauza derivei plăcii eurasiatice. Diferența este sub precizia imaginilor Google Earth, care au de
+   regulă erori de 1–5 m, dar contează dacă folosiți coordonatele pentru măsurători GNSS. Pentru lucrări
+   oficiale, TransDatRO rămâne referința.
 3. Fișierul `NumeDesen_NumeParcela_AAAAMMZZ_hhmmss.kmz` se salvează în folderul desenului
    (sau în `C:\Temp` dacă desenul nu a fost salvat). Conține poligonul (contur roșu, umplere
    semitransparentă), suprafața, perimetrul și, opțional, punctele de contur numerotate.
@@ -89,6 +106,7 @@ cere confirmare înainte de export.
 
 - Fiecare comandă are propriul `*error*`: variabilele de sistem `CMDECHO`, `OSMODE`, `ATTREQ` și
   `DIMZIN` se salvează la pornire și se restabilesc la final sau la anulare/eroare.
+- Fișierul grilă se închide automat la sfârșitul exportului sau la eroare/anulare.
 - Toate modificările unei comenzi formează un singur grup **UNDO**.
 - Setările din dialog se păstrează pe toată durata sesiunii AutoCAD și sunt folosite și de comenzile directe.
 
@@ -99,5 +117,6 @@ cere confirmare înainte de export.
 - `python3 tests/run_tests.py` rulează testele offline, fără AutoCAD, printr-un interpretor AutoLISP
   minimal. Testele acoperă conversia Stereo 70 → WGS84 comparată cu PROJ (dacă `pyproj` este instalat),
   comanda `ADDVTX` pe entități simulate (linii, arce, contacte în T, suprapuneri, polilinii 3D),
-  caroiajul și validitatea XML a KML-ului. Interfața DCL și apelurile ActiveX pot fi testate
+  caroiajul, validitatea XML a KML-ului și, dacă grila este disponibilă (`TOPOKIT_GRID=/cale/stereo70_etrs89A.gsb`),
+  citirea NTv2 față de punctele de control și față de PROJ. Interfața DCL și apelurile ActiveX pot fi testate
   doar în AutoCAD.

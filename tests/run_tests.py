@@ -132,4 +132,62 @@ ring = doc.getElementsByTagName("coordinates")[0].firstChild.data.split()
 assert len(ring) == 5 and ring[0] == ring[-1]
 assert len(doc.getElementsByTagName("Point")) == 4
 print("Caroiaj si KML: corecte")
+
+# ---------------------------------------------------------------- grila NTv2
+GRID = os.environ.get("TOPOKIT_GRID") or os.path.join(os.path.dirname(__file__), "..", "stereo70_etrs89A.gsb")
+if os.path.exists(GRID):
+    data = open(GRID, "rb").read()
+    funcs.update({Sym("FINDFILE"): lambda f: GRID if f.endswith(".gsb") else None,
+                  Sym("GETVAR"): lambda v: 0})
+    env[Sym("TK:BINOPEN")] = lambda f: "stream"
+    env[Sym("TK:BINREAD")] = lambda st, pos, n: list(data[pos:pos+n])
+    env[Sym("TK:BINCLOSE")] = lambda st: None
+    assert fn("TK:GridOpen"), "grila nu s-a deschis"
+    g = env[Sym("*TK:GRID*")]
+    assert g[7] * g[8] == 356616, g
+    # 1) puncte de control (Stereo 70 -> ETRS89) publicate cu grila
+    ctrl = [((449113.51419, 397303.417679), (24.35213603753, 45.07364502616))]
+    try:
+        import shapefile
+        vp = next((c for c in (os.path.join(os.path.dirname(GRID), "verification_points"),
+                               os.path.join(os.path.dirname(GRID), "..", "verification_points"))
+                   if os.path.isdir(c)), None)
+        if vp:
+            st = shapefile.Reader(dbf=open(os.path.join(vp, "stereo.dbf"), "rb")).records()
+            wg = shapefile.Reader(dbf=open(os.path.join(vp, "wgs84.dbf"), "rb")).records()
+            ctrl = [((a[1], a[2]), (b[1], b[2])) for a, b in zip(st, wg)]
+    except ImportError:
+        pass
+    def dm(a, b): return math.hypot((a[0]-b[0])*111320*math.cos(math.radians(a[1])), (a[1]-b[1])*110574)
+    env[Sym("*TK:NHELM*")] = 0
+    errs = [dm(fn("TK:Stereo70ToWGS84", [float(e), float(n)]), ref) for (e, n), ref in ctrl]
+    assert max(errs) < 0.02 and env[Sym("*TK:NHELM*")] == 0, errs
+    print(f"Grila NTv2: {len(ctrl)} puncte de control, eroare maxima {max(errs)*1000:.1f} mm")
+    # 2) identic cu PROJ hgridshift in toata zona acoperita
+    try:
+        import pyproj, tempfile, shutil
+        d = tempfile.mkdtemp(); shutil.copy(GRID, os.path.join(d, "stereo70_etrs89A.gsb"))
+        pyproj.datadir.append_data_dir(d)
+        tp = pyproj.Transformer.from_pipeline(
+            "+proj=pipeline +step +inv +proj=sterea +lat_0=46 +lon_0=25 +k=0.99975 +x_0=500000 "
+            "+y_0=500000 +ellps=krass +step +proj=hgridshift +grids=stereo70_etrs89A.gsb "
+            "+step +proj=unitconvert +xy_in=rad +xy_out=deg")
+        random.seed(3); mx = 0; ng = 0; nh = 0
+        for _ in range(400):
+            E, N = random.uniform(150000, 880000), random.uniform(250000, 760000)
+            env[Sym("*TK:NHELM*")] = 0
+            r = fn("TK:Stereo70ToWGS84", [E, N])
+            if env[Sym("*TK:NHELM*")]:
+                nh += 1; continue          # in afara grilei -> Helmert
+            ng += 1; mx = max(mx, dm(r, tp.transform(E, N)))
+        assert mx < 1e-4, mx
+        print(f"Grila NTv2 vs PROJ hgridshift: {ng} puncte, diferenta maxima {mx*1000:.4f} mm; {nh} puncte in afara grilei -> Helmert")
+    except ImportError:
+        pass
+    # 3) in afara grilei -> Helmert (fara erori)
+    env[Sym("*TK:NHELM*")] = 0
+    fn("TK:Stereo70ToWGS84", [60000.0, 150000.0]); assert env[Sym("*TK:NHELM*")] == 1
+    fn("TK:GridClose")
+else:
+    print("Grila stereo70_etrs89A.gsb lipseste: testele NTv2 sunt omise (setati TOPOKIT_GRID)")
 print("\nToate testele au trecut.")

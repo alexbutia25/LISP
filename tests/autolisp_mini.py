@@ -271,3 +271,6 @@ def _cap(f,args):
 funcs[Sym('VL-CATCH-ALL-APPLY')]=_cap
 funcs[Sym('VL-CATCH-ALL-ERROR-P')]=lambda x: T if isinstance(x,CErr) else None
 funcs[Sym('GETVAR')]=lambda v: None
+import fnmatch as _fn
+funcs[Sym('VL-LIST->STRING')]=lambda l: ''.join(chr(c) for c in lst(l))
+funcs[Sym('WCMATCH')]=lambda s,p: T if any(_fn.fnmatchcase(s,x) for x in p.split(',')) else None

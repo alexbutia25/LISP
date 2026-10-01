@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from autolisp_mini import *
 
 LSP = os.path.join(os.path.dirname(__file__), "..", "TopoKit.lsp")
+funcs[Sym("FINDFILE")] = lambda f: None          # fara TopoKitAnexe.lsp (testat in test_anexe.py)
 load(LSP); print()
 
 def fn(name, *args): return call(Sym(name.upper()), list(args))

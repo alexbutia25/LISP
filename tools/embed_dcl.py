@@ -1,23 +1,29 @@
 #!/usr/bin/env python3
-"""Copiaza continutul TopoKit.dcl in functia TK:DclLines din TopoKit.lsp.
+"""Copiaza dialogurile .dcl in fisierele .lsp corespunzatoare:
 
-TopoKit.lsp genereaza dialogul dintr-un fisier temporar daca TopoKit.dcl nu
-este gasit. Rulati acest script dupa fiecare modificare a fisierului .dcl:
+    TopoKit.dcl      -> functia TK:DclLines  din TopoKit.lsp
+    TopoKitAnexe.dcl -> functia TKA:DclLines din TopoKitAnexe.lsp
+
+Programele genereaza dialogul dintr-un fisier temporar daca fisierul .dcl nu
+este gasit. Rulati acest script dupa fiecare modificare a unui fisier .dcl:
     python3 tools/embed_dcl.py
 """
 import pathlib
 
 root = pathlib.Path(__file__).resolve().parent.parent
-dcl = (root / "TopoKit.dcl").read_text(encoding="utf-8").splitlines()
-lsp_path = root / "TopoKit.lsp"
-lsp = lsp_path.read_text(encoding="utf-8")
-
 begin, end = ";;@@DCL-BEGIN@@", ";;@@DCL-END@@"
-i, j = lsp.index(begin) + len(begin), lsp.index(end)
+
 
 def q(line):
     return '"' + line.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
-body = "\n(defun TK:DclLines ()\n  (list\n" + "\n".join("    " + q(l) for l in dcl) + "))\n"
-lsp_path.write_text(lsp[:i] + body + lsp[j:], encoding="utf-8")
-print(f"TK:DclLines actualizat ({len(dcl)} linii).")
+
+for dcl_name, lsp_name, fn in (("TopoKit.dcl", "TopoKit.lsp", "TK:DclLines"),
+                               ("TopoKitAnexe.dcl", "TopoKitAnexe.lsp", "TKA:DclLines")):
+    dcl = (root / dcl_name).read_text(encoding="utf-8").splitlines()
+    lsp_path = root / lsp_name
+    lsp = lsp_path.read_text(encoding="utf-8")
+    i, j = lsp.index(begin) + len(begin), lsp.index(end)
+    body = f"\n(defun {fn} ()\n  (list\n" + "\n".join("    " + q(l) for l in dcl) + "))\n"
+    lsp_path.write_text(lsp[:i] + body + lsp[j:], encoding="utf-8")
+    print(f"{fn} actualizat ({len(dcl)} linii).")

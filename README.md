@@ -4,17 +4,18 @@ Suită modulară AutoLISP + DCL pentru AutoCAD (în stilul TopoLT):
 
 | Comandă | Modul |
 |---|---|
-| `TOPOKIT` / `MYTOPO` | Meniul grafic (DCL) cu cele 3 module și setările lor |
+| `TOPOKIT` / `MYTOPO` | Meniul grafic (DCL) cu cele 4 module și setările lor |
 | `ADDVTX` | Corecție topologică – vertex-uri la intersecțiile poliliniilor |
 | `EXPKMZ` | Export parcelă închisă în KMZ/KML (Stereo 70 → WGS84) + deschidere în Google Earth Pro |
 | `INSCADRU` | Format A4…A0 (portrait/landscape), cadru și indicator la scară |
+| `ANEXE` | Generatorul de anexe pentru **Ordinul ANCPI nr. 600/2023**: PAD, dezlipire/alipire, releveu și documentele Word ([detalii](#4-generator-de-anexe--ordinul-ancpi-nr-6002023-anexe)) |
 
 ## Interfața
 
 ![Meniul principal TopoKit](docs/macheta_topokit.png)
 
-*Machetă aproximativă a dialogului `TOPOKIT`. Imaginile sunt desenate de codul LISP real, prin
-simularea funcțiilor `vector_image` / `fill_image`. Fonturile și dimensiunile exacte diferă în AutoCAD.*
+*Machetă aproximativă a dialogului `TOPOKIT`, generată din `TopoKit.dcl` cu valorile și imaginile
+completate de codul LISP real (rulat în simulatorul din `tests/`). Fonturile și dimensiunile exacte diferă în AutoCAD.*
 
 - **Antet:** siglă (teodolit și rețea de triangulație) și o linie de separare colorată.
 - **Pictograme pentru fiecare modul.** Pictograma corecției topologice marchează cu verde punctele de
@@ -23,14 +24,17 @@ simularea funcțiilor `vector_image` / `fill_image`. Fonturile și dimensiunile 
   se redesenează la orice modificare, atât în meniul principal, cât și în dialogul `INSCADRU`:
 
   ![Previzualizare A4 portrait, A3 landscape cu caroiaj, A0 landscape cu caroiaj](docs/previzualizare_plansa.png)
-- **Opțiuni grupate pe module**, taste rapide (Alt+C / E / I / D) și o bară de stare cu toleranța,
+- **Opțiuni grupate pe module**, taste rapide (Alt+C / E / I / A / D) și o bară de stare cu toleranța,
   metoda de transformare (grilă sau Helmert) și planșa curentă.
 
 ## Instalare
 
-1. Copiați `TopoKit.lsp`, `TopoKit.dcl` și `stereo70_etrs89A.gsb` în același folder (de preferat unul din *Support File Search Path*).
-2. În AutoCAD: `APPLOAD` → `TopoKit.lsp` (sau adăugați-l în *Startup Suite*).
-3. Rulați `TOPOKIT`.
+1. Copiați `TopoKit.lsp`, `TopoKit.dcl`, `stereo70_etrs89A.gsb`, `TopoKitAnexe.lsp`, `TopoKitAnexe.dcl` și
+   folderul `anexe` în același folder. Adăugați folderul în *Support File Search Path* (și în *Trusted Locations*,
+   dacă AutoCAD cere confirmarea încărcării).
+2. În AutoCAD: `APPLOAD` → `TopoKit.lsp` (sau adăugați-l în *Startup Suite*). Generatorul de anexe
+   (`TopoKitAnexe.lsp`) se încarcă automat dacă este găsit în calea de suport.
+3. Rulați `TOPOKIT` sau direct `ANEXE`.
 
 Fișierul `.dcl` este opțional: dacă nu este găsit, `TopoKit.lsp` generează automat o copie
 identică într-un fișier temporar. Funcționează în AutoCAD 2013+ (Windows), inclusiv versiunile
@@ -120,6 +124,167 @@ cere confirmare înainte de export.
   - opțional, caroiajul de coordonate: cruci la 10 cm pe hârtie, la valori rotunde, cu gradații și
     etichete X/Y pe cadrul interior.
 
+## 4. Generator de anexe – Ordinul ANCPI nr. 600/2023 (`ANEXE`)
+
+Modulul `TopoKitAnexe.lsp` generează piesele desenate (în layout-uri AutoCAD) și piesele scrise
+(documente Word completate) din Regulamentul de recepție și înscriere aprobat prin Ordinul ANCPI
+nr. 600/2023.
+
+![Meniul ANEXE](docs/macheta_anexe.png)
+
+*Machetă a dialogului `ANEXE` după alegerea pachetului „Prima înregistrare”, generată din
+`TopoKitAnexe.dcl` cu listele și textele completate de codul LISP.*
+
+| Comandă | Ce face |
+|---|---|
+| `ANEXE` (`TKANEXE`) | Meniul: alegeți anexele sau un pachet, completați datele lucrării și apăsați **Genereaza** |
+| `PAD` | Anexa 16 – plan de amplasament și delimitare a imobilului |
+| `PADDEZ` | Anexa 17 – PAD cu propunerea de dezlipire, plus câte un PAD (anexa 16) pentru fiecare lot |
+| `PADALIP` | Anexa 17 pentru alipire, plus PAD-ul imobilului rezultat |
+| `RELEVEU` | Anexa 18 – releveul unui nivel: tabelul încăperilor, cartușul, numerele încăperilor |
+| `VECINI` | Vecinii, identificatorii, materializarea și observațiile pentru fiecare latură |
+| `CONSTRUCTIE` | Datele construcțiilor: cod, destinație, denumire, regim de înălțime, an, Sd, număr de UI |
+| `DATEIMOBIL` / `EXECUTANT` | Datele imobilului și ale proprietarilor / datele persoanei autorizate |
+| `ANEXEWORD` | Anexele Word 13, 14, 15, 20 și inventarul de coordonate pentru imobilul selectat |
+
+**Pachetele** din meniu selectează anexele unei documentații complete. Orice anexă se poate alege
+și separat din listă (selecție multiplă).
+
+| Pachet | Piese desenate | Documente Word |
+|---|---|---|
+| Prima înregistrare | PAD (16) | 13, 14, 15, 20, inventar de coordonate |
+| Înscriere construcție | PAD (16) | 13, 14, 15, inventar |
+| Dezlipire teren | PAD dezlipire (17) + PAD pe loturi | 13, 14, 15, inventar (și câte unul pe lot) |
+| Alipire teren | PAD alipire (17) + PAD rezultat | 13, 14, 15, inventar |
+| Prima înregistrare UI / apartamentare | Releveu (18) | 19 (foaia colectivă), 13, 15 |
+
+### Planul de amplasament și delimitare (anexa 16)
+
+1. Datele executantului (nume, autorizație, categorie) se completează o dată și rămân pe calculator.
+   Datele imobilului, ale proprietarilor și ale lucrării se salvează în desen.
+2. După **Genereaza** selectați conturul imobilului (polilinie închisă), construcțiile (Enter = fără)
+   și parcelele de folosință (Enter = o singură categorie, cea din datele imobilului). Pentru
+   construcțiile noi se cer datele lor; codurile C1, C2… se dau în ordinea selecției.
+3. În dialogul **Laturi și vecinătăți**, butonul *Detecteaza din desen* propune pentru fiecare latură
+   textul cel mai apropiat din exteriorul ei (de exemplu „nr. cad. 1234”, „str. Lalelelor”).
+   Vecinul, materializarea și observațiile se pot da mai multor laturi deodată: se aplică doar
+   câmpurile modificate.
+
+   ![Laturi și vecinătăți](docs/macheta_laturi.png)
+4. Se creează layout-ul `PAD_<nr. cadastral>`. Desenul din model space nu se modifică.
+
+Ce conține planul:
+
+- **Pagina** are setările *DWG To PDF* (ISO full bleed, 1:1, mm), deci se plotează direct în PDF.
+  Formatul și scara se aleg automat: scara cea mai mare din 1:200, 1:250, 1:500, 1:1000, 1:2000,
+  1:2500, 1:5000 la care imobilul încape pe A4 sau A3, apoi pe A2–A0. Ambele se pot fixa din
+  *Optiuni planuri*. Regulamentul cere PAD-ul în PDF, la o scară convenabilă între 1:200 și 1:5000.
+- Un **viewport blocat**, la scara exactă, arată desenul din model (imobilul și vecinătatea). Peste el,
+  în paper space, pe straturile `PAD_*`, se desenează:
+  - conturul și punctele numerotate: sens orar, din punctul cel mai apropiat de colțul N-V, sau
+    ordinea poliliniei; primul număr se poate alege;
+  - lungimile laturilor (2 zecimale, cu virgulă sau punct);
+  - vecinii. O etichetă nu se mai scrie dacă același text există deja în model lângă latură;
+  - construcțiile cu codurile lor și parcelele de folosință;
+  - săgeata nordului, coordonatele N= / E= ale colțurilor și, opțional, inventarul de coordonate.
+- **Tabelele:**
+  - antetul (număr cadastral, suprafață măsurată, adresă, CF, UAT);
+  - tabelul A (teren). Dacă *Mentiuni teren* este gol, mențiunile se compun din materializarea
+    laturilor (de ex. „Imobil împrejmuit cu gard de plasă.”);
+  - tabelul B (construcții). Coloana *Mențiuni* conține destinația, regimul de înălțime, anul, Sc și Sd;
+  - suprafața măsurată și cea din act;
+  - semnăturile *Executant* (cu autorizația) și *Inspector*.
+
+  Suprafețele sunt în mp întregi. Suprafețele parcelelor și ale loturilor se rotunjesc astfel încât
+  suma lor să fie exact suprafața imobilului.
+
+![PAD generat (anexa 16)](docs/anexa16_pad.png)
+
+### Dezlipire și alipire (anexa 17)
+
+- `PADDEZ`: selectați conturul imobilului, apoi loturile pe rând (Enter la final), construcțiile și
+  parcelele. Punctele noi de pe conturul imobilului (capetele limitelor dintre loturi) se intercalează
+  în numerotare. Numerotarea este comună tuturor planurilor, deci un punct are același număr pe
+  planul de dezlipire și pe PAD-ul fiecărui lot.
+- Tabelul *Situația actuală / Situația viitoare* conține numărul cadastral, suprafața, categoria de
+  folosință și descrierea („Lot 1 – Curți construcții”).
+- Pentru fiecare lot se creează PAD-ul „… – lot N” (anexa 16), fără număr cadastral și CF. Laturile
+  dintre loturi au ca vecin „Lot N”, iar laturile de pe contur moștenesc vecinul imobilului.
+- `PADALIP`: imobilele inițiale (cu numerele lor cadastrale), apoi conturul imobilului rezultat.
+
+<p><img src="docs/anexa17_dezlipire.png" width="49%" alt="Anexa 17 - propunere de dezlipire">
+<img src="docs/anexa16_lot1.png" width="44%" alt="Anexa 16 - lot 1"></p>
+
+### Releveul (anexa 18) și foaia colectivă (anexa 19)
+
+- `RELEVEU` cere trei lucruri:
+  - încăperile: polilinii închise, cu denumirea scrisă în interior;
+  - contururile unităților individuale: denumirea (de ex. „Apartament 1”) scrisă în contur, în afara
+    încăperilor;
+  - numele nivelului.
+
+  Balcoanele, logiile, terasele, casa scării, podul și prispa nu intră în suprafața utilă. Layout-ul
+  `RELEVEU_<nivel>` (A3–A1, 1:50–1:200) are:
+  - tabelul încăperilor, cu suprafața utilă și cea totală pentru fiecare UI;
+  - antetul (număr cadastral, adresă, CF colectivă, UAT);
+  - semnăturile;
+  - numerele încăperilor, încercuite.
+- UI-urile se memorează în desen, pentru foaia colectivă (anexa 19). Pentru fiecare UI se
+  completează:
+  - suprafața utilă;
+  - codul (`<nr. cad.>-C1-U<n>`);
+  - Cpc = Suap/Stuap, de forma `671/20401`;
+  - Cpt = Suap/Stuap × St, de forma `2819/258200`. Cotele se rotunjesc astfel încât suma să fie
+    egală cu terenul aferent;
+  - observațiile, din denumirile încăperilor.
+
+  Dacă terenul este comun mai multor clădiri, completați *Teren aferent clădirii*.
+
+![Releveu (anexa 18)](docs/anexa18_releveu.png)
+
+### Documentele Word
+
+- Șabloanele din `anexe/` sunt generate din textul oficial al ordinului. Sunt 31 de anexe (1–35,
+  fără piesele desenate 16, 17, 18 și 31) plus inventarul de coordonate. Spațiile punctate au devenit
+  câmpuri: cele cu date se completează automat, iar celelalte își păstrează punctele, pentru
+  completare de mână.
+- Completarea folosește scriptul `anexe/TopoKitDocx.ps1`, cu Windows PowerShell 5.1 (inclus în
+  Windows 10/11); Word nu este necesar. Pentru conversia opțională în PDF este nevoie de
+  Microsoft Word sau de LibreOffice.
+- Rezultatul se salvează în folderul `Anexe_<nr. cadastral>` de lângă desen (sau în `C:\Temp`).
+- Ce se completează automat:
+  - **cererea de recepție și înscriere (13)**, cu bifele după tipul lucrării și modul de comunicare;
+  - **declarația (14)**;
+  - **memoriul tehnic (15)**: adresa, scopul, documentarea, operațiunile (texte implicite, care se
+    pot rescrie în dialog), construcțiile, inventarul de coordonate cu laturile, suprafața și perimetrul;
+  - **PV de vecinătate (20)**: proprietarii (cu CNP-ul pe căsuțe), vecinii, tabelul laturilor cu
+    lungimea, materializarea și vecinul, apoi câte o linie de semnătură pentru fiecare vecin;
+  - **foaia colectivă (19)** și **inventarul de coordonate**;
+  - **celelalte formulare** (1, 5–8, 10, 12, 22, 23, 26–30, 34), cu datele solicitantului, ale
+    imobilului și ale persoanei autorizate, acolo unde formularul le cere. Rândurile tabelului
+    parcelar (32) rămân de completat.
+- Formularele emise de OCPI/CNC (anexele 2, 3, 4, 9, 11, 21, 24, 25, 33, 35) sunt incluse ca
+  șabloane, fără completare automată.
+
+### Unde se salvează datele
+
+| Unde | Ce |
+|---|---|
+| Desen (dicționarul `TOPOKIT_ANEXE`) | datele imobilului, proprietarilor și lucrării; selecțiile, pentru regenerare fără reselectare (*Folositi imobilul selectat anterior?*); UI-urile releveelor |
+| Entitățile din desen (ldata) | datele construcțiilor, ale laturilor (vecini, materializare) și categoriile parcelelor |
+| Calculator (registrul AutoCAD) | datele executantului |
+
+### Limitări
+
+- Textul folosit este forma consolidată a ordinului valabilă la 24.11.2025 (fișierul furnizat).
+  Modificările ulterioare nu sunt incluse.
+- În textul ordinului, anexele 16 și 17 apar doar ca facsimil, fără conținut. Machetele PAD reproduc
+  exemplele primite (PAD, propunere de dezlipire, PAD pe loturi, releveu, foaie colectivă).
+- Conturul de pe plan unește vârfurile poliliniei. Laturile în arc se desenează și se cotează ca
+  segmente; suprafața include însă arcele.
+- Generatorul a fost testat într-un simulator AutoCAD (vezi *Dezvoltare*), nu și în AutoCAD.
+  Verificați primul plan generat: setările de pagină *DWG To PDF* și viewport-ul.
+
 ## Detalii tehnice
 
 - Fiecare comandă are propriul `*error*`: variabilele de sistem `CMDECHO`, `OSMODE`, `ATTREQ` și
@@ -130,10 +295,21 @@ cere confirmare înainte de export.
 
 ## Dezvoltare
 
-- După modificarea fișierului `TopoKit.dcl`, rulați `python3 tools/embed_dcl.py` ca să actualizați copia
-  inclusă în `TopoKit.lsp`.
+- După modificarea unui fișier `.dcl`, rulați `python3 tools/embed_dcl.py` ca să actualizați copiile
+  incluse în `TopoKit.lsp` și `TopoKitAnexe.lsp`.
 - `python3 tests/run_tests.py` rulează testele offline, fără AutoCAD, printr-un interpretor AutoLISP
   minimal. Testele acoperă conversia Stereo 70 → WGS84 comparată cu PROJ (dacă `pyproj` este instalat),
   comanda `ADDVTX` pe entități simulate (linii, arce, contacte în T, suprapuneri, polilinii 3D),
-  caroiajul, validitatea XML a KML-ului și citirea grilei NTv2 față de punctele de control și față de PROJ. Interfața DCL și apelurile ActiveX pot fi testate
-  doar în AutoCAD.
+  caroiajul, validitatea XML a KML-ului și citirea grilei NTv2 față de punctele de control și față de PROJ.
+- `python3 tests/test_anexe.py [--render DIR] [--word]` testează generatorul de anexe într-un simulator
+  AutoCAD (`tests/acad_sim.py`). Simulatorul acoperă baza de date de entități, layout-urile,
+  viewport-urile (`MVIEW`/`ZOOM`), ldata și dialogurile DCL: fișierele `.dcl` sunt analizate sintactic,
+  iar fiecare cheie folosită de program trebuie să existe. Testele rulează pe un desen de test
+  `PAD`, `PADDEZ`, `PADALIP`, `RELEVEU`, foaia colectivă, meniul `ANEXE` cu dialogurile de date,
+  butonul din `TOPOKIT` și fișierul JSON pentru Word.
+  - `--render DIR` salvează layout-urile generate și machetele dialogurilor ca imagini PNG.
+  - `--word` completează șabloanele Word cu PowerShell (`pwsh`, dacă este instalat).
+- Șabloanele Word se regenerează din textul ordinului: `tools/extract_anexe.py` extrage anexele din
+  HTML-ul ordinului în `tools/ordin600_anexe.json`, apoi `tools/build_anexe.py` scrie
+  `anexe/Anexa_NN.docx` și `anexe/catalog.json` (câmpurile fiecărei anexe).
+- Apelurile ActiveX reale (plotare, setările de pagină) pot fi verificate doar în AutoCAD.

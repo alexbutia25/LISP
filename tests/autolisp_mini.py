@@ -49,7 +49,9 @@ def parse(toks):
             while toks[pos[0]]!=')':
                 if toks[pos[0]]=='.' :
                     pos[0]+=1; d=rd(); assert toks[pos[0]]==')'; pos[0]+=1
-                    assert len(l)==1; return DP(l[0],d)
+                    assert l; r=DP(l[-1],d)
+                    for x in reversed(l[:-1]): r=DP(x,r)   # lista improprie (a b . c)
+                    return r
                 l.append(rd())
             pos[0]+=1; return l if l else None
         if t==')': raise SyntaxError('unexpected )')
@@ -81,6 +83,10 @@ def call(f,args):
             r=None
             for x in f.body: r=ev(x)
             return r
+        except Exception as ex:
+            if not hasattr(ex,'lisp_trace'): ex.lisp_trace=[]
+            ex.lisp_trace.append(str(f.name))
+            raise
         finally:
             for s in syms: env[s]=old[s]
     raise TypeError(f"not callable {f!r}")
@@ -275,3 +281,43 @@ import fnmatch as _fn
 funcs[Sym('VL-LIST->STRING')]=lambda l: ''.join(chr(c) for c in lst(l))
 funcs[Sym('WCMATCH')]=lambda s,p: T if any(_fn.fnmatchcase(s,x) for x in p.split(',')) else None
 funcs[Sym('ATOI')]=lambda s: int(float(s or 0))
+
+# ---------------------------------------------------------------- extensii (TopoKitAnexe.lsp)
+funcs[Sym('CDDDR')] = lambda x: cdr(cdr(cdr(x)))
+def _itoa(a):
+    if not isinstance(a, int): raise TypeError(f"itoa: bad argument type: fixnump: {a!r}")
+    return str(a)
+funcs[Sym('ITOA')] = _itoa
+def _nth(n, l):
+    if not isinstance(n, int) or n < 0: raise TypeError(f"nth: bad argument {n!r}")
+    l = lst(l); return l[n] if n < len(l) else None
+funcs[Sym('NTH')] = _nth
+def _atof(s):
+    m = re.match(r'\s*[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?', s or '')
+    return float(m.group(0)) if m else 0.0
+funcs[Sym('ATOF')] = _atof
+def _atoi(s):
+    m = re.match(r'\s*[-+]?\d+', s or '')
+    return int(m.group(0)) if m else 0
+funcs[Sym('ATOI')] = _atoi
+funcs[Sym('READ')] = lambda s: parse(tokenize(s))[0] if s and s.strip() else None
+funcs[Sym('VL-REMOVE')] = lambda x, l: [e for e in lst(l) if e != x] or None
+funcs[Sym('VL-STRING->LIST')] = lambda s: [ord(c) for c in s] or None
+funcs[Sym('BOUNDP')] = lambda s: T if env.get(s) is not None else None
+def prin1(x):
+    if x is None: return 'nil'
+    if isinstance(x, Sym): return str(x)
+    if isinstance(x, str): return '"' + x.replace('\\', '\\\\').replace('"', '\\"') + '"'
+    if isinstance(x, bool): return 'T'
+    if isinstance(x, int): return str(x)
+    if isinstance(x, float): return repr(x)
+    if isinstance(x, DP): return '(' + prin1(x.car) + ' . ' + prin1(x.cdr) + ')'
+    if isinstance(x, list): return '(' + ' '.join(prin1(e) for e in x) + ')'
+    return str(x)
+funcs[Sym('VL-PRIN1-TO-STRING')] = prin1
+funcs[Sym('CHR')] = lambda n: chr(n)
+funcs[Sym('VL-POSITION')] = lambda x, l: next((i for i, e in enumerate(lst(l)) if e == x), None)
+def _distof(s, mode=2):
+    try: return float(s.strip())
+    except (ValueError, AttributeError): return None
+funcs[Sym('DISTOF')] = _distof

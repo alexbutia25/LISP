@@ -4,6 +4,8 @@
 //    1. Corectie topologica (vertex-uri la intersectii de polilinii)
 //    2. Export parcela inchisa in KMZ/KML (Stereo 70 -> ETRS89/WGS84)
 //    3. Inserare format, cadru si indicator la scara (A4 - A0)
+//    4. Generatorul de anexe pentru Ordinul ANCPI nr. 600/2023
+//       (TopoKitAnexe.lsp: PAD, dezlipire/alipire, releveu, documente Word)
 //
 //  Imaginile (sigla, pictogramele si previzualizarea plansei) sunt desenate
 //  din TopoKit.lsp cu vector_image / fill_image.
@@ -124,6 +126,21 @@ topokit_main : dialog {
       : spacer { height = 0.3; }
       : tk_action { key = "bt_cadru"; label = "Inserare Format si Cadru"; mnemonic = "I"; }
       : text { label = "Comanda directa: INSCADRU"; alignment = centered; }
+    }
+  }
+
+  // ---------------- 4. Anexe Ordinul ANCPI 600/2023 ----------------
+  : spacer { height = 0.3; }
+  : boxed_row {
+    label = " 4   Anexe - Ordinul ANCPI nr. 600/2023 ";
+    : paragraph {
+      : text_part { label = "Planuri in layout-uri: PAD (anexa 16), dezlipire / alipire (anexa 17), releveu (anexa 18)."; }
+      : text_part { label = "Documente Word completate: cereri, declaratie, memoriu tehnic, PV de vecinatate, foaia colectiva."; }
+      : text_part { key = "tx_anexe"; label = ""; width = 90; }
+    }
+    : column {
+      : tk_action { key = "bt_anexe"; label = "Generator anexe..."; mnemonic = "A"; }
+      : text { label = "Comanda directa: ANEXE"; alignment = centered; }
     }
   }
 

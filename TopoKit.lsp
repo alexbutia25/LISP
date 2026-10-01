@@ -1318,6 +1318,8 @@
     "//    1. Corectie topologica (vertex-uri la intersectii de polilinii)"
     "//    2. Export parcela inchisa in KMZ/KML (Stereo 70 -> ETRS89/WGS84)"
     "//    3. Inserare format, cadru si indicator la scara (A4 - A0)"
+    "//    4. Generatorul de anexe pentru Ordinul ANCPI nr. 600/2023"
+    "//       (TopoKitAnexe.lsp: PAD, dezlipire/alipire, releveu, documente Word)"
     "//"
     "//  Imaginile (sigla, pictogramele si previzualizarea plansei) sunt desenate"
     "//  din TopoKit.lsp cu vector_image / fill_image."
@@ -1438,6 +1440,21 @@
     "      : spacer { height = 0.3; }"
     "      : tk_action { key = \"bt_cadru\"; label = \"Inserare Format si Cadru\"; mnemonic = \"I\"; }"
     "      : text { label = \"Comanda directa: INSCADRU\"; alignment = centered; }"
+    "    }"
+    "  }"
+    ""
+    "  // ---------------- 4. Anexe Ordinul ANCPI 600/2023 ----------------"
+    "  : spacer { height = 0.3; }"
+    "  : boxed_row {"
+    "    label = \" 4   Anexe - Ordinul ANCPI nr. 600/2023 \";"
+    "    : paragraph {"
+    "      : text_part { label = \"Planuri in layout-uri: PAD (anexa 16), dezlipire / alipire (anexa 17), releveu (anexa 18).\"; }"
+    "      : text_part { label = \"Documente Word completate: cereri, declaratie, memoriu tehnic, PV de vecinatate, foaia colectiva.\"; }"
+    "      : text_part { key = \"tx_anexe\"; label = \"\"; width = 90; }"
+    "    }"
+    "    : column {"
+    "      : tk_action { key = \"bt_anexe\"; label = \"Generator anexe...\"; mnemonic = \"A\"; }"
+    "      : text { label = \"Comanda directa: ANEXE\"; alignment = centered; }"
     "    }"
     "  }"
     ""
@@ -1829,6 +1846,9 @@
      (action_tile "bt_addvtx" "(if (TK:MainSave) (done_dialog 1))")
      (action_tile "bt_kmz"    "(if (TK:MainSave) (done_dialog 2))")
      (action_tile "bt_cadru"  "(if (TK:MainSave) (done_dialog 3))")
+     (action_tile "bt_anexe"  "(if (TK:MainSave) (done_dialog 4))")
+     (set_tile "tx_anexe" (if TKA:Generate "Generatorul de anexe este incarcat (TopoKitAnexe.lsp)."
+                            "TopoKitAnexe.lsp nu este incarcat (APPLOAD sau calea de suport)."))
      (action_tile "bt_despre" "(TK:About)")
      (action_tile "cancel"    "(done_dialog 0)")
      (setq res (start_dialog) *TK:DLGMAIN* nil)
@@ -1838,7 +1858,12 @@
      (cond
        ((= res 1) (c:ADDVTX))
        ((= res 2) (c:EXPKMZ))
-       ((= res 3) (TK:InsCadru nil)))
+       ((= res 3) (TK:InsCadru nil))
+       ((= res 4) (if TKA:Generate
+                    (c:ANEXE)
+                    (alert (strcat "Generatorul de anexe (TopoKitAnexe.lsp) nu este incarcat.\n"
+                                   "Copiati TopoKitAnexe.lsp, TopoKitAnexe.dcl si folderul \"anexe\" langa TopoKit.lsp,\n"
+                                   "in calea de suport AutoCAD, sau incarcati-l cu APPLOAD.")))))
      (setq *TK:DLGRUN* nil)))
   (princ))
 
@@ -1846,4 +1871,9 @@
 (defun c:MYTOPO () (c:TOPOKIT))
 
 (princ "\nTopoKit incarcat. Comenzi: TOPOKIT (MYTOPO), ADDVTX, EXPKMZ, INSCADRU.")
+
+;; Generatorul de anexe (Ordinul ANCPI 600/2023) se încarcă automat dacă
+;; TopoKitAnexe.lsp se află în calea de suport (sau lângă TopoKit.lsp)
+(if (and (not *TKA:LOADING*) (not TKA:Generate) (findfile "TopoKitAnexe.lsp"))
+  (load (findfile "TopoKitAnexe.lsp")))
 (princ)

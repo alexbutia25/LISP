@@ -36,9 +36,11 @@ tka_main : dialog {
         : tka_btn { key = "bt_lucrare"; label = "Lucrare si memoriu tehnic..."; }
         : tka_btn { key = "bt_exec";    label = "Executant (persoana autorizata)..."; }
         : tka_btn { key = "bt_opt";     label = "Optiuni planuri (format, scara)..."; }
+        : tka_btn { key = "bt_verif";   label = "Verificare date si geometrie..."; }
       }
       : boxed_column {
         label = "Rezultat";
+        : toggle { key = "tg_pdfplan"; label = "Ploteaza planurile in PDF"; }
         : toggle { key = "tg_pdf";  label = "Converteste anexele Word in PDF"; }
         : toggle { key = "tg_open"; label = "Deschide folderul cu anexele"; }
       }
@@ -159,21 +161,35 @@ tka_lucrare : dialog {
         : edit_box { key = "PV_EXEMPLARE"; label = "PV vecinatate - exemplare:"; edit_width = 4; }
         : edit_box { key = "PV_PAGINI"; label = "pagini:"; edit_width = 4; }
       }
-      : toggle { key = "POZ_INCERTA"; label = "Pozitionare incerta (declaratia anexa 14)"; }
       : tka_ed { key = "NRCF_COLECTIVA"; label = "CF colectiva (UI):"; }
       : tka_ed { key = "ST_AFERENT"; label = "Teren aferent cladirii (mp):"; }
       : tka_ed { key = "PARTI_COMUNE"; label = "Parti comune (UI):"; edit_width = 46; }
     }
-    : boxed_column {
-      label = "Memoriu tehnic (gol = text generat automat)";
-      : edit_box { key = "METODA";      label = "Metoda:";     edit_width = 60; edit_limit = 400; }
-      : edit_box { key = "APARATURA";   label = "Aparatura:";  edit_width = 60; edit_limit = 400; }
-      : edit_box { key = "SPRIJIN";     label = "Puncte de sprijin:"; edit_width = 60; edit_limit = 400; }
-      : edit_box { key = "SCOP";        label = "4. Scop:";    edit_width = 60; edit_limit = 2000; }
-      : edit_box { key = "DOCUMENTARE"; label = "5. Documentare:"; edit_width = 60; edit_limit = 2000; }
-      : edit_box { key = "OPERATIUNI";  label = "6. Operatiuni:";  edit_width = 60; edit_limit = 2000; }
-      spacer_1;
-      : text { label = "Textele lungi se pot ajusta si in documentul Word generat."; }
+    : column {
+      : boxed_column {
+        label = "Declaratia proprietarului (anexa 14)";
+        : toggle { key = "POZ_INCERTA"; label = "Pozitionare incerta a imobilului"; }
+        : toggle { key = "LITIGIU"; label = "Imobilul se afla in litigiu:"; }
+        : row {
+          : edit_box { key = "LIT_ID"; label = "ID imobil:"; edit_width = 10; }
+          : edit_box { key = "LIT_DOSAR"; label = "Nr. dosar:"; edit_width = 14; }
+        }
+        : row {
+          : edit_box { key = "LIT_INSTANTA"; label = "Instanta:"; edit_width = 18; }
+          : edit_box { key = "LIT_OBIECT"; label = "Obiect:"; edit_width = 16; }
+        }
+      }
+      : boxed_column {
+        label = "Memoriu tehnic (gol = text generat automat)";
+        : edit_box { key = "METODA";      label = "Metoda:";     edit_width = 60; edit_limit = 400; }
+        : edit_box { key = "APARATURA";   label = "Aparatura:";  edit_width = 60; edit_limit = 400; }
+        : edit_box { key = "SPRIJIN";     label = "Puncte de sprijin:"; edit_width = 60; edit_limit = 400; }
+        : edit_box { key = "SCOP";        label = "4. Scop:";    edit_width = 60; edit_limit = 2000; }
+        : edit_box { key = "DOCUMENTARE"; label = "5. Documentare:"; edit_width = 60; edit_limit = 2000; }
+        : edit_box { key = "OPERATIUNI";  label = "6. Operatiuni:";  edit_width = 60; edit_limit = 2000; }
+        spacer_1;
+        : text { label = "Textele lungi se pot ajusta si in documentul Word generat."; }
+      }
     }
   }
   ok_cancel;
@@ -234,7 +250,9 @@ tka_opt : dialog {
       key = "rc_mod";
       : radio_button { key = "rb_nv";  label = "Sens orar, din punctul cel mai de nord-vest"; }
       : radio_button { key = "rb_pol"; label = "Ordinea vertex-urilor poliliniei"; }
+      : radio_button { key = "rb_des"; label = "Numerele punctelor din desen (texte / blocuri de punct)"; }
     }
+    : edit_box { key = "eb_nrdist"; label = "Distanta maxima numar - varf (m):"; edit_width = 6; }
     : radio_row {
       key = "rr_sep";
       : radio_button { key = "rb_virg"; label = "Zecimale cu virgula (12,34)"; }
@@ -296,4 +314,20 @@ tka_constr : dialog {
   }
   ok_cancel;
   errtile;
+}
+
+// ---------------------------------------------------------------------------
+//  Raportul verificarii (date lucrare, geometrie, loturi)
+// ---------------------------------------------------------------------------
+tka_raport : dialog {
+  label = "TopoKit - Verificarea datelor si a geometriei";
+  : text { key = "tx_titlu"; label = ""; width = 100; }
+  : list_box { key = "lb_rap"; width = 112; height = 14; }
+  : text { label = "E = eroare (planul ar fi gresit)   A = atentionare   I = informatie"; }
+  : row {
+    fixed_width = true;
+    alignment = centered;
+    : button { key = "accept"; label = "Continua"; is_default = true; width = 16; }
+    : button { key = "cancel"; label = "Renunta"; is_cancel = true; width = 16; }
+  }
 }

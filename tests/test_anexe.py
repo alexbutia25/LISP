@@ -63,7 +63,7 @@ c2 = acad.add_lw([(545010, 458032), (545016, 458032), (545016, 458036), (545010,
 for p, t in [((545012, 458044.5), "nr. cad. 101234"), ((545031.0, 458030.0), "str. Lalelelor"),
              ((545029.5, 458009.0), "str. Lalelelor"), ((545012, 457995.8), "nr. cad. 101240"),
              ((544994.0, 458010.0), "Popescu Ion"), ((544994.8, 458032.0), "nr. cad. 101250"),
-             ((545000.5, 458041.5), "1"), ((545008, 458020), "CC")]:
+             ((545000.5, 458041.5), "1"), ((545008, 458020), "CC"), ((545014.0, 457998.2), "C9")]:
     acad.add_text(p, t, 0.35, "TEXTE")
 
 # datele lucrarii si ale executantului
@@ -88,6 +88,11 @@ ring = fn("TKA:Clockwise", [list(p) for p in [P[3], P[2], P[1], P[0], P[5], P[4]
 assert ring[0] == list(P[0]) and fn("TKA:SArea", ring) < 0, ring
 dens = fn("TKA:Densify", ring, [list(A), list(B)])
 assert len(dens) == 8 and dens[1] == list(P[1]) and dens[2] == list(B) and dens[7] == list(A), dens
+lung = "loc. Brașov, str. General Traian Moșoiu nr. 112, bl. A4, sc. B, et. 3, ap. 17, tarla 45, parcela 1234/5/6, jud. Brașov"
+assert fn("TKA:AddrRowH", "loc. Brașov") == 5.2 and fn("TKA:AddrRowH", lung) > 8.4 and fn("TKA:HeaderH", lung) > 49.0
+env[Sym("*TKA:HH*")] = 49.0
+ch = fn("TKA:ChooseSheet", [0.0, 0.0, 20.0, 20.0], 260.0)            # tabele foarte inalte
+assert fn("TKA:SG", ch[0], "CODE") not in ("A4P", "A3L"), ch[0]       # foile fara loc pentru tabele
 print("Functii de baza: corecte")
 
 # ---------------------------------------------------------------- PAD (anexa 16)
@@ -233,6 +238,7 @@ assert F["E_NUMEC"] == "ing. Buția Mihai Alexandru" and F["E_AUT"] == "seria RO
 assert F["CHK_PRIMA"] == "[X]" and F["CHK_EMAIL"] == "[X]" and F["NRCF_NRCAD"] == "123456 / 123456", F
 assert F["ADRESA"] == "loc. Brașov, str. Lalelelor nr. 12, jud. Brașov", F["ADRESA"]
 assert F["TOT_CPT"] == "104500/104500" and F["C1_SC_MP"] == "120 mp", F
+assert "CHK_D4" not in F and F["CHK_D5"] == "[X]" and F["LIT_TEXT"] == "imobilul nu se află în litigiu.", F
 assert "C1 - Casă de locuit, regim de înălțime P+1E" in F["CONSTR_TEXT"], F["CONSTR_TEXT"]
 assert len(TB["PCT"]) == 6 and TB["PCT"][0]["NR"] == "1" and TB["PCT"][0]["X"] == "458040,000", TB["PCT"][0]
 assert [r["LATURA"] for r in TB["LAT"]] == ["1-2", "2-3-4", "4-5", "5-6", "6-1"], TB["LAT"]
@@ -284,6 +290,7 @@ assert lay2.upper() in acad.layouts and "Scara 1:500" in texts(lay2), texts(lay2
 assert "Inventar de coordonate (Stereo 70)" in texts(lay2)
 data = json.load(open(job, encoding="utf-8"))
 assert data["fields"]["P2_NUMEC"] == "Ionescu Andrei" and data["fields"]["CHK_POSTA"] == "[X]"
+assert data["fields"]["CHK_D4"] == "[X]"                         # coproprietar -> informarea celorlalti proprietari
 assert data["fields"]["E_NUMEC_AUT"] == "ing. Buția Mihai Alexandru, autorizat ANCPI seria RO-BV-F nr. 0123, Topo Expert SRL"
 assert len(data["documents"]) == 5 and data["pdf"] is False
 assert sum("explorer.exe" in r for r in acad.runs) == 0     # folderul se deschide doar daca scriptul a creat fisiere
@@ -313,6 +320,79 @@ fn("c:RELEVEU")
 uis = acad.ldata[("TOPOKIT_ANEXE", "UI")]
 assert [(u[0], u[1], u[2]) for u in uis][-1] == ("mansarda", "Apartament 1", 64.0), uis
 print("Parcele de folosinta (A, CC) si releveu cu o singura UI: corecte")
+
+# ---------------------------------------------------------------- verificarea: oprirea generarii la erori
+bow = acad.add_lw([(545100, 458000), (545130, 458030), (545130, 458000), (545100, 458030)], layer="IMOBIL")
+n_lay = set(acad.layouts)
+acad.inputs = [("entsel", bow), ("ssget", None), ("ssget", None)]
+acad.dcl.scripts = {"tka_laturi": [[("click", "accept")]], "tka_raport": [[("click", "cancel")]]}
+fn("c:PAD")
+rap = acad.dcl.snapshots["tka_raport"]["lists"]["lb_rap"]
+assert "E: Conturul imobilului se autointersecteaza." in rap, rap
+SNAP["tka_raport"] = acad.dcl.snapshots["tka_raport"]
+assert set(acad.layouts) == n_lay and env[Sym("*TKA:STOP*")], "planul nu trebuia generat"
+acad.envs["TopoKit_E_NUME"] = ""
+acad.dcl.scripts = {"tka_raport": [[("click", "accept")]]}
+fn("c:VERIFICARE")
+rap = acad.dcl.snapshots["tka_raport"]
+assert "A: Lipsesc datele executantului (persoana autorizata)." in rap["lists"]["lb_rap"], rap["lists"]
+assert rap["tiles"]["accept"] == "OK" and "Continuati" not in rap["tiles"]["tx_titlu"], rap["tiles"]
+acad.envs["TopoKit_E_NUME"] = "Buția"
+# arce: suprafata analitica din varfuri + atentionare
+arc = acad.add_lw([(545200, 458000), (545220, 458000), (545220, 458020), (545200, 458020)], layer="IMOBIL", bulges={0: 0.2})
+assert fn("TKA:HasArcs", arc) and abs(fn("TKA:Area", arc) - 400.0) < 1e-6
+msgs = fn("TKA:Verify", fn("TKA:Imobil", arc, None, None, None, None), None, None)
+assert any(m.startswith("A: Conturul are laturi ^in arc") for m in msgs), msgs
+# loturi care nu acopera imobilul / se suprapun
+lotx = acad.add_lw([P[0], P[1], B, (545010.0, 458010.0)], layer="LOTURI")
+r_par = fn("TKA:Imobil", parcel, None, None, None, None)
+msgs = fn("TKA:Verify", r_par, [fn("TKA:Imobil", l, None, None, None, None) for l in (lotx, lot2)], "DEZ")
+assert any(m.startswith("E: Loturile ^insumeaz`a") for m in msgs) and any("se suprapun" in m for m in msgs), msgs
+print("Verificare: autointersectie (generare oprita), date lipsa, arce, loturi suprapuse")
+
+# ---------------------------------------------------------------- planurile in PDF
+env[Sym("*TKA:PDFPLAN*")] = "1"
+acad.vars["BACKGROUNDPLOT"] = 2
+acad.inputs = [("entsel", parcel), ("ssget", [c1, c2]), ("ssget", None)]
+acad.dcl.scripts = {"tka_laturi": [[("click", "accept")]]}
+fn("c:PAD")
+assert len(acad.plots) == 1 and os.path.exists(acad.plots[0][1]) and acad.plots[0][1].endswith(".pdf"), acad.plots
+assert acad.vars["BACKGROUNDPLOT"] == 2, "BACKGROUNDPLOT nu a fost restabilit"
+env[Sym("*TKA:PDFPLAN*")] = "0"
+acad.plots.clear()
+fn("c:PLANEPDF")
+gen = [l for l in fn("LAYOUTLIST") if l.upper().startswith(("PAD_", "RELEVEU_"))]
+assert sorted(x[0] for x in acad.plots) == sorted(gen) and len(gen) >= 10, (acad.plots, gen)
+print(f"Planuri PDF: dupa generare si comanda PLANEPDF ({len(gen)} layout-uri)")
+
+# ---------------------------------------------------------------- numerotarea din desen (texte / blocuri de punct)
+for k, (x, y) in enumerate([P[0], P[1], P[2], P[3], P[4]]):
+    if k == 2:
+        acad.add_insert((x, y), "PUNCT", [("COTA", "512.30"), ("NR", "129")])     # bloc de punct
+    else:
+        acad.add_text((x + 0.6, y + 0.6), str([127, 128, 0, 130, 131][k]), 0.3, "PUNCTE")
+env[Sym("*TKA:NRMOD*")] = "DES"
+tabd = fn("TKA:Numbering", [fn("TKA:Clockwise", fn("TKA:PolyPts", parcel))], 1)
+nums = [fn("TKA:PtNo", list(p), tabd) for p in P]
+assert nums == [127, 128, 129, 130, 131, 132], nums                # P6 fara numar -> 132 (urmatorul)
+env[Sym("*TKA:NRMOD*")] = "NV"
+print("Numerotarea din desen: 127-131 din texte si bloc, punctul fara numar -> 132")
+
+# ---------------------------------------------------------------- MVIEW esuat: mesaj si transformarea calculata
+orig_cmd = M.funcs[Sym("COMMAND")]
+M.funcs[Sym("COMMAND")] = lambda *a: None if a and isinstance(a[0], str) and "MVIEW" in a[0].upper() else orig_cmd(*a)
+fn("TK:Start"); fn("TKA:NewLayout", "TEST_MVIEW", fn("TKA:Sheet", "A3L", 100.0))
+assert fn("TKA:Viewport", [22.0, 7.0, 230.0, 290.0], [545000.0, 458000.0], 200) is None
+assert env[Sym("*TKA:VPT*")] == [545000.0, 458000.0, 126.0, 148.5, 5.0] and "creat (MVIEW)" in acad.out[-1]
+M.funcs[Sym("COMMAND")] = orig_cmd; fn("TK:Stop")
+print("MVIEW esuat: atentionare si transformarea calculata (adnotarile raman corecte)")
+
+# ---------------------------------------------------------------- releveu reluat: UI raman in ordine
+acad.inputs = [("ssget", rooms), ("ssget", [ui1, ui2]), ("str", "etaj 1")]
+fn("c:RELEVEU")
+order = [u[0] for u in acad.ldata[("TOPOKIT_ANEXE", "UI")]]
+assert order[:2] == ["etaj 1", "etaj 1"] and order.count("etaj 1") == 2, order
+print("Releveu reluat pentru un nivel existent: ordinea UI se pastreaza")
 
 # ---------------------------------------------------------------- dialogul generat din TKA:DclLines
 lines = fn("TKA:DclLines")

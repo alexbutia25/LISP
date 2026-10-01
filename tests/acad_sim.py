@@ -257,8 +257,9 @@ class Acad:
         s.tables = {"LAYER": {"0": [DP(0, "LAYER"), DP(2, "0"), DP(70, 0), DP(62, 7)]}, "STYLE": {}}
         s.vars = {"CTAB": "Model", "LISPSYS": 1, "SYSCODEPAGE": "ANSI_1250", "CDATE": 20261001.101530,
                   "DWGTITLED": 1, "DWGPREFIX": outdir.rstrip("/") + "/", "DWGNAME": "test.dwg", "ERRNO": 0,
-                  "CVPORT": 2, "CMDECHO": 1, "OSMODE": 0, "ATTREQ": 1, "DIMZIN": 8, "TILEMODE": 1}
-        s.envs, s.ldata, s.inputs, s.out, s.alerts, s.cmds, s.runs = {}, {}, [], [], [], [], []
+                  "CVPORT": 2, "CMDECHO": 1, "OSMODE": 0, "ATTREQ": 1, "DIMZIN": 8, "TILEMODE": 1,
+                  "BACKGROUNDPLOT": 2}
+        s.envs, s.ldata, s.inputs, s.out, s.alerts, s.cmds, s.runs, s.plots = {}, {}, [], [], [], [], [], []
         s.layouts = {"MODEL": Obj("layout", name="Model", vp_init=True),
                      "LAYOUT1": Obj("layout", name="Layout1", vp_init=False)}
         s.vpid = 1
@@ -283,11 +284,22 @@ class Acad:
         d = s.db[e]
         return grp(d, 410) or ("Model" if not grp(d, 67) else s.vars["CTAB"])
 
-    def add_lw(s, pts, closed=True, layer="0"):
+    def add_lw(s, pts, closed=True, layer="0", bulges=None):
         d = [DP(0, "LWPOLYLINE"), DP(100, "AcDbEntity"), DP(410, "Model"), DP(8, layer),
              DP(100, "AcDbPolyline"), DP(90, len(pts)), DP(70, 1 if closed else 0)]
-        for p in pts: d.append([10, float(p[0]), float(p[1])])
+        for i, p in enumerate(pts):
+            d.append([10, float(p[0]), float(p[1])])
+            d.append(DP(42, float((bulges or {}).get(i, 0.0))))
         return s.new(d)
+
+    def add_insert(s, p, name, atts, layer="0"):
+        """Bloc cu atribute (INSERT + ATTRIB... + SEQEND)."""
+        e = s.new([DP(0, "INSERT"), DP(410, "Model"), DP(8, layer), DP(2, name), DP(66, 1),
+                   [10, float(p[0]), float(p[1]), 0.0]])
+        for tag, val in atts:
+            s.new([DP(0, "ATTRIB"), DP(8, layer), DP(2, tag), DP(1, val), [10, float(p[0]), float(p[1]), 0.0]])
+        s.new([DP(0, "SEQEND"), DP(8, layer)])
+        return e
 
     def add_text(s, p, txt, h=1.0, layer="0", rot=0.0):
         return s.new([DP(0, "TEXT"), DP(410, "Model"), DP(8, layer), [10, float(p[0]), float(p[1]), 0.0],
@@ -362,6 +374,10 @@ class Acad:
         return d
 
     def entdel(s, e): s.deleted.add(e); return e
+    def entnext(s, e=None):
+        i = 0 if e is None else s.order.index(e) + 1
+        while i < len(s.order) and s.order[i] in s.deleted: i += 1
+        return s.order[i] if i < len(s.order) else None
     def entlast(s): return next((e for e in reversed(s.order) if e not in s.deleted), None)
     def handent(s, h):
         e = s.handles.get(h)
@@ -438,8 +454,16 @@ class Acad:
         return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, 0.0]
 
     def curve_area(s, e):
+        """Aria curbei, inclusiv segmentele circulare ale laturilor in arc (bulge)."""
         v, c = s._poly(e)
-        return abs(sum(v[i][0] * v[(i + 1) % len(v)][1] - v[(i + 1) % len(v)][0] * v[i][1] for i in range(len(v)))) / 2
+        a = sum(v[i][0] * v[(i + 1) % len(v)][1] - v[(i + 1) % len(v)][0] * v[i][1] for i in range(len(v))) / 2
+        bul = [x.cdr for x in s.db[e] if isinstance(x, DP) and x.car == 42]
+        for i, b in enumerate(bul):
+            if b == 0 or (not c and i == len(v) - 1): continue
+            ch = math.dist(v[i], v[(i + 1) % len(v)]); th = 4 * math.atan(b)
+            r = ch / (2 * math.sin(th / 2))
+            a += r * r / 2 * (th - math.sin(th))
+        return abs(a)
 
     # ------------------------------------------------------------ layout-uri, viewport-uri, comenzi
     def setvar(s, v, val):
@@ -534,7 +558,7 @@ class Acad:
     # ------------------------------------------------------------ instalarea in interpretor
     def install(s):
         F = {
-            "ENTGET": s.entget, "ENTMAKE": s.entmake, "ENTDEL": s.entdel, "ENTLAST": s.entlast,
+            "ENTGET": s.entget, "ENTMAKE": s.entmake, "ENTDEL": s.entdel, "ENTLAST": s.entlast, "ENTNEXT": s.entnext,
             "HANDENT": s.handent, "TBLSEARCH": s.tblsearch, "SSGET": s.ssget, "SSLENGTH": lambda ss: len(ss),
             "SSNAME": lambda ss, i: ss[i] if i < len(ss) else None, "ENTSEL": s.entsel,
             "GETSTRING": s.getstring, "GETKWORD": s.getkword, "INITGET": lambda *a: None,
@@ -553,6 +577,8 @@ class Acad:
             "VLA-ITEM": lambda c, n: s.layouts[n.upper()] if n.upper() in s.layouts else (_ for _ in ()).throw(KeyError(n)),
             "VLA-ADD": s.vla_add, "VLAX-ENAME->VLA-OBJECT": lambda e: Obj("entity", ename=e),
             "VLA-REFRESHPLOTDEVICEINFO": lambda o: None,
+            "VLA-GET-PLOT": lambda d: Obj("plot"), "VLA-PLOTTOFILE": s.plot_to_file,
+            "LAYOUTLIST": lambda: [l.name for k, l in s.layouts.items() if k != "MODEL"] or None,
             "FINDFILE": s.findfile, "LOAD": lambda f, *a: M.load(s.path(f)),
             "VL-FILENAME-DIRECTORY": lambda f: os.path.dirname(f.replace("\\", "/")),
             "VL-FILENAME-BASE": lambda f: os.path.splitext(os.path.basename(f.replace("\\", "/")))[0],
@@ -575,6 +601,15 @@ class Acad:
         for k in ("CONFIGNAME", "CANONICALMEDIANAME", "PAPERUNITS", "PLOTROTATION", "STANDARDSCALE", "PLOTTYPE",
                   "PLOTWITHLINEWEIGHTS", "DISPLAYLOCKED", "LAYER"):
             funcs[Sym("VLA-PUT-" + k)] = (lambda k: lambda o, v: s.vla_put(o, k, v))(k)
+
+    def plot_to_file(s, plot, path, cfg=None):
+        lay = s.layouts[s.vars["CTAB"].upper()]
+        assert s.vars["BACKGROUNDPLOT"] == 0, "plotare in fundal: fisierul nu exista inca"
+        assert lay.props.get("CONFIGNAME") == "DWG To PDF.pc3" and "ISO_full_bleed" in lay.props.get("CANONICALMEDIANAME", "")
+        p = s.path(path)
+        with open(p, "wb") as fh: fh.write(b"%PDF-1.4 TopoKit test " + lay.name.encode())
+        s.plots.append((lay.name, p))
+        return T
 
     def princ(s, *a):
         if a and isinstance(a[0], str):

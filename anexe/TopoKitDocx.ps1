@@ -219,6 +219,26 @@ function New-FilledDocx([string]$template, [string]$output) {
     }
 }
 
+# Numele fisierului rezultat: daca documentul anterior este deschis (blocat, de
+# exemplu in Word), se foloseste NUME_2.docx, NUME_3.docx...
+function Get-FreeOutput([string]$path) {
+    $dir = [System.IO.Path]::GetDirectoryName($path)
+    $base = [System.IO.Path]::GetFileNameWithoutExtension($path)
+    $ext = [System.IO.Path]::GetExtension($path)
+    $cand = $path
+    for ($k = 2; $k -lt 100; $k++) {
+        if (-not (Test-Path -LiteralPath $cand)) { return $cand }
+        try {
+            $fs = [System.IO.File]::Open($cand, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite,
+                                        [System.IO.FileShare]::None)
+            $fs.Close()
+            return $cand
+        }
+        catch { $cand = [System.IO.Path]::Combine($dir, $base + '_' + $k + $ext) }
+    }
+    return $cand
+}
+
 # Conversie optionala in PDF: Microsoft Word (COM) sau LibreOffice
 function Convert-ToPdf([string[]]$docs) {
     $done = @()
@@ -270,14 +290,19 @@ try {
     }
     $made = @()
     foreach ($d in @($data.documents)) {
+        $out = [string]$d.output
         try {
-            New-FilledDocx ([string]$d.template) ([string]$d.output)
-            $made += [string]$d.output
-            Write-Log ("OK`t" + $d.output)
+            $out = Get-FreeOutput $out
+            if ($out -ne [string]$d.output) {
+                Write-Log ("INFO`tDocumentul " + $d.output + " este deschis; s-a salvat ca " + $out)
+            }
+            New-FilledDocx ([string]$d.template) $out
+            $made += $out
+            Write-Log ("OK`t" + $out)
         }
         catch {
             $errors++
-            Write-Log ("EROARE`t" + $d.output + "`t" + $_.Exception.Message)
+            Write-Log ("EROARE`t" + $out + "`t" + $_.Exception.Message)
         }
     }
     if ($data.pdf -and $made.Count -gt 0) {

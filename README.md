@@ -146,6 +146,8 @@ nr. 600/2023.
 | `CONSTRUCTIE` | Datele construcțiilor: cod, destinație, denumire, regim de înălțime, an, Sd, număr de UI |
 | `DATEIMOBIL` / `EXECUTANT` | Datele imobilului și ale proprietarilor / datele persoanei autorizate |
 | `ANEXEWORD` | Anexele Word 13, 14, 15, 20 și inventarul de coordonate pentru imobilul selectat |
+| `VERIFICARE` | Verificarea datelor lucrării și a geometriei imobilului memorat (și butonul din meniu) |
+| `PLANEPDF` | Plotează în PDF toate planurile generate din desen (layout-urile `PAD_*`, `RELEVEU_*`) |
 
 **Pachetele** din meniu selectează anexele unei documentații complete. Orice anexă se poate alege
 și separat din listă (selecție multiplă).
@@ -171,7 +173,19 @@ nr. 600/2023.
    câmpurile modificate.
 
    ![Laturi și vecinătăți](docs/macheta_laturi.png)
-4. Se creează layout-ul `PAD_<nr. cadastral>`. Desenul din model space nu se modifică.
+4. **Verificarea** rulează înainte de desenare și are trei niveluri: erori, atenționări și informații.
+   - Erori: contur autointersectat, loturi care nu acoperă exact imobilul sau care se suprapun.
+   - Atenționări: date lipsă (executant, proprietar, UAT, adresă, număr cadastral), coordonate în afara
+     Stereo 70, laturi în arc, laturi foarte scurte (puncte duble), construcții care depășesc limita,
+     parcele de folosință care nu acoperă imobilul.
+   - Informații: laturile fără vecin și diferența de suprafață față de act.
+
+   La erori sau atenționări apare raportul, iar generarea continuă doar dacă alegeți *Continua*:
+
+   ![Raportul verificării](docs/macheta_verificare.png)
+5. Se creează layout-ul `PAD_<nr. cadastral>`. Desenul din model space nu se modifică. Cu opțiunea
+   *Ploteaza planurile in PDF* (sau comanda `PLANEPDF`), fiecare plan se plotează automat în
+   `Anexe_<nr. cadastral>\<layout>.pdf`.
 
 Ce conține planul:
 
@@ -181,8 +195,12 @@ Ce conține planul:
   *Optiuni planuri*. Regulamentul cere PAD-ul în PDF, la o scară convenabilă între 1:200 și 1:5000.
 - Un **viewport blocat**, la scara exactă, arată desenul din model (imobilul și vecinătatea). Peste el,
   în paper space, pe straturile `PAD_*`, se desenează:
-  - conturul și punctele numerotate: sens orar, din punctul cel mai apropiat de colțul N-V, sau
-    ordinea poliliniei; primul număr se poate alege;
+  - conturul și punctele numerotate, după opțiune:
+    - în sens orar, din punctul cel mai apropiat de colțul N-V, de la un număr ales;
+    - în ordinea poliliniei;
+    - **cu numerele punctelor din desen**: textul sau blocul de punct (cu atribut numeric) aflat lângă
+      fiecare vârf, ca la numerotarea din ridicare (127, 128…). Vârfurile fără număr primesc numere în
+      continuare;
   - lungimile laturilor (2 zecimale, cu virgulă sau punct);
   - vecinii. O etichetă nu se mai scrie dacă același text există deja în model lângă latură;
   - construcțiile cu codurile lor și parcelele de folosință;
@@ -195,8 +213,9 @@ Ce conține planul:
   - suprafața măsurată și cea din act;
   - semnăturile *Executant* (cu autorizația) și *Inspector*.
 
-  Suprafețele sunt în mp întregi. Suprafețele parcelelor și ale loturilor se rotunjesc astfel încât
-  suma lor să fie exact suprafața imobilului.
+  Suprafețele se calculează analitic din coordonatele vârfurilor (ca în inventar) și sunt în mp
+  întregi. Suprafețele parcelelor și ale loturilor se rotunjesc astfel încât suma lor să fie exact
+  suprafața imobilului.
 
 ![PAD generat (anexa 16)](docs/anexa16_pad.png)
 
@@ -251,10 +270,13 @@ Ce conține planul:
 - Completarea folosește scriptul `anexe/TopoKitDocx.ps1`, cu Windows PowerShell 5.1 (inclus în
   Windows 10/11); Word nu este necesar. Pentru conversia opțională în PDF este nevoie de
   Microsoft Word sau de LibreOffice.
-- Rezultatul se salvează în folderul `Anexe_<nr. cadastral>` de lângă desen (sau în `C:\Temp`).
+- Rezultatul se salvează în folderul `Anexe_<nr. cadastral>` de lângă desen (sau în `C:\Temp`). Dacă un
+  document generat anterior este încă deschis în Word, noul document se salvează ca `…_2.docx`.
 - Ce se completează automat:
   - **cererea de recepție și înscriere (13)**, cu bifele după tipul lucrării și modul de comunicare;
-  - **declarația (14)**;
+  - **declarația (14)**: bifele se pun după date. „Poziționare incertă” și litigiul (ID, dosar,
+    instanță, obiect) se completează în dialogul lucrării; informarea coproprietarilor se bifează
+    doar dacă există un al doilea proprietar;
   - **memoriul tehnic (15)**: adresa, scopul, documentarea, operațiunile (texte implicite, care se
     pot rescrie în dialog), construcțiile, inventarul de coordonate cu laturile, suprafața și perimetrul;
   - **PV de vecinătate (20)**: proprietarii (cu CNP-ul pe căsuțe), vecinii, tabelul laturilor cu
@@ -280,8 +302,8 @@ Ce conține planul:
   Modificările ulterioare nu sunt incluse.
 - În textul ordinului, anexele 16 și 17 apar doar ca facsimil, fără conținut. Machetele PAD reproduc
   exemplele primite (PAD, propunere de dezlipire, PAD pe loturi, releveu, foaie colectivă).
-- Conturul de pe plan unește vârfurile poliliniei. Laturile în arc se desenează și se cotează ca
-  segmente; suprafața include însă arcele.
+- Conturul de pe plan unește vârfurile poliliniei: laturile în arc se desenează, se cotează și intră în
+  suprafață ca segmente (verificarea le semnalează; adăugați puncte pe arce).
 - Generatorul a fost testat într-un simulator AutoCAD (vezi *Dezvoltare*), nu și în AutoCAD.
   Verificați primul plan generat: setările de pagină *DWG To PDF* și viewport-ul.
 
@@ -306,7 +328,8 @@ Ce conține planul:
   viewport-urile (`MVIEW`/`ZOOM`), ldata și dialogurile DCL: fișierele `.dcl` sunt analizate sintactic,
   iar fiecare cheie folosită de program trebuie să existe. Testele rulează pe un desen de test
   `PAD`, `PADDEZ`, `PADALIP`, `RELEVEU`, foaia colectivă, meniul `ANEXE` cu dialogurile de date,
-  butonul din `TOPOKIT` și fișierul JSON pentru Word.
+  verificarea (inclusiv oprirea generării la erori), plotarea PDF, numerotarea din desen, cazul în
+  care `MVIEW` eșuează, butonul din `TOPOKIT` și fișierul JSON pentru Word.
   - `--render DIR` salvează layout-urile generate și machetele dialogurilor ca imagini PNG.
   - `--word` completează șabloanele Word cu PowerShell (`pwsh`, dacă este instalat).
 - Șabloanele Word se regenerează din textul ordinului: `tools/extract_anexe.py` extrage anexele din

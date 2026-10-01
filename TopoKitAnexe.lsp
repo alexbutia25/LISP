@@ -215,9 +215,11 @@
              (*TKA:FORMAT*  . "AUTO")   ; AUTO, A4P, A3P, A3L, A2L, A1L, A0L
              (*TKA:SCARA*   . 0)        ; 0 = automat, altfel numitorul scării
              (*TKA:NRSTART* . 1)        ; primul număr de punct
-             (*TKA:NRMOD*   . "NV")     ; NV = orar din punctul cel mai de N-V; POL = ordinea poliliniei
+             (*TKA:NRMOD*   . "NV")     ; NV = orar din N-V; POL = ordinea poliliniei; DES = numerele din desen
+             (*TKA:NRDIST*  . 2.0)      ; distanța maximă text/bloc - vârf la numerotarea din desen (m)
              (*TKA:INVPAD*  . "0")      ; inventarul de coordonate pe PAD
              (*TKA:PDF*     . "0")      ; conversie PDF a anexelor Word
+             (*TKA:PDFPLAN* . "0")      ; plotarea în PDF a planurilor generate
              (*TKA:OPENDIR* . "1")      ; deschide folderul cu anexele generate
              (*TKA:ANEXA16* . "Anexa nr. 16")
              (*TKA:ANEXA17* . "Anexa nr. 17"))
@@ -290,8 +292,34 @@
           pts (append (cdr pts) (list (car pts))))
   (/ a 2.0))
 
-;; TKA:Area - suprafața poliliniei (include eventualele arce)
-(defun TKA:Area (e) (abs (vlax-curve-getArea e)))
+;; TKA:Area - suprafața calculată analitic din coordonatele vârfurilor, ca în
+;; inventarul de coordonate (laturile în arc sunt tratate ca segmente; vezi
+;; TKA:HasArcs, semnalat la verificare)
+(defun TKA:Area (e) (abs (TKA:SArea (TKA:PolyPts e))))
+
+;; TKA:HasArcs - T dacă polilinia are laturi în arc (aria curbei diferă de
+;; aria poligonului vârfurilor)
+(defun TKA:HasArcs (e)
+  (> (abs (- (abs (vlax-curve-getArea e)) (TKA:Area e))) 0.005))
+
+;; TKA:SegCross - T dacă segmentele AB și CD se intersectează în interiorul lor
+(defun TKA:SegCross (a b c d / d1 d2 d3 d4)
+  (setq d1 (TK:Cross (TK:v- b a) (TK:v- c a)) d2 (TK:Cross (TK:v- b a) (TK:v- d a))
+        d3 (TK:Cross (TK:v- d c) (TK:v- a c)) d4 (TK:Cross (TK:v- d c) (TK:v- b c)))
+  (and (< (* d1 d2) -1e-9) (< (* d3 d4) -1e-9)))
+
+;; TKA:SelfCross - T dacă poligonul PTS se autointersectează
+(defun TKA:SelfCross (pts / v n i j r)
+  (setq v (append pts (list (car pts))) n (length pts) i 0)
+  (while (and (not r) (< i n))
+    (setq j (+ i 2))
+    (while (and (not r) (< j n))
+      (if (and (not (and (= i 0) (= j (1- n))))
+               (TKA:SegCross (nth i v) (nth (1+ i) v) (nth j v) (nth (1+ j) v)))
+        (setq r T))
+      (setq j (1+ j)))
+    (setq i (1+ i)))
+  r)
 
 ;; TKA:Perim - perimetrul unui poligon dat prin puncte
 (defun TKA:Perim (pts / s)
@@ -380,7 +408,7 @@
 ;; nord-vest (cel mai apropiat de colțul N-V al casetei) - convenția uzuală
 (defun TKA:Clockwise (pts / bb nw best i k d)
   (if (> (TKA:SArea pts) 0.0) (setq pts (reverse pts)))
-  (if (= *TKA:NRMOD* "NV")
+  (if (/= *TKA:NRMOD* "POL")
     (progn
       (setq bb (TKA:Bbox pts) nw (list (car bb) (cadddr bb)) i 0 k 0 best 1e99)
       (foreach p pts
@@ -399,13 +427,31 @@
 ;; TKA:Numbering - numerotarea globală a punctelor mai multor poligoane:
 ;; returnează lista de asociere (cheie-punct . număr). Punctele comune
 ;; primesc același număr; numerotarea continuă de la un poligon la altul.
-(defun TKA:Numbering (polys start / tab n)
+;; În modul "DES" fiecare vârf primește numărul din desen cel mai apropiat
+;; (text sau bloc de punct, la cel mult *TKA:NRDIST* m); vârfurile fără
+;; număr se numerotează în continuare, după cel mai mare număr găsit.
+(defun TKA:Numbering (polys start / tab n nums used no)
   (setq n start)
+  (if (= *TKA:NRMOD* "DES") (setq nums (TKA:NumTexts)))
+  (if nums
+    (foreach pts polys
+      (foreach p pts
+        (if (and (not (assoc (TKA:PtKey p) tab)) (setq no (TKA:NearNum p nums used)))
+          (setq tab (cons (cons (TKA:PtKey p) no) tab) used (cons no used))))))
+  (if used (setq n (max start (1+ (apply 'max used)))))
   (foreach pts polys
     (foreach p pts
       (if (not (assoc (TKA:PtKey p) tab))
         (setq tab (cons (cons (TKA:PtKey p) n) tab) n (1+ n)))))
   (reverse tab))
+
+;; TKA:NearNum - numărul din desen cel mai apropiat de punctul P (nefolosit)
+(defun TKA:NearNum (p nums used / best bd d)
+  (setq bd *TKA:NRDIST*)
+  (foreach x nums
+    (if (and (not (member (cadr x) used)) (< (setq d (distance p (car x))) bd))
+      (setq bd d best (cadr x))))
+  best)
 
 ;; TKA:PtNo - numărul punctului P în tabelul de numerotare (sau nil)
 (defun TKA:PtNo (p tab) (cdr (assoc (TKA:PtKey p) tab)))
@@ -725,12 +771,20 @@
                                          "dreptului de proprietate"))
                   (cons "PV_EXEMPLARE" (if (/= (TKA:Get "PV_EXEMPLARE") "") (TKA:Get "PV_EXEMPLARE") ""))
                   (cons "CHK_INTAB" "[X]")
-                  (cons "CHK_D1" "[X]") (cons "CHK_D2" "[X]") (cons "CHK_D4" "[X]"))
+                  (cons "CHK_D1" "[X]") (cons "CHK_D2" "[X]") (cons "CHK_D5" "[X]")
+                  (cons "LIT_TEXT"
+                        (if (= (TKA:Get "LITIGIU") "1")
+                          (strcat "imobilul se afl`a ^in litigiu - cu imobilul ID " (TKA:Get "LIT_ID")
+                                  ", nr. dosar " (TKA:Get "LIT_DOSAR") ", instan`ta " (TKA:Get "LIT_INSTANTA")
+                                  ", obiect " (TKA:Get "LIT_OBIECT") ".")
+                          "imobilul nu se afl`a ^in litigiu.")))
             f))
   ;; bifele după tipul lucrării și modul de comunicare
   (if (setq tp (assoc tip *TKA:TIPURI*)) (setq f (cons (cons (caddr tp) "[X]") f)))
   (if (setq tp (assoc (TKA:Get "COMUNICARE") *TKA:COMUNIC*)) (setq f (cons (cons (cdr tp) "[X]") f)))
   (if (= (TKA:Get "POZ_INCERTA") "1") (setq f (cons (cons "CHK_D3" "[X]") f)))
+  ;; informarea celorlalți proprietari (anexa 14) are sens doar pentru coproprietari
+  (if (/= (TKA:Get "P2_NUME") "") (setq f (cons (cons "CHK_D4" "[X]") f)))
   ;; datele măsurate
   (if rec
     (progn
@@ -1100,6 +1154,10 @@
 
 ;; TKA:Sheet - geometria foii: W H x1 y1 x2 y2 (cadrul interior) și coloana
 ;; tabelelor bx1..bx2; HB = înălțimea tabelelor de jos, HH = înălțimea antetului
+;; Înălțimea antetului (titlu, scară, tabelele de antet), recalculată pentru
+;; adresele lungi de TKA:Sheet16
+(setq *TKA:HH* 49.0)
+
 (defun TKA:Sheet (code hb / s w h x1 y1 x2 y2 bx1 land)
   (setq s (assoc code *TKA:SHEETS*) w (cadr s) h (caddr s)
         x1 20.0 y1 5.0 x2 (- w 5.0) y2 (- h 5.0)
@@ -1111,7 +1169,12 @@
         ;; zona viewport-ului: la stânga coloanei (orizontal) sau între antet și tabele (vertical)
         (cons "VP" (if land
                      (list x1 y1 bx1 y2)
-                     (list x1 (+ y1 hb) x2 (- y2 49.0))))))
+                     (list x1 (+ y1 hb) x2 (- y2 *TKA:HH*))))
+        ;; tabelele încap: în coloana din dreapta sub antet (orizontal), respectiv
+        ;; rămâne un spațiu de desen de cel puțin 45 mm (vertical)
+        (cons "FITS" (if land
+                       (<= (+ hb *TKA:HH*) (- y2 y1))
+                       (>= (- (- y2 *TKA:HH*) (+ y1 hb)) 45.0)))))
 
 ;; TKA:SG - valoarea unei chei din geometria foii
 (defun TKA:SG (sh k) (cdr (assoc k sh)))
@@ -1136,7 +1199,7 @@
   (foreach grup (if (= *TKA:FORMAT* "AUTO") (list (TKA:Firstn 3 codes) (TKA:Nthcdr 3 codes)) (list codes))
     (foreach s (if (> *TKA:SCARA* 0) (list *TKA:SCARA*) *TKA:SCALES*)
       (foreach c grup
-        (if (and (null res) (TKA:FitScale (setq sh (TKA:Sheet c hb)) bb s))
+        (if (and (null res) (TKA:SG (setq sh (TKA:Sheet c hb)) "FITS") (TKA:FitScale sh bb s))
           (setq res (list sh s))))))
   (if (null res)
     (progn
@@ -1168,13 +1231,13 @@
   (vl-catch-all-apply 'vla-put-PlotType (list lay 5))              ; layout
   (vl-catch-all-apply 'vla-put-PlotWithLineweights (list lay :vlax-true))
   (setvar "CTAB" name)
-  (setq *TKA:LAY* name)
+  (setq *TKA:LAY* name *TKA:NEWLAYS* (append *TKA:NEWLAYS* (list name)))
   name)
 
 ;; TKA:Viewport - creează viewport-ul VP (x1 y1 x2 y2, mm) centrat pe
 ;; punctul CM (model) la scara 1:SCALE și calculează transformarea
 ;; model -> hârtie din parametrii reali ai viewport-ului
-(defun TKA:Viewport (vp cm scale / ss i e vpe ed k c12 c17 c10)
+(defun TKA:Viewport (vp cm scale / ss i e vpe last0 ed k c12 c17 c10)
   ;; viewport-urile create automat la activarea layout-ului se șterg
   (if (setq ss (ssget "_X" (list '(0 . "VIEWPORT") (cons 410 *TKA:LAY*))))
     (progn (setq i 0)
@@ -1182,23 +1245,36 @@
         (setq e (ssname ss i) i (1+ i))
         (if (/= 1 (cdr (assoc 69 (entget e)))) (entdel e)))))
   (command "_.PSPACE")
+  (setq last0 (entlast))
   (command "_.MVIEW" (list (car vp) (cadr vp)) (list (caddr vp) (cadddr vp)))
   (setq vpe (entlast))
-  (vl-catch-all-apply
-    '(lambda ()
-       (command "_.MSPACE")
-       (setvar "CVPORT" (cdr (assoc 69 (entget vpe))))
-       (command "_.PLAN" "_W")
-       (command "_.ZOOM" "_C" (trans (list (car cm) (cadr cm) 0.0) 0 1) (strcat (rtos (/ 1000.0 scale) 2 8) "XP"))
-       (command "_.PSPACE"))
-    nil)
-  (vl-catch-all-apply 'vla-put-DisplayLocked (list (vlax-ename->vla-object vpe) :vlax-true))
-  (vl-catch-all-apply 'vla-put-Layer (list (vlax-ename->vla-object vpe) "PAD_VIEWPORT"))
+  ;; MVIEW reușit = o entitate VIEWPORT nouă (nu viewport-ul hârtiei, ID 1)
+  (if (not (and vpe (not (equal vpe last0)) (= (cdr (assoc 0 (entget vpe))) "VIEWPORT")
+                (/= 1 (cdr (assoc 69 (entget vpe))))))
+    (progn
+      (TKA:Msg "ATEN`TIE: viewport-ul nu a putut fi creat (MVIEW). Crea`ti-l manual, centrat pe imobil, la scara planului.")
+      (setq vpe nil)))
+  (if vpe
+    (progn
+      (vl-catch-all-apply
+        '(lambda ()
+           (command "_.MSPACE")
+           (setvar "CVPORT" (cdr (assoc 69 (entget vpe))))
+           (command "_.PLAN" "_W")
+           (command "_.ZOOM" "_C" (trans (list (car cm) (cadr cm) 0.0) 0 1) (strcat (rtos (/ 1000.0 scale) 2 8) "XP"))
+           (command "_.PSPACE"))
+        nil)
+      (vl-catch-all-apply 'vla-put-DisplayLocked (list (vlax-ename->vla-object vpe) :vlax-true))
+      (vl-catch-all-apply 'vla-put-Layer (list (vlax-ename->vla-object vpe) "PAD_VIEWPORT"))))
   ;; transformarea reală: centrul viewport-ului pe hârtie, centrul vederii în model
-  (setq ed (entget vpe) c10 (cdr (assoc 10 ed)) c12 (cdr (assoc 12 ed)) c17 (cdr (assoc 17 ed)))
+  (setq ed (if vpe (entget vpe)) c10 (cdr (assoc 10 ed)) c12 (cdr (assoc 12 ed)) c17 (cdr (assoc 17 ed)))
   (setq k (if (and (assoc 41 ed) (assoc 45 ed) (> (cdr (assoc 45 ed)) 0))
             (/ (cdr (assoc 41 ed)) (cdr (assoc 45 ed)))
             (/ 1000.0 scale)))
+  ;; scara reală a viewport-ului trebuie să fie scara planului
+  (if (and vpe (> (abs (- (* k scale) 1000.0)) 1.0))
+    (TKA:Msg (strcat "ATEN`TIE: viewport-ul nu are scara 1:" (itoa scale)
+                     " (ZOOM nereu`sit); seta`ti scara viewport-ului manual.")))
   (setq *TKA:VPT*
          (if (and c10 c12 c17)
            (list (+ (car c17) (car c12)) (+ (cadr c17) (cadr c12)) (car c10) (cadr c10) k)
@@ -1235,11 +1311,17 @@
   (TKA:T (strcat (TKA:SG sh "FMT") "-" (itoa scale)) (- (TKA:SG sh "W") 2.0) 1.2 1.6 0.0 "R" "PAD_TEXT" nil))
 
 ;; TKA:Header - tabelele de antet (nr. cadastral, suprafață, adresă; CF, UAT)
+;; TKA:AddrRowH - înălțimea rândului cu adresa (adresele lungi au mai multe rânduri)
+(defun TKA:AddrRowH (adresa) (max 5.2 (+ 1.7 (* 3.45 (TKA:Lines adresa *TKA:TH* 71.8)))))
+
+;; TKA:HeaderH - înălțimea zonei de antet (de la marginea de sus a cadrului)
+(defun TKA:HeaderH (adresa) (max 49.0 (+ 43.8 (TKA:AddrRowH adresa))))
+
 (defun TKA:Header (sh nrcad area adresa nrcf uat / x y th)
   (setq x (TKA:SG sh "BX1") y (- (TKA:SG sh "Y2") 20.5) th *TKA:TH*)
   (setq y (TKA:Row x y 5.2 '(54.3 57.3 73.4)
                    '("Num`ar cadastral" "Suprafa`ta m`asurat`a a imobilului (mp)" "Adresa imobilului") th))
-  (setq y (TKA:Row x y (if (> (TKA:TW adresa th) 71.0) 8.4 5.2) '(54.3 57.3 73.4)
+  (setq y (TKA:Row x y (TKA:AddrRowH adresa) '(54.3 57.3 73.4)
                    (list nrcad area adresa) th))
   (setq y (- y 3.9))
   (setq y (TKA:Row x y 5.2 '(92.5 92.5) '("Nr. Carte Funciar`a" "Unitatea Administrativ Teritorial`a (UAT)") th))
@@ -1561,7 +1643,8 @@
 ;; TKA:Start16 - pregătește foaia: alege formatul/scara, creează layout-ul,
 ;; viewport-ul, cadrul și antetul. Returnează (foaie scară viewport).
 (defun TKA:Sheet16 (name bb hb anexa titlu nrcad area adresa nrcf uat / ch sh sc vp)
-  (setq ch (TKA:ChooseSheet bb hb) sh (car ch) sc (cadr ch) vp (TKA:SG sh "VP"))
+  (setq *TKA:HH* (TKA:HeaderH adresa)
+        ch (TKA:ChooseSheet bb hb) sh (car ch) sc (cadr ch) vp (TKA:SG sh "VP"))
   (TKA:NewLayout name sh)
   (TKA:Viewport vp (list (/ (+ (car bb) (caddr bb)) 2.0) (/ (+ (cadr bb) (cadddr bb)) 2.0)) sc)
   (TKA:Frame sh anexa titlu sc)
@@ -1717,6 +1800,7 @@
     "P2_NUME" "P2_PRENUME" "P2_CNP" "P2_CI_SERIA" "P2_CI_NR" "P2_LOC" "P2_CALITATE"))
 (setq *TKA:F_LUCRARE*
   '("INTAB_OBIECT" "E_CONTRACT" "E_CONTRACT_DATA" "DATA_MAS" "PV_EXEMPLARE" "PV_PAGINI" "NRCF_COLECTIVA" "ST_AFERENT"
+    "LIT_ID" "LIT_DOSAR" "LIT_INSTANTA" "LIT_OBIECT"
     "PARTI_COMUNE" "METODA" "APARATURA" "SPRIJIN" "SCOP" "DOCUMENTARE" "OPERATIUNI"))
 (setq *TKA:F_EXEC*
   '("E_TITLU" "E_NUME" "E_PRENUME" "E_CNP" "E_FIRMA" "E_CI_SERIA" "E_CI_NR" "E_TEL" "E_EMAIL"
@@ -1749,12 +1833,12 @@
        (TKA:FillList "COMUNICARE" '("Online in sistemul integrat de cadastru si carte funciara"
                                     "Prin posta" "La sediul BCPI" "Prin e-mail" "Prin fax"))
        (set_tile "COMUNICARE" (itoa (max 0 (TKA:Index (TKA:Get "COMUNICARE") (mapcar 'car *TKA:COMUNIC*)))))
-       (set_tile "POZ_INCERTA" (if (= (TKA:Get "POZ_INCERTA") "1") "1" "0"))
+       (foreach k '("POZ_INCERTA" "LITIGIU") (set_tile k (if (= (TKA:Get k) "1") "1" "0")))
        (action_tile "accept"
          (strcat "(foreach k *TKA:F_LUCRARE* (TKA:Put k (TKA:Trim (get_tile k))))"
                  "(TKA:Put \"TIP\" (car (nth (atoi (get_tile \"TIP\")) *TKA:TIPURI*)))"
                  "(TKA:Put \"COMUNICARE\" (car (nth (atoi (get_tile \"COMUNICARE\")) *TKA:COMUNIC*)))"
-                 "(TKA:Put \"POZ_INCERTA\" (get_tile \"POZ_INCERTA\")) (done_dialog 1)")))))
+                 "(foreach k '(\"POZ_INCERTA\" \"LITIGIU\") (TKA:Put k (get_tile k))) (done_dialog 1)")))))
 
 ;; TKA:ExecDialog - datele persoanei autorizate
 (defun TKA:ExecDialog ()
@@ -1777,7 +1861,8 @@
        (TKA:FillList "pl_scara" (cons "Automat" (mapcar '(lambda (s) (strcat "1:" (itoa s))) *TKA:SCALES*)))
        (set_tile "pl_scara" (itoa (1+ (TKA:Index *TKA:SCARA* *TKA:SCALES*))))
        (set_tile "eb_start" (itoa *TKA:NRSTART*))
-       (set_tile "rc_mod" (if (= *TKA:NRMOD* "NV") "rb_nv" "rb_pol"))
+       (set_tile "rc_mod" (cond ((cdr (assoc *TKA:NRMOD* '(("NV" . "rb_nv") ("POL" . "rb_pol") ("DES" . "rb_des"))))) ("rb_nv")))
+       (set_tile "eb_nrdist" (rtos *TKA:NRDIST* 2 2))
        (set_tile "rr_sep" (if (= *TKA:SEPDEC* ",") "rb_virg" "rb_punct"))
        (set_tile "tg_inv" *TKA:INVPAD*)
        (set_tile "eb_a16" *TKA:ANEXA16*)
@@ -1786,7 +1871,9 @@
          (strcat "(setq *TKA:FORMAT* (car (nth (atoi (get_tile \"pl_format\")) *TKA:FMTLIST*))"
                  " *TKA:SCARA* (if (= (get_tile \"pl_scara\") \"0\") 0 (nth (1- (atoi (get_tile \"pl_scara\"))) *TKA:SCALES*))"
                  " *TKA:NRSTART* (max 1 (atoi (get_tile \"eb_start\")))"
-                 " *TKA:NRMOD* (if (= (get_tile \"rc_mod\") \"rb_nv\") \"NV\" \"POL\")"
+                 " *TKA:NRMOD* (cond ((cdr (assoc (get_tile \"rc_mod\") '((\"rb_nv\" . \"NV\") (\"rb_pol\" . \"POL\") (\"rb_des\" . \"DES\"))))) (\"NV\"))"
+                 " *TKA:NRDIST* (if (and (distof (get_tile \"eb_nrdist\")) (> (distof (get_tile \"eb_nrdist\")) 0))"
+                 "                 (distof (get_tile \"eb_nrdist\")) *TKA:NRDIST*)"
                  " *TKA:SEPDEC* (if (= (get_tile \"rr_sep\") \"rb_virg\") \",\" \".\")"
                  " *TKA:INVPAD* (get_tile \"tg_inv\")"
                  " *TKA:ANEXA16* (get_tile \"eb_a16\") *TKA:ANEXA17* (get_tile \"eb_a17\"))"
@@ -1828,32 +1915,70 @@
 (defun TKA:IsNumber (s)
   (vl-every '(lambda (c) (or (<= 48 c 57) (member c '(32 44 45 46 109 77)))) (vl-string->list s)))
 
-;; TKA:Texts - textele din model space (poziție, conținut), în afara straturilor PAD_*
-(defun TKA:Texts (/ ss i e ed s p out)
-  (if (setq ss (ssget "_X" '((0 . "TEXT,MTEXT") (410 . "Model"))))
+;; TKA:Texts - textele din model space (poziție, conținut), în afara straturilor
+;; PAD_*; textele numerice (cote, numere de puncte) sunt omise
+(defun TKA:Texts () (car (TKA:Scan)))
+
+;; TKA:NumTexts - numerele punctelor din desen: ((poziție număr) ...), din
+;; textele întregi și din blocurile cu un atribut întreg (punctele topografice)
+(defun TKA:NumTexts () (cadr (TKA:Scan)))
+
+;; TKA:IsInt - T dacă textul este un număr întreg (număr de punct)
+(defun TKA:IsInt (s)
+  (and (< 0 (strlen s) 7) (vl-every '(lambda (c) (<= 48 c 57)) (vl-string->list s))))
+
+;; TKA:Scan - parcurge o singură dată pe comandă textele și blocurile din model
+;; (rezultatul se păstrează în *TKA:TXC* până la sfârșitul comenzii)
+(defun TKA:Scan (/ ss i e ed s p texts nums a ad v found)
+  (if (null *TKA:TXC*)
     (progn
-      (setq i 0)
-      (repeat (sslength ss)
-        (setq e (ssname ss i) i (1+ i) ed (entget e))
-        (if (not (wcmatch (strcase (cdr (assoc 8 ed))) "PAD_*"))
-          (progn
-            (if (= (cdr (assoc 0 ed)) "MTEXT")
-              (setq s (TKA:MtextPlain (strcat (apply 'strcat (mapcar 'cdr (vl-remove-if-not '(lambda (g) (= (car g) 3)) ed)))
-                                              (cdr (assoc 1 ed))))
-                    p (cdr (assoc 10 ed)))
-              (setq s (TKA:Decode (cdr (assoc 1 ed)))
-                    p (if (and (or (/= 0 (cond ((cdr (assoc 72 ed))) (0))) (/= 0 (cond ((cdr (assoc 73 ed))) (0))))
-                               (assoc 11 ed))
-                        (cdr (assoc 11 ed)) (cdr (assoc 10 ed)))))
-            (setq s (TKA:Trim s))
-            (if (and (/= s "") (not (TKA:IsNumber s)))
-              (setq out (cons (list (TK:2d p) s) out))))))))
-  out)
+      (if (setq ss (ssget "_X" '((0 . "TEXT,MTEXT") (410 . "Model"))))
+        (progn
+          (setq i 0)
+          (repeat (sslength ss)
+            (setq e (ssname ss i) i (1+ i) ed (entget e))
+            (if (not (wcmatch (strcase (cdr (assoc 8 ed))) "PAD_*"))
+              (progn
+                (if (= (cdr (assoc 0 ed)) "MTEXT")
+                  (setq s (TKA:MtextPlain (strcat (apply 'strcat (mapcar 'cdr (vl-remove-if-not '(lambda (g) (= (car g) 3)) ed)))
+                                                  (cdr (assoc 1 ed))))
+                        p (cdr (assoc 10 ed)))
+                  (setq s (TKA:Decode (cdr (assoc 1 ed)))
+                        p (if (and (or (/= 0 (cond ((cdr (assoc 72 ed))) (0))) (/= 0 (cond ((cdr (assoc 73 ed))) (0))))
+                                   (assoc 11 ed))
+                            (cdr (assoc 11 ed)) (cdr (assoc 10 ed)))))
+                (setq s (TKA:Trim s))
+                (cond ((= s ""))
+                      ((TKA:IsInt s) (setq nums (cons (list (TK:2d p) (atoi s)) nums)))
+                      ((not (TKA:IsNumber s)) (setq texts (cons (list (TK:2d p) s) texts)))))))))
+      ;; blocurile de puncte: primul atribut cu valoare întreagă
+      (if (setq ss (ssget "_X" '((0 . "INSERT") (66 . 1) (410 . "Model"))))
+        (progn
+          (setq i 0)
+          (repeat (sslength ss)
+            (setq e (ssname ss i) i (1+ i) ed (entget e) a (entnext e) found nil)
+            (while (and a (= (cdr (assoc 0 (setq ad (entget a)))) "ATTRIB"))
+              (setq v (TKA:Trim (TKA:Decode (cdr (assoc 1 ad)))))
+              (if (and (null found) (TKA:IsInt v)) (setq found (atoi v)))
+              (setq a (entnext a)))
+            (if (and found (not (wcmatch (strcase (cdr (assoc 8 ed))) "PAD_*")))
+              (setq nums (cons (list (TK:2d (cdr (assoc 10 ed))) found) nums))))))
+      (setq *TKA:TXC* (list texts nums))))
+  *TKA:TXC*)
+
+;; TKA:Neighbor? - T dacă un text poate identifica un vecin (nu este o
+;; categorie de folosință, un cod de construcție sau o etichetă prea scurtă)
+(defun TKA:Neighbor? (s)
+  (and (> (strlen s) 2)
+       (not (assoc (strcase s) *TKA:CATEG*))
+       (not (wcmatch (strcase s) "C#,C##,C###,C#-*,LOT #*"))))
 
 ;; TKA:AutoSides - propune vecinii laturilor fără date: textul cel mai
 ;; apropiat din exteriorul fiecărei laturi (de ex. "nr. cad. 1234", "str. X")
 (defun TKA:AutoSides (pts data / texts out i a b l n w best bs u d sc)
-  (setq texts (vl-remove-if '(lambda (t1) (TKA:Inside (car t1) pts)) (TKA:Texts)) i 0)
+  (setq texts (vl-remove-if '(lambda (t1) (or (TKA:Inside (car t1) pts) (not (TKA:Neighbor? (cadr t1)))))
+                            (TKA:Texts))
+        i 0)
   (mapcar
     '(lambda (a b)
        (setq best nil bs 1e99 l (distance a b) n (TKA:OutNormal a b) w (max 2.0 (min 25.0 (* 0.6 l))))
@@ -2033,8 +2158,11 @@
       (foreach p parc (TKA:Categ p))
       (setq rec (TKA:Imobil e parc constr nil nil))
       (if (TKA:SidesDialog rec) (setq rec (TKA:Imobil e parc constr nil nil)))
-      (TKA:Pad16 rec "" (TKA:Get "NRCAD") (TKA:Get "NRCF") (strcat "PAD_" (TKA:Tag)))
-      rec)))
+      (if (TKA:Report (TKA:Verify rec nil nil) T)
+        (progn
+          (TKA:Pad16 rec "" (TKA:Get "NRCAD") (TKA:Get "NRCF") (strcat "PAD_" (TKA:Tag)))
+          rec)
+        (TKA:Cancel)))))
 
 ;; TKA:LotSides - vecinii laturilor unui lot: vecinul imobilului inițial
 ;; (latura exterioară) sau lotul alăturat (latura interioară)
@@ -2094,13 +2222,16 @@
                                        "SIDES"
                                        (TKA:LotSides r parent lrecs i)))
                          lrecs))
-     (TKA:Pad17 parent lrecs "DEZ" (strcat "PAD_dezlipire_" (TKA:Tag)))
-     (setq i 0)
-     (foreach r lrecs
-       (setq i (1+ i))
-       (TKA:Pad16 r (strcat " - lot " (itoa i)) (TKA:R1 r "NRCAD") "" (strcat "PAD_lot" (itoa i) "_" (TKA:Tag))))
-     (setq *TKA:LOTURI* lrecs)
-     parent)))
+     (cond
+       ((not (TKA:Report (TKA:Verify parent lrecs "DEZ") T)) (TKA:Cancel))
+       (T
+        (TKA:Pad17 parent lrecs "DEZ" (strcat "PAD_dezlipire_" (TKA:Tag)))
+        (setq i 0)
+        (foreach r lrecs
+          (setq i (1+ i))
+          (TKA:Pad16 r (strcat " - lot " (itoa i)) (TKA:R1 r "NRCAD") "" (strcat "PAD_lot" (itoa i) "_" (TKA:Tag))))
+        (setq *TKA:LOTURI* lrecs)
+        parent)))))
 
 ;; TKA:DoPadAlip - Anexa 17 (alipire) + Anexa 16 pentru imobilul rezultat
 (defun TKA:DoPadAlip (reuse / ini rez constr tab irecs res i nr *TKA:SPLIT*)
@@ -2127,9 +2258,12 @@
      (setq irecs (mapcar '(lambda (e) (append (TKA:Imobil e nil nil tab nil)
                                              (list (cons "NRCAD" (cond ((TKA:LGet e "NRCAD")) (""))))))
                          ini))
-     (TKA:Pad17 res irecs "ALIP" (strcat "PAD_alipire_" (TKA:Tag)))
-     (TKA:Pad16 res " - imobil rezultat" "" "" (strcat "PAD_rezultat_" (TKA:Tag)))
-     res)))
+     (cond
+       ((not (TKA:Report (TKA:Verify res irecs "ALIP") T)) (TKA:Cancel))
+       (T
+        (TKA:Pad17 res irecs "ALIP" (strcat "PAD_alipire_" (TKA:Tag)))
+        (TKA:Pad16 res " - imobil rezultat" "" "" (strcat "PAD_rezultat_" (TKA:Tag)))
+        res)))))
 
 ;; TKA:CurrentRec - imobilul pentru anexele Word (selecția memorată sau nouă)
 (defun TKA:CurrentRec (/ e)
@@ -2139,19 +2273,186 @@
   (if e (TKA:Imobil e (TKA:LoadSel "H_PARC") (TKA:LoadSel "H_CONSTR") nil nil)))
 
 ;;; ==========================================================================
+;;;  VERIFICAREA DATELOR ȘI A GEOMETRIEI
+;;; ==========================================================================
+
+;; TKA:SideName - "i-j" pentru latura S
+(defun TKA:SideName (s) (strcat (itoa (nth 1 s)) "-" (itoa (nth 2 s))))
+
+;; TKA:Verify - verificarea datelor lucrării și a geometriei înainte de
+;; generare. REC = imobilul măsurat (sau nil); LOTS = loturile (MODE "DEZ")
+;; sau imobilele inițiale (MODE "ALIP"). Returnează mesajele: "E: ..." erori
+;; (planul ar fi greșit), "A: ..." atenționări, "I: ..." informații.
+(defun TKA:Verify (rec lots mode / out e pts sides miss raw tot sact d i j sx)
+  ;; datele lucrării
+  (if (= (TKA:EGet "E_NUME") "") (setq out (cons "A: Lipsesc datele executantului (persoana autorizat`a)." out)))
+  (if (and (/= (TKA:EGet "E_NUME") "") (= (TKA:EGet "E_AUT_SERIA") ""))
+    (setq out (cons "A: Lipsesc seria `si num`arul autoriza`tiei executantului." out)))
+  (if (= (TKA:Get "P1_NUME") "") (setq out (cons "A: Lipse`ste numele proprietarului." out)))
+  (if (= (TKA:Get "UAT") "") (setq out (cons "A: Lipse`ste UAT-ul imobilului." out)))
+  (if (= (TKA:Adresa) "") (setq out (cons "A: Lipse`ste adresa imobilului (localitate, strad`a, num`ar)." out)))
+  (if (and (= (TKA:Get "NRCAD") "") (member (TKA:Get "TIP") '("CONSTR" "ACTUAL" "DEZ" "APART" "UI")))
+    (setq out (cons "A: Lipse`ste num`arul cadastral al imobilului." out)))
+  (if rec
+    (progn
+      (setq e (TKA:R1 rec "E") pts (TKA:R1 rec "PTS") sides (TKA:R1 rec "SIDES"))
+      (if (not (TK:InStereo70 pts))
+        (setq out (cons "A: Coordonatele nu sunt ^in domeniul Stereo 70 (unit`a`ti ^in metri? axe inversate?)." out)))
+      (if (setq sx (TKA:SelfCross pts)) (setq out (cons "E: Conturul imobilului se autointersecteaz`a." out)))
+      (if (and e (TKA:HasArcs e))
+        (setq out (cons "A: Conturul are laturi ^in arc: suprafa`ta `si planul folosesc doar v^arfurile (ad`auga`ti puncte pe arce)." out)))
+      (foreach s sides
+        (if (< (nth 5 s) 0.05)
+          (setq out (cons (strcat "A: Latura " (TKA:SideName s) " are " (TKA:Num (nth 5 s) 3) " m (puncte duble?).") out))))
+      (setq miss (vl-remove-if '(lambda (s) (/= (TKA:SideLabel s) "")) sides))
+      (if miss
+        (setq out (cons (strcat "I: Laturi f`ar`a vecin completat: " (TKA:Join (mapcar 'TKA:SideName miss) ", ") ".") out)))
+      ;; construcțiile trebuie să fie în interiorul imobilului
+      (foreach c (TKA:R1 rec "CONSTR")
+        (if (vl-some '(lambda (p) (and (not (TKA:Inside p pts)) (> (TKA:EdgeDist p (list pts)) 0.05))) (nth 9 c))
+          (setq out (cons (strcat "A: Construc`tia " (nth 1 c) " dep`a`se`ste limita imobilului.") out))))
+      ;; parcelele de folosință acoperă imobilul
+      (if (cdr (TKA:R1 rec "PARCELE"))
+        (progn
+          (setq raw (apply '+ (mapcar '(lambda (p) (abs (TKA:SArea (nth 3 p)))) (TKA:R1 rec "PARCELE")))
+                tot (abs (TKA:SArea pts)))
+          (if (> (abs (- raw tot)) 1.0)
+            (setq out (cons (strcat "A: Parcelele de folosin`t`a ^insumeaz`a " (rtos raw 2 0) " mp, imobilul are "
+                                    (rtos tot 2 0) " mp.") out)))))
+      ;; diferența față de act
+      (setq sact (atof (TKA:Get "SACT")))
+      (if (and (> sact 0) (not sx))
+        (setq d (- (TKA:R1 rec "AREA") sact)
+              out (cons (strcat "I: Suprafa`ta m`asurat`a " (itoa (TKA:R1 rec "AREA")) " mp, din act " (TKA:Get "SACT")
+                                " mp: diferen`ta " (if (>= d 0) "+" "") (rtos d 2 0) " mp ("
+                                (TKA:Num (/ (* 100.0 d) sact) 2) "%).")
+                        out)))))
+  ;; loturile (dezlipire) sau imobilele inițiale (alipire)
+  (if (and rec lots)
+    (progn
+      (setq raw (apply '+ (mapcar '(lambda (r) (abs (TKA:SArea (TKA:R1 r "PTS")))) lots))
+            tot (abs (TKA:SArea (TKA:R1 rec "PTS"))))
+      (cond
+        ((and (= mode "DEZ") (> (abs (- raw tot)) 1.0))
+         (setq out (cons (strcat "E: Loturile ^insumeaz`a " (rtos raw 2 0) " mp, imobilul are " (rtos tot 2 0)
+                                 " mp (loturile nu acoper`a exact imobilul).") out)))
+        ((and (= mode "ALIP") (> (abs (- raw tot)) 1.0))
+         (setq out (cons (strcat "I: Imobilele ini`tiale ^insumeaz`a " (rtos raw 2 0) " mp, imobilul rezultat "
+                                 (rtos tot 2 0) " mp.") out))))
+      (setq i 0)
+      (foreach r lots
+        (setq i (1+ i))
+        (if (TKA:SelfCross (TKA:R1 r "PTS"))
+          (setq out (cons (strcat "E: " (if (= mode "DEZ") "Lotul " "Imobilul ini`tial ") (itoa i) " se autointersecteaz`a.") out)))
+        (if (not (TKA:Inside (TKA:LabelPoint (TKA:R1 r "PTS")) (TKA:R1 rec "PTS")))
+          (setq out (cons (strcat "E: " (if (= mode "DEZ") "Lotul " "Imobilul ini`tial ") (itoa i)
+                                  " nu se afl`a ^in interiorul imobilului " (if (= mode "DEZ") "ini`tial." "rezultat."))
+                          out)))
+        (setq j 0)
+        (foreach o lots
+          (setq j (1+ j))
+          (if (and (< i j) (TKA:Inside (TKA:LabelPoint (TKA:R1 o "PTS")) (TKA:R1 r "PTS")))
+            (setq out (cons (strcat "E: " (if (= mode "DEZ") "Loturile " "Imobilele ") (itoa i) " `si " (itoa j)
+                                    " se suprapun.") out)))))))
+  (reverse out))
+
+;; TKA:Report - afișează mesajele verificării (linia de comandă și dialog).
+;; ASK = T: dialogul apare doar pentru erori/atenționări, cu Continuă/Renunță;
+;; returnează T dacă generarea continuă. ASK = nil: raport (cu OK).
+(defun TKA:Report (msgs ask / imp)
+  (foreach m msgs (TKA:Msg (strcat "  " m)))
+  (setq imp (vl-remove-if '(lambda (m) (wcmatch m "I:*")) msgs))
+  (if (and ask (null imp))
+    T
+    (progn
+      (setq *TKA:RAP* msgs *TKA:ASK* ask)
+      (= 1 (TKA:Dialog "tka_raport"
+             '(progn
+                (set_tile "tx_titlu"
+                          (cond ((null *TKA:RAP*) "Verificarea nu a gasit probleme.")
+                                (T (strcat (itoa (length (vl-remove-if-not '(lambda (m) (wcmatch m "E:*")) *TKA:RAP*)))
+                                           " erori, "
+                                           (itoa (length (vl-remove-if-not '(lambda (m) (wcmatch m "A:*")) *TKA:RAP*)))
+                                           " atentionari, "
+                                           (itoa (length (vl-remove-if-not '(lambda (m) (wcmatch m "I:*")) *TKA:RAP*)))
+                                           " informatii"
+                                           (if *TKA:ASK* ". Continuati generarea?" ".")))))
+                (TKA:FillList "lb_rap" *TKA:RAP*)
+                (if (not *TKA:ASK*) (progn (set_tile "accept" "OK") (mode_tile "cancel" 1)))
+                (action_tile "accept" "(done_dialog 1)")
+                (action_tile "cancel" "(done_dialog 0)")))))))
+
+;; TKA:Cancel - oprește generarea (meniul nu mai generează anexele Word)
+(defun TKA:Cancel ()
+  (setq *TKA:STOP* T)
+  (TKA:Msg "Generarea a fost oprit`a (corecta`ti datele `si relua`ti comanda).")
+  nil)
+
+;; TKA:VerifyStored - verificarea lucrării din selecția memorată (meniul ANEXE)
+(defun TKA:VerifyStored (/ e rec lots)
+  (if (setq e (car (TKA:LoadSel "H_IMOBIL")))
+    (progn
+      (setq rec (TKA:Imobil e (TKA:LoadSel "H_PARC") (TKA:LoadSel "H_CONSTR") nil nil))
+      (if (= (TKA:Get "TIP") "DEZ")
+        (setq lots (mapcar '(lambda (l) (TKA:Imobil l nil nil nil nil)) (TKA:LoadSel "H_LOTURI"))))))
+  (TKA:Report (append (if (null e) '("I: Nu exist`a un imobil selectat; se verific`a doar datele lucr`arii."))
+                      (TKA:Verify rec lots (if lots "DEZ")))
+              nil))
+
+;;; ==========================================================================
+;;;  PLANURILE ÎN PDF
+;;; ==========================================================================
+
+;; TKA:PlotPdf - plotează layout-urile LAYS în PDF (DWG To PDF, setările de
+;; pagină ale layout-ului), în folderul lucrării; returnează fișierele create
+(defun TKA:PlotPdf (lays / dir old plot f res out)
+  (setq dir (TKA:WorkDir) old (getvar "BACKGROUNDPLOT") plot (vla-get-Plot *TK:DOC*))
+  (setvar "BACKGROUNDPLOT" 0)          ; plotare sincronă: fișierul există la revenire
+  (foreach l lays
+    (setvar "CTAB" l)
+    (setq f (strcat dir (TK:SafeName l) ".pdf"))
+    (if (findfile f) (vl-file-delete f))
+    (setq res (vl-catch-all-apply 'vla-PlotToFile (list plot f "DWG To PDF.pc3")))
+    (if (and (not (vl-catch-all-error-p res)) (findfile f))
+      (setq out (cons f out))
+      (TKA:Msg (strcat "Layout-ul " l " nu a putut fi plotat ^in PDF"
+                       (if (vl-catch-all-error-p res) (strcat ": " (vl-catch-all-error-message res)) "")
+                       " (fi`sierul PDF este deschis?)"))))
+  (setvar "BACKGROUNDPLOT" old)
+  (if out (TKA:Msg (strcat (itoa (length out)) " planuri PDF ^in " dir)))
+  (reverse out))
+
+;; TKA:GenLayouts - layout-urile create de generator în desen (PAD_*, RELEVEU_*)
+(defun TKA:GenLayouts ()
+  (vl-remove-if-not '(lambda (l) (wcmatch (strcase l) "PAD_*,RELEVEU_*")) (layoutlist)))
+
+;;; ==========================================================================
 ;;;  COMENZILE
 ;;; ==========================================================================
 
 ;; TKA:Run - execută FN cu gestionarea erorilor și a variabilelor de sistem
 (defun TKA:Run (fn / *error* r)
-  (defun *error* (msg) (TK:Error msg))
+  (defun *error* (msg) (setq *TKA:TXC* nil) (TK:Error msg))
   (TK:Start)
+  (setq *TKA:TXC* nil *TKA:NEWLAYS* nil)
   (TKA:Prep)
   (setq r (eval fn))
+  (setq *TKA:TXC* nil)
+  (if (and (= *TKA:PDFPLAN* "1") *TKA:NEWLAYS*) (TKA:PlotPdf *TKA:NEWLAYS*))
   (TK:Stop)
   r)
 
 (defun c:PAD () (TKA:Run '(TKA:DoPad16 nil)) (princ))
+
+;; C:PLANEPDF - plotează în PDF toate planurile generate (layout-urile PAD_* și RELEVEU_*)
+(defun c:PLANEPDF (/ lays)
+  (if (setq lays (TKA:GenLayouts))
+    (TKA:Run '(TKA:PlotPdf lays))
+    (TKA:Msg "Desenul nu are planuri generate (layout-uri PAD_* sau RELEVEU_*)."))
+  (princ))
+
+;; C:VERIFICARE - verificarea datelor lucrării și a imobilului memorat
+(defun c:VERIFICARE () (TKA:Run '(TKA:VerifyStored)) (princ))
 (defun c:PADDEZ () (TKA:Run '(TKA:DoPadDez nil)) (princ))
 (defun c:PADALIP () (TKA:Run '(TKA:DoPadAlip nil)) (princ))
 (defun c:DATEIMOBIL () (TKA:ImobilDialog) (princ))
@@ -2268,7 +2569,7 @@
 
 ;; TKA:DoReleveu - Anexa 18: layout cu releveul unui nivel (antet, tabelul
 ;; încăperilor, numerele încăperilor) și memorarea UI pentru foaia colectivă
-(defun TKA:DoReleveu (/ rooms uis uiname nivel groups pts bb sh sc vp x y lst old)
+(defun TKA:DoReleveu (/ rooms uis uiname nivel groups pts bb sh sc vp x y lst old pos)
   (setq rooms (TKA:SelPolys "\nSelectati incaperile nivelului (polilinii inchise): "))
   (if rooms
     (progn
@@ -2324,14 +2625,19 @@
           (setq pts (if (nth 5 r) (TK:v- (TKA:M2P (nth 5 r)) '(0.0 3.6)) (TKA:M2P (TKA:LabelPoint (nth 4 r)))))
           (TKA:Circle (car pts) (cadr pts) 1.6 "PAD_TEXT")
           (TKA:T (itoa (car r)) (car pts) (cadr pts) 1.8 0.0 "MC" "PAD_TEXT" nil)))
-      ;; memorarea UI ale nivelului (pentru foaia colectivă)
-      (setq old (vl-remove-if '(lambda (u) (= (car u) nivel)) (vlax-ldata-get *TKA:DICT* "UI")))
+      ;; memorarea UI ale nivelului (pentru foaia colectivă); la reluarea unui
+      ;; nivel, UI-urile lui își păstrează locul în listă (și codurile U1, U2...)
+      (setq old (vlax-ldata-get *TKA:DICT* "UI")
+            pos (vl-position nivel (mapcar 'car old))
+            old (vl-remove-if '(lambda (u) (= (car u) nivel)) old))
       (foreach g groups
         (setq lst (cons (list nivel (car g)
                               (apply '+ (mapcar '(lambda (r) (if (nth 3 r) (caddr r) 0.0)) (cadr g)))
                               (TKA:RoomsText (cadr g)))
                         lst)))
-      (vlax-ldata-put *TKA:DICT* "UI" (append old (reverse lst)))
+      (vlax-ldata-put *TKA:DICT* "UI" (if pos
+                                        (append (TKA:Firstn pos old) (reverse lst) (TKA:Nthcdr pos old))
+                                        (append old (reverse lst))))
       (TKA:Msg (strcat "Releveu generat ^in layout-ul \"" *TKA:LAY* "\" (" (itoa (length groups)) " UI)."))
       groups)))
 
@@ -2467,6 +2773,7 @@
          (set_tile "tx_stare" (TKA:Status))
          (set_tile "tg_pdf" *TKA:PDF*)
          (set_tile "tg_open" *TKA:OPENDIR*)
+         (set_tile "tg_pdfplan" *TKA:PDFPLAN*)
          (action_tile "lb_anexe" "(TKA:MainInfo)")
          (action_tile "bt_toate" "(TKA:MainSetSel (vl-remove-if-not 'numberp (mapcar 'car *TKA:ITEMS*))) (TKA:MainInfo)")
          (action_tile "bt_nimic" "(set_tile \"lb_anexe\" \"\")")
@@ -2477,8 +2784,10 @@
          (action_tile "bt_lucrare" "(done_dialog 12)")
          (action_tile "bt_exec" "(done_dialog 13)")
          (action_tile "bt_opt" "(done_dialog 14)")
+         (action_tile "bt_verif" "(setq *TKA:PDF* (get_tile \"tg_pdf\") *TKA:OPENDIR* (get_tile \"tg_open\") *TKA:PDFPLAN* (get_tile \"tg_pdfplan\")) (done_dialog 15)")
          (action_tile "accept"
            (strcat "(setq *TKA:PDF* (get_tile \"tg_pdf\") *TKA:OPENDIR* (get_tile \"tg_open\")"
+                   " *TKA:PDFPLAN* (get_tile \"tg_pdfplan\")"
                    " *TKA:SEL* (mapcar '(lambda (i) (car (nth i *TKA:ITEMS*))) (TKA:MainSel)))"
                    " (if *TKA:SEL* (done_dialog 1) (set_tile \"error\" \"Selectati cel putin o anexa sau un pachet.\"))"))
          (action_tile "cancel" "(done_dialog 0)"))))
@@ -2494,13 +2803,14 @@
 
 ;; TKA:Generate - generează elementele alese în meniu
 (defun TKA:Generate (sel / rec docs i st ui)
+  (setq *TKA:STOP* nil)
   (cond
     ((member "17D" sel) (setq rec (TKA:DoPadDez (TKA:AskReuse))))
     ((member "17A" sel) (setq rec (TKA:DoPadAlip (TKA:AskReuse))))
     ((member "16" sel) (setq rec (TKA:DoPad16 (TKA:AskReuse)))))
-  (if (member "18" sel) (TKA:DoReleveu))
+  (if (and (member "18" sel) (not *TKA:STOP*)) (TKA:DoReleveu))
   (setq docs (vl-remove-if-not 'numberp sel))
-  (if docs
+  (if (and docs (not *TKA:STOP*))
     (progn
       (if (and (null rec) (vl-some '(lambda (n) (member n '(13 14 15 20 0 19 7 26 27 28 29))) docs))
         (setq rec (TKA:CurrentRec)))
@@ -2521,7 +2831,8 @@
     (cond ((= r 11) (TKA:ImobilDialog))
           ((= r 12) (TKA:LucrareDialog))
           ((= r 13) (TKA:ExecDialog))
-          ((= r 14) (TKA:OptDialog))))
+          ((= r 14) (TKA:OptDialog))
+          ((= r 15) (TKA:Run '(TKA:VerifyStored)))))
   (if (= r 1) (TKA:Run '(TKA:Generate *TKA:SEL*)))
   (princ))
 
@@ -2577,9 +2888,11 @@
     "        : tka_btn { key = \"bt_lucrare\"; label = \"Lucrare si memoriu tehnic...\"; }"
     "        : tka_btn { key = \"bt_exec\";    label = \"Executant (persoana autorizata)...\"; }"
     "        : tka_btn { key = \"bt_opt\";     label = \"Optiuni planuri (format, scara)...\"; }"
+    "        : tka_btn { key = \"bt_verif\";   label = \"Verificare date si geometrie...\"; }"
     "      }"
     "      : boxed_column {"
     "        label = \"Rezultat\";"
+    "        : toggle { key = \"tg_pdfplan\"; label = \"Ploteaza planurile in PDF\"; }"
     "        : toggle { key = \"tg_pdf\";  label = \"Converteste anexele Word in PDF\"; }"
     "        : toggle { key = \"tg_open\"; label = \"Deschide folderul cu anexele\"; }"
     "      }"
@@ -2700,21 +3013,35 @@
     "        : edit_box { key = \"PV_EXEMPLARE\"; label = \"PV vecinatate - exemplare:\"; edit_width = 4; }"
     "        : edit_box { key = \"PV_PAGINI\"; label = \"pagini:\"; edit_width = 4; }"
     "      }"
-    "      : toggle { key = \"POZ_INCERTA\"; label = \"Pozitionare incerta (declaratia anexa 14)\"; }"
     "      : tka_ed { key = \"NRCF_COLECTIVA\"; label = \"CF colectiva (UI):\"; }"
     "      : tka_ed { key = \"ST_AFERENT\"; label = \"Teren aferent cladirii (mp):\"; }"
     "      : tka_ed { key = \"PARTI_COMUNE\"; label = \"Parti comune (UI):\"; edit_width = 46; }"
     "    }"
-    "    : boxed_column {"
-    "      label = \"Memoriu tehnic (gol = text generat automat)\";"
-    "      : edit_box { key = \"METODA\";      label = \"Metoda:\";     edit_width = 60; edit_limit = 400; }"
-    "      : edit_box { key = \"APARATURA\";   label = \"Aparatura:\";  edit_width = 60; edit_limit = 400; }"
-    "      : edit_box { key = \"SPRIJIN\";     label = \"Puncte de sprijin:\"; edit_width = 60; edit_limit = 400; }"
-    "      : edit_box { key = \"SCOP\";        label = \"4. Scop:\";    edit_width = 60; edit_limit = 2000; }"
-    "      : edit_box { key = \"DOCUMENTARE\"; label = \"5. Documentare:\"; edit_width = 60; edit_limit = 2000; }"
-    "      : edit_box { key = \"OPERATIUNI\";  label = \"6. Operatiuni:\";  edit_width = 60; edit_limit = 2000; }"
-    "      spacer_1;"
-    "      : text { label = \"Textele lungi se pot ajusta si in documentul Word generat.\"; }"
+    "    : column {"
+    "      : boxed_column {"
+    "        label = \"Declaratia proprietarului (anexa 14)\";"
+    "        : toggle { key = \"POZ_INCERTA\"; label = \"Pozitionare incerta a imobilului\"; }"
+    "        : toggle { key = \"LITIGIU\"; label = \"Imobilul se afla in litigiu:\"; }"
+    "        : row {"
+    "          : edit_box { key = \"LIT_ID\"; label = \"ID imobil:\"; edit_width = 10; }"
+    "          : edit_box { key = \"LIT_DOSAR\"; label = \"Nr. dosar:\"; edit_width = 14; }"
+    "        }"
+    "        : row {"
+    "          : edit_box { key = \"LIT_INSTANTA\"; label = \"Instanta:\"; edit_width = 18; }"
+    "          : edit_box { key = \"LIT_OBIECT\"; label = \"Obiect:\"; edit_width = 16; }"
+    "        }"
+    "      }"
+    "      : boxed_column {"
+    "        label = \"Memoriu tehnic (gol = text generat automat)\";"
+    "        : edit_box { key = \"METODA\";      label = \"Metoda:\";     edit_width = 60; edit_limit = 400; }"
+    "        : edit_box { key = \"APARATURA\";   label = \"Aparatura:\";  edit_width = 60; edit_limit = 400; }"
+    "        : edit_box { key = \"SPRIJIN\";     label = \"Puncte de sprijin:\"; edit_width = 60; edit_limit = 400; }"
+    "        : edit_box { key = \"SCOP\";        label = \"4. Scop:\";    edit_width = 60; edit_limit = 2000; }"
+    "        : edit_box { key = \"DOCUMENTARE\"; label = \"5. Documentare:\"; edit_width = 60; edit_limit = 2000; }"
+    "        : edit_box { key = \"OPERATIUNI\";  label = \"6. Operatiuni:\";  edit_width = 60; edit_limit = 2000; }"
+    "        spacer_1;"
+    "        : text { label = \"Textele lungi se pot ajusta si in documentul Word generat.\"; }"
+    "      }"
     "    }"
     "  }"
     "  ok_cancel;"
@@ -2775,7 +3102,9 @@
     "      key = \"rc_mod\";"
     "      : radio_button { key = \"rb_nv\";  label = \"Sens orar, din punctul cel mai de nord-vest\"; }"
     "      : radio_button { key = \"rb_pol\"; label = \"Ordinea vertex-urilor poliliniei\"; }"
+    "      : radio_button { key = \"rb_des\"; label = \"Numerele punctelor din desen (texte / blocuri de punct)\"; }"
     "    }"
+    "    : edit_box { key = \"eb_nrdist\"; label = \"Distanta maxima numar - varf (m):\"; edit_width = 6; }"
     "    : radio_row {"
     "      key = \"rr_sep\";"
     "      : radio_button { key = \"rb_virg\"; label = \"Zecimale cu virgula (12,34)\"; }"
@@ -2837,6 +3166,22 @@
     "  }"
     "  ok_cancel;"
     "  errtile;"
+    "}"
+    ""
+    "// ---------------------------------------------------------------------------"
+    "//  Raportul verificarii (date lucrare, geometrie, loturi)"
+    "// ---------------------------------------------------------------------------"
+    "tka_raport : dialog {"
+    "  label = \"TopoKit - Verificarea datelor si a geometriei\";"
+    "  : text { key = \"tx_titlu\"; label = \"\"; width = 100; }"
+    "  : list_box { key = \"lb_rap\"; width = 112; height = 14; }"
+    "  : text { label = \"E = eroare (planul ar fi gresit)   A = atentionare   I = informatie\"; }"
+    "  : row {"
+    "    fixed_width = true;"
+    "    alignment = centered;"
+    "    : button { key = \"accept\"; label = \"Continua\"; is_default = true; width = 16; }"
+    "    : button { key = \"cancel\"; label = \"Renunta\"; is_cancel = true; width = 16; }"
+    "  }"
     "}"))
 ;;@@DCL-END@@
 

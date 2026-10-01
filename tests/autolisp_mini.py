@@ -321,3 +321,4 @@ def _distof(s, mode=2):
     try: return float(s.strip())
     except (ValueError, AttributeError): return None
 funcs[Sym('DISTOF')] = _distof
+funcs[Sym('VL-CATCH-ALL-ERROR-MESSAGE')] = lambda e: e.m if isinstance(e, CErr) else ''

@@ -90,7 +90,8 @@ TRIG_EXEC = ["împuternicesc", "persoanei autorizate", "persoana fizică/juridic
 TRIG_NONE = ["s-a achitat", "nr. de înregistrare", "tariful", "proprietarul anterior",
              "pentru intervalul", "litigiu", "solicit comunicarea", "înregistrată cu",
              "autorizaţiei de construire", "proces-verbal de recepţie", "expertiza tehnică",
-             "ca urmare a cererii", "prin mandatarul"]
+             "ca urmare a cererii", "prin mandatarul", "reprezentat/ă prin", "reprezentat prin",
+             "responsabilului cu protecţia datelor", "rpd_"]
 # Anexele emise de OCPI/CNC: se completeaza de institutie, raman necompletate
 AUTO_OFF = {2, 3, 4, 9, 11, 21, 24, 25, 33, 35}
 # Etichete care descriu intotdeauna imobilul, indiferent de subiectul frazei
@@ -337,6 +338,9 @@ EXPLICIT = [
     (22, r"(anexat în original sau în copie legalizată: )\.+", r"\1" + ph("ACT_PROP", "......")),
     (22, r"^(ANULAREA NUMĂRULUI CADASTRAL: )\.+", r"\1" + ph("NRCAD", "........")),
     (22, r"(Cartea Funciară nr\. )\.+", r"\1" + ph("NRCF", ".....")),
+    # Anexa 13 - cerere de receptie: contractul cu persoana autorizata
+    (13, r"(conform Contractului/Angajamentului nr\. )\.+( data )\.+",
+         r"\1" + ph("E_CONTRACT", ".....") + r"\2" + ph("E_CONTRACT_DATA", "......")),
     # Anexa 14 - declaratie
     (14, r"(al imobilului situat în )\.+", r"\1" + ph("ADRESA", "..........")),
     (14, r"(rezultate din măsurători de )\.+( mp)", r"\1" + ph("SMAS", "..................") + r"\2"),
@@ -344,9 +348,10 @@ EXPLICIT = [
          r"\1" + ph("E_NUMEC", "......................") + r"\2" + ph("E_CAT", "..............") +
          r"\3" + ph("E_AUT_SERIA", "..................") + r"\4" + ph("E_AUT_NR", "..................")),
     (14, r"(dreptului de proprietate )\.+(, în vederea)", r"\1" + ph("ACT_PROP", "..................") + r"\2"),
-    (14, r"(cu imobilul ID )\.+(, nr\. dosar )\.+(, instanţa )\.+( obiect )\.+",
-         r"\1" + ph("LIT_ID", "...................") + r"\2" + ph("LIT_DOSAR", "........................") +
-         r"\3" + ph("LIT_INSTANTA", "..................") + r"\4" + ph("LIT_OBIECT", "..................")),
+    # situatia juridica: un singur camp (implicit textul original, cu ambele variante)
+    (14, r"imobilul nu se află în litigiu/se află în litigiu - cu imobilul ID \.+, nr\. dosar \.+, instanţa \.+ obiect \.+ \.",
+         ph("LIT_TEXT", "imobilul nu se află în litigiu/se află în litigiu - cu imobilul ID ..................., "
+                        "nr. dosar ........................, instanţa .................. obiect .................. .")),
     # Anexa 15 - memoriu tehnic
     (15, r"^(1\. Adresa imobilului/zona în care se desfăşoară lucrarea) \.+", r"\1: " + ph("ADRESA", "..................")),
     (15, r"^(2\. Tipul lucrării:) \.+", r"\1 " + ph("TIP_LUCRARE", "..................")),
@@ -367,6 +372,7 @@ EXPLICIT = [
     # Anexa 23 - cerere CNC
     (23, r"^(\.{10,})$", None),  # tratate prin pozitie (vezi POZ_23)
     # Anexa 26-29 - formulare primarie
+    (26, r"(număr de carte funciară )\.+(, \(în situaţia)", r"\1" + ph("NRCF", "..........") + r"\2"),
     (27, r"(vol\. )\.+( fila )\.+", r"\1" + ph("RA_VOL", "....") + r"\2" + ph("RA_FILA", ".....")),
     (27, r"(Certificăm că terenul în suprafaţă de )\.+( mp)", r"\1" + ph("SMAS", "....") + r"\2"),
     (27, r"(are categoria de folosinţă )\.+", r"\1" + ph("CATEG_TEXT", "..........")),
@@ -705,7 +711,20 @@ def write_doc(nr, blocks, path, title_extra=None):
         add_runs(p, t, size=13 if is_title else size, bold=is_title)
     doc.core_properties.title = "Anexa nr. %d - %s" % (nr, TITLURI.get(nr, "")) if nr else (title_extra or "")
     doc.core_properties.author = "TopoKit"
-    doc.save(path)
+    save_fixed(doc, path)
+
+def save_fixed(doc, path):
+    """Salveaza documentul cu data fixa in arhiva (sabloane identice la fiecare generare)."""
+    import io, zipfile
+    buf = io.BytesIO()
+    doc.save(buf)
+    src = zipfile.ZipFile(io.BytesIO(buf.getvalue()))
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as out:
+        for info in src.infolist():
+            zi = zipfile.ZipInfo(info.filename, date_time=(2023, 2, 14, 0, 0, 0))
+            zi.compress_type = zipfile.ZIP_DEFLATED
+            zi.external_attr = info.external_attr
+            out.writestr(zi, src.read(info.filename))
 
 def main():
     raport = "--raport" in sys.argv

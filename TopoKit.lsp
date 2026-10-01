@@ -61,14 +61,14 @@
 ;;; ==========================================================================
 
 ;; TK:Start - pornește o comandă: salvează variabilele de sistem
-;; (CMDECHO, OSMODE, ATTREQ, DIMZIN) și deschide un grup UNDO.
+;; (CMDECHO, OSMODE, ATTREQ, DIMZIN, BACKGROUNDPLOT) și deschide un grup UNDO.
 (defun TK:Start ()
   (setq *TK:DOC* (vla-get-ActiveDocument (vlax-get-acad-object)))
   (if (not *TK:ACTIVE*)
     (progn
       (setq *TK:OLDVARS*
              (mapcar '(lambda (v) (cons v (getvar v)))
-                     '("CMDECHO" "OSMODE" "ATTREQ" "DIMZIN")))
+                     '("CMDECHO" "OSMODE" "ATTREQ" "DIMZIN" "BACKGROUNDPLOT")))
       (vla-StartUndoMark *TK:DOC*)
       (setq *TK:ACTIVE* T)))
   (setvar "CMDECHO" 0)

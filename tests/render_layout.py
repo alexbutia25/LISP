@@ -14,7 +14,7 @@ FONTS = {"TK_ARIAL": "LiberationSans-Regular.ttf", "TKA_ARIALB": "LiberationSans
          "TKA_ARIALI": "LiberationSans-Italic.ttf", "BOLD": "LiberationSans-Bold.ttf"}
 CAP = 0.716                       # inaltimea majusculelor Arial / em
 ACI = {1: (255, 0, 0), 2: (230, 200, 0), 3: (0, 200, 0), 4: (0, 190, 190), 5: (0, 0, 255), 6: (255, 0, 255),
-       7: (0, 0, 0), 8: (128, 128, 128), 9: (192, 192, 192)}
+       7: (0, 0, 0), 8: (128, 128, 128), 9: (192, 192, 192), 30: (230, 110, 0), 32: (170, 90, 20)}
 _fonts = {}
 
 
@@ -192,5 +192,45 @@ class Page:
 
 def render_layout(acad, layout, png, ppm=5.0):
     img = Page(acad, layout, ppm).render()
+    img.save(png)
+    return img
+
+
+class ModelPage(Page):
+    """Vedere de sus a model space-ului (puncte, linii, polilinii 2D/3D, 3DFACE, texte)."""
+    def __init__(s, acad, box, ppm):
+        s.acad, s.ppm, s.box = acad, ppm, box
+        s.W, s.H = box[2] - box[0], box[3] - box[1]
+        s.img = Image.new("RGB", (int(s.W * ppm), int(s.H * ppm)), "white")
+        s.d = ImageDraw.Draw(s.img)
+
+    def px(s, p): return ((p[0] - s.box[0]) * s.ppm, (s.box[3] - p[1]) * s.ppm)
+
+    def render(s):
+        order = s.acad.order
+        for i, e in enumerate(order):
+            if e in s.acad.deleted or s.acad.space(e) != "Model": continue
+            d = s.acad.db[e]; t = grp(d, 0)
+            col, lw, plot = s.style_of(d)
+            if t == "3DFACE":
+                pts = [s.px(grp(d, c)) for c in (10, 11, 12)]
+                s.d.polygon(pts, outline=(205, 205, 205))
+            elif t == "POINT":
+                x, y = s.px(grp(d, 10)); s.d.ellipse([x - 1.5, y - 1.5, x + 1.5, y + 1.5], fill=(0, 0, 0))
+            elif t == "POLYLINE":
+                vs, j = [], i + 1
+                while j < len(order) and grp(s.acad.db[order[j]], 0) == "VERTEX":
+                    vs.append(s.px(grp(s.acad.db[order[j]], 10))); j += 1
+                if len(vs) > 1: s.d.line(vs, fill=(200, 0, 0), width=2)
+            elif t in ("LINE", "LWPOLYLINE"):
+                s.draw_geom(s.d, d, s.px)
+        for e in order:
+            if e in s.acad.deleted or s.acad.space(e) != "Model": continue
+            if grp(s.acad.db[e], 0) == "TEXT": s.draw_text_ent(s.img, s.acad.db[e])
+        return s.img
+
+
+def render_model(acad, png, box, ppm=6.0):
+    img = ModelPage(acad, box, ppm).render()
     img.save(png)
     return img

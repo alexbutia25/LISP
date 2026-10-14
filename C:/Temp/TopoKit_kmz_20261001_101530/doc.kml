@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>
+<Placemark><name><![CDATA[Parcela A]]></name><Polygon><outerBoundaryIs><LinearRing><coordinates>
+ 26.1035599025,44.4193699320,0 26.1043149591,44.4194525338,0 26.1041997071,44.4199936766,0 26.1035074224,44.4199104589,0 26.1035599025,44.4193699320,0
+</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>
+<Placemark><name>Borna 1</name><Point><coordinates>26.1035599025,44.4193699320,0</coordinates></Point></Placemark>
+</Document></kml>

@@ -1320,6 +1320,7 @@
     "//    3. Inserare format, cadru si indicator la scara (A4 - A0)"
     "//    4. Generatorul de anexe pentru Ordinul ANCPI nr. 600/2023"
     "//       (TopoKitAnexe.lsp: PAD, dezlipire/alipire, releveu, documente Word)"
+    "//    5. Modulul de teren (TopoKitTeren.lsp: puncte, TIN, curbe, volume, raster, KML)"
     "//"
     "//  Imaginile (sigla, pictogramele si previzualizarea plansei) sunt desenate"
     "//  din TopoKit.lsp cu vector_image / fill_image."
@@ -1455,6 +1456,21 @@
     "    : column {"
     "      : tk_action { key = \"bt_anexe\"; label = \"Generator anexe...\"; mnemonic = \"A\"; }"
     "      : text { label = \"Comanda directa: ANEXE\"; alignment = centered; }"
+    "    }"
+    "  }"
+    ""
+    "  // ---------------- 5. Teren: puncte, model 3D, curbe, volume ----------------"
+    "  : spacer { height = 0.3; }"
+    "  : boxed_row {"
+    "    label = \" 5   Teren - puncte masurate, model 3D, curbe de nivel, volume \";"
+    "    : paragraph {"
+    "      : text_part { label = \"Import puncte cu desenare pe coduri, tabele de coordonate, legenda semnelor conventionale.\"; }"
+    "      : text_part { label = \"Model TIN, curbe de nivel, volume, raster georeferentiat, import KML/KMZ, harta online.\"; }"
+    "      : text_part { key = \"tx_teren\"; label = \"\"; width = 90; }"
+    "    }"
+    "    : column {"
+    "      : tk_action { key = \"bt_teren\"; label = \"Modul teren...\"; mnemonic = \"T\"; }"
+    "      : text { label = \"Comanda directa: TOPOTEREN\"; alignment = centered; }"
     "    }"
     "  }"
     ""
@@ -1847,6 +1863,9 @@
      (action_tile "bt_kmz"    "(if (TK:MainSave) (done_dialog 2))")
      (action_tile "bt_cadru"  "(if (TK:MainSave) (done_dialog 3))")
      (action_tile "bt_anexe"  "(if (TK:MainSave) (done_dialog 4))")
+     (action_tile "bt_teren"  "(if (TK:MainSave) (done_dialog 5))")
+     (set_tile "tx_teren" (if TKT:Menu "Modulul de teren este incarcat (TopoKitTeren.lsp)."
+                            "TopoKitTeren.lsp nu este incarcat (APPLOAD sau calea de suport)."))
      (set_tile "tx_anexe" (if TKA:Generate "Generatorul de anexe este incarcat (TopoKitAnexe.lsp)."
                             "TopoKitAnexe.lsp nu este incarcat (APPLOAD sau calea de suport)."))
      (action_tile "bt_despre" "(TK:About)")
@@ -1863,7 +1882,10 @@
                     (c:ANEXE)
                     (alert (strcat "Generatorul de anexe (TopoKitAnexe.lsp) nu este incarcat.\n"
                                    "Copiati TopoKitAnexe.lsp, TopoKitAnexe.dcl si folderul \"anexe\" langa TopoKit.lsp,\n"
-                                   "in calea de suport AutoCAD, sau incarcati-l cu APPLOAD.")))))
+                                   "in calea de suport AutoCAD, sau incarcati-l cu APPLOAD."))))
+       ((= res 5) (if TKT:Menu
+                    (c:TOPOTEREN)
+                    (alert "Modulul de teren (TopoKitTeren.lsp si TopoKitTeren.dcl) nu este incarcat."))))
      (setq *TK:DLGRUN* nil)))
   (princ))
 
@@ -1876,4 +1898,7 @@
 ;; TopoKitAnexe.lsp se află în calea de suport (sau lângă TopoKit.lsp)
 (if (and (not *TKA:LOADING*) (not TKA:Generate) (findfile "TopoKitAnexe.lsp"))
   (load (findfile "TopoKitAnexe.lsp")))
+;; Modulul de teren (puncte, TIN, curbe de nivel, volume, raster, KML)
+(if (and (not *TKT:LOADING*) (not TKT:Menu) (findfile "TopoKitTeren.lsp"))
+  (load (findfile "TopoKitTeren.lsp")))
 (princ)

@@ -3,6 +3,7 @@
 
     TopoKit.dcl      -> functia TK:DclLines  din TopoKit.lsp
     TopoKitAnexe.dcl -> functia TKA:DclLines din TopoKitAnexe.lsp
+    TopoKitTeren.dcl -> functia TKT:DclLines din TopoKitTeren.lsp
 
 Programele genereaza dialogul dintr-un fisier temporar daca fisierul .dcl nu
 este gasit. Rulati acest script dupa fiecare modificare a unui fisier .dcl:
@@ -19,7 +20,8 @@ def q(line):
 
 
 for dcl_name, lsp_name, fn in (("TopoKit.dcl", "TopoKit.lsp", "TK:DclLines"),
-                               ("TopoKitAnexe.dcl", "TopoKitAnexe.lsp", "TKA:DclLines")):
+                               ("TopoKitAnexe.dcl", "TopoKitAnexe.lsp", "TKA:DclLines"),
+                               ("TopoKitTeren.dcl", "TopoKitTeren.lsp", "TKT:DclLines")):
     dcl = (root / dcl_name).read_text(encoding="utf-8").splitlines()
     lsp_path = root / lsp_name
     lsp = lsp_path.read_text(encoding="utf-8")

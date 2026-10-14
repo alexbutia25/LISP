@@ -4,11 +4,12 @@ Suită modulară AutoLISP + DCL pentru AutoCAD (în stilul TopoLT):
 
 | Comandă | Modul |
 |---|---|
-| `TOPOKIT` / `MYTOPO` | Meniul grafic (DCL) cu cele 4 module și setările lor |
+| `TOPOKIT` / `MYTOPO` | Meniul grafic (DCL) cu cele 5 module și setările lor |
 | `ADDVTX` | Corecție topologică – vertex-uri la intersecțiile poliliniilor |
 | `EXPKMZ` | Export parcelă închisă în KMZ/KML (Stereo 70 → WGS84) + deschidere în Google Earth Pro |
 | `INSCADRU` | Format A4…A0 (portrait/landscape), cadru și indicator la scară |
 | `ANEXE` | Generatorul de anexe pentru **Ordinul ANCPI nr. 600/2023**: PAD, dezlipire/alipire, releveu și documentele Word ([detalii](#4-generator-de-anexe--ordinul-ancpi-nr-6002023-anexe)) |
+| `TOPOTEREN` | Modulul de teren: import puncte și desenare pe coduri, model TIN, curbe de nivel, volume, raster georeferențiat, KML/KMZ, tabele și legende ([detalii](#5-teren--puncte-model-3d-curbe-de-nivel-volume-topoteren)) |
 
 ## Interfața
 
@@ -29,11 +30,12 @@ completate de codul LISP real (rulat în simulatorul din `tests/`). Fonturile ș
 
 ## Instalare
 
-1. Copiați `TopoKit.lsp`, `TopoKit.dcl`, `stereo70_etrs89A.gsb`, `TopoKitAnexe.lsp`, `TopoKitAnexe.dcl` și
-   folderul `anexe` în același folder. Adăugați folderul în *Support File Search Path* (și în *Trusted Locations*,
+1. Copiați `TopoKit.lsp`, `TopoKit.dcl`, `stereo70_etrs89A.gsb`, `TopoKitAnexe.lsp`, `TopoKitAnexe.dcl`,
+   `TopoKitTeren.lsp`, `TopoKitTeren.dcl` și folderul `anexe` în același folder. Adăugați folderul în *Support File Search Path* (și în *Trusted Locations*,
    dacă AutoCAD cere confirmarea încărcării).
 2. În AutoCAD: `APPLOAD` → `TopoKit.lsp` (sau adăugați-l în *Startup Suite*). Generatorul de anexe
-   (`TopoKitAnexe.lsp`) se încarcă automat dacă este găsit în calea de suport.
+   (`TopoKitAnexe.lsp`) și modulul de teren (`TopoKitTeren.lsp`) se încarcă automat dacă sunt găsite
+   în calea de suport.
 3. Rulați `TOPOKIT` sau direct `ANEXE`.
 
 Fișierul `.dcl` este opțional: dacă nu este găsit, `TopoKit.lsp` generează automat o copie
@@ -307,6 +309,70 @@ Ce conține planul:
 - Generatorul a fost testat într-un simulator AutoCAD (vezi *Dezvoltare*), nu și în AutoCAD.
   Verificați primul plan generat: setările de pagină *DWG To PDF* și viewport-ul.
 
+## 5. Teren – puncte, model 3D, curbe de nivel, volume (`TOPOTEREN`)
+
+Modulul `TopoKitTeren.lsp` are meniul `TOPOTEREN` (și secțiunea 5 din `TOPOKIT`). Opțiunile din meniu
+(formatul fișierului, scara, echidistanța, cota de referință...) sunt folosite și de comenzile directe.
+
+![Meniul TOPOTEREN](docs/macheta_teren.png)
+
+| Comandă | Ce face |
+|---|---|
+| `IMPPCT` | Import puncte măsurate din TXT/CSV și desenare rapidă pe coduri |
+| `TABPCT` | Tabel cu coordonatele punctelor selectate (Nr, X, Y, Z), pe coloane de 40 de rânduri |
+| `LEGENDA` | Legenda semnelor convenționale din desen: blocurile (cu descrierea din definiție) și straturile de linii |
+| `TIN` | Modelul 3D al terenului: triangulație Delaunay din puncte 3D și linii de frângere (3DFACE) |
+| `CURBE` | Curbe de nivel din TIN: principale și secundare, cu cote |
+| `VOLUM` | Volume de săpătură și umplutură între TIN și un plan de cotă dată |
+| `VOLUM2` | Volume între două TIN (teren existent – proiect) |
+| `GEOREF` | Inserarea unei imagini raster georeferențiate (fișier world `.jgw`, `.tfw`, `.pgw`, `.wld`) |
+| `IMPKML` | Import KML/KMZ din Google Earth (puncte, linii, poligoane), WGS84 → Stereo 70 |
+| `HARTA` | Deschide punctul indicat în Google Maps |
+
+- **Import puncte (`IMPPCT`).** Fișierul are pe fiecare rând `Nr, X (Nord), Y (Est), Z, Cod`. Ordinea
+  coloanelor se alege în meniu, inclusiv `Nr, Y, X, Z, Cod` sau `X, Y, Z` fără număr.
+  - Separatorul se detectează singur: `;`, tab, virgulă sau spații. Cu `;`, tab sau spații se acceptă
+    și virgula zecimală (`512,30`). Rândurile de antet se ignoră.
+  - Fiecare punct devine un `POINT` la cota Z (sau la Z = 0 pentru plan 2D), cu numărul și cota scrise
+    lângă el (straturile `PUNCTE`, `PCT_NR`, `PCT_COTA`).
+  - **Desenarea pe coduri:** punctele consecutive cu același cod (`GARD`, `DRUM`...) se unesc într-o
+    polilinie 3D sau 2D pe stratul `COD_<cod>`.
+- **Model TIN (`TIN`).**
+  - Selectați punctele (`POINT`, blocuri de punct) și, opțional, liniile de frângere (`LINE`, polilinii
+    2D/3D). Liniile de frângere se densifică, astfel încât triunghiurile să le urmărească.
+  - Se pot elimina triunghiurile cu latura mai mare decât o valoare dată și cele din afara unui contur
+    selectat.
+  - Rezultatul: entități `3DFACE` pe stratul `TIN`, folosibile și de alte programe.
+- **Curbe de nivel (`CURBE`).** Se generează pe orice TIN din `3DFACE`, la echidistanța aleasă, ca polilinii
+  la cota lor, pe straturile `CURBE_PRINC` și `CURBE_SEC`. Curbele principale (la fiecare N curbe) au
+  cota scrisă pe ele.
+- **Volume.**
+  - `VOLUM` calculează exact, triunghi cu triunghi, volumul față de planul de referință: săpătură
+    (terenul deasupra cotei) și umplutură, cu ariile lor.
+  - `VOLUM2` compară două TIN pe o grilă de pasul ales: umplutură acolo unde proiectul este deasupra
+    terenului existent.
+  - Rezultatele apar în linia de comandă și, opțional, într-un tabel în desen.
+- **Raster și Google Earth.**
+  - `GEOREF` inserează imaginea la poziția, mărimea pixelului și rotația din fișierul world.
+  - `IMPKML` citește KML sau KMZ (KMZ-ul se dezarhivează cu PowerShell). Transformarea WGS84 → Stereo 70
+    este inversarea numerică a transformării din `EXPKMZ`, cu aceeași precizie (grila NTv2). Dus-întors
+    Stereo 70 → KML → Stereo 70 dă diferențe sub 0,01 mm.
+  - `HARTA` deschide în browser punctul indicat (sau centrul ecranului) în Google Maps.
+- **Formatare automată.** Layout-urile cu cadru, indicator și caroiaj de coordonate sunt în modulele 3
+  (`INSCADRU`) și 4 (planurile anexelor).
+
+![TIN, curbe de nivel, tabel de coordonate, legendă și tabelul volumelor (desen de test)](docs/teren_tin_curbe.png)
+
+*Desen de test generat de comenzile modulului în simulator: punctele importate cu numere și cote,
+TIN-ul (gri), curbele de nivel, tabelul de coordonate, legenda și tabelul volumelor.*
+
+Limitări:
+- Triangulația se face în AutoLISP și este potrivită pentru câteva mii de puncte, nu pentru
+  nori de sute de mii.
+- Liniile de frângere sunt respectate prin densificare, nu printr-o triangulație constrânsă strictă.
+- Curbele de nivel sunt poligonale (fără netezire).
+- „Harta online” deschide harta în browser; nu inserează în desen imaginile hărților online.
+
 ## Detalii tehnice
 
 - Fiecare comandă are propriul `*error*`: variabilele de sistem `CMDECHO`, `OSMODE`, `ATTREQ` și
@@ -332,6 +398,13 @@ Ce conține planul:
   care `MVIEW` eșuează, butonul din `TOPOKIT` și fișierul JSON pentru Word.
   - `--render DIR` salvează layout-urile generate și machetele dialogurilor ca imagini PNG.
   - `--word` completează șabloanele Word cu PowerShell (`pwsh`, dacă este instalat).
+- `python3 tests/test_teren.py [--render DIR]` testează modulul de teren cu verificări analitice:
+  - proprietatea Delaunay și numărul de triunghiuri (2n − 2 − b);
+  - curbele de nivel aflate pe TIN la cota lor;
+  - volume exacte pentru suprafețe plane;
+  - georeferențierea după fișierul world;
+  - dus-întorsul prin KML/KMZ;
+  - harta online și meniul.
 - Șabloanele Word se regenerează din textul ordinului: `tools/extract_anexe.py` extrage anexele din
   HTML-ul ordinului în `tools/ordin600_anexe.json`, apoi `tools/build_anexe.py` scrie
   `anexe/Anexa_NN.docx` și `anexe/catalog.json` (câmpurile fiecărei anexe).

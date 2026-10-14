@@ -6,6 +6,7 @@
 //    3. Inserare format, cadru si indicator la scara (A4 - A0)
 //    4. Generatorul de anexe pentru Ordinul ANCPI nr. 600/2023
 //       (TopoKitAnexe.lsp: PAD, dezlipire/alipire, releveu, documente Word)
+//    5. Modulul de teren (TopoKitTeren.lsp: puncte, TIN, curbe, volume, raster, KML)
 //
 //  Imaginile (sigla, pictogramele si previzualizarea plansei) sunt desenate
 //  din TopoKit.lsp cu vector_image / fill_image.
@@ -141,6 +142,21 @@ topokit_main : dialog {
     : column {
       : tk_action { key = "bt_anexe"; label = "Generator anexe..."; mnemonic = "A"; }
       : text { label = "Comanda directa: ANEXE"; alignment = centered; }
+    }
+  }
+
+  // ---------------- 5. Teren: puncte, model 3D, curbe, volume ----------------
+  : spacer { height = 0.3; }
+  : boxed_row {
+    label = " 5   Teren - puncte masurate, model 3D, curbe de nivel, volume ";
+    : paragraph {
+      : text_part { label = "Import puncte cu desenare pe coduri, tabele de coordonate, legenda semnelor conventionale."; }
+      : text_part { label = "Model TIN, curbe de nivel, volume, raster georeferentiat, import KML/KMZ, harta online."; }
+      : text_part { key = "tx_teren"; label = ""; width = 90; }
+    }
+    : column {
+      : tk_action { key = "bt_teren"; label = "Modul teren..."; mnemonic = "T"; }
+      : text { label = "Comanda directa: TOPOTEREN"; alignment = centered; }
     }
   }
 

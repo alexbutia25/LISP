@@ -322,3 +322,6 @@ def _distof(s, mode=2):
     except (ValueError, AttributeError): return None
 funcs[Sym('DISTOF')] = _distof
 funcs[Sym('VL-CATCH-ALL-ERROR-MESSAGE')] = lambda e: e.m if isinstance(e, CErr) else ''
+funcs[Sym('VL-STRING-TRANSLATE')] = lambda src, dst, s: s.translate(str.maketrans(src, dst)) if src else s
+funcs[Sym('VL-STRING-LEFT-TRIM')] = lambda c, s: s.lstrip(c)
+funcs[Sym('CAADR')] = lambda x: car(car(cdr(x)))

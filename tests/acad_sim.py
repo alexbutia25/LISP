@@ -448,10 +448,11 @@ class Acad:
 
     def curve_point(s, e, t):
         v, c = s._poly(e); n = len(v)
+        z = float(grp(s.db[e], 38) or 0.0)          # elevatia LWPOLYLINE
         i = int(math.floor(t + 1e-12)); f = t - i
         a = v[i % n]; b = v[(i + 1) % n]
-        if f < 1e-12: return [a[0], a[1], 0.0]
-        return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, 0.0]
+        if f < 1e-12: return [a[0], a[1], z]
+        return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, z]
 
     def curve_area(s, e):
         """Aria curbei, inclusiv segmentele circulare ale laturilor in arc (bulge)."""
@@ -629,9 +630,62 @@ class Acad:
             s._setg(o.ename, 8, v)
         return v
 
+    # ------------------------------------------------------------ modulul de teren
+    def ask(s, kind):
+        k, v = s.inputs.pop(0)
+        assert k == kind, f"intrare asteptata {kind}, scenariul are {k}"
+        return v
+
+    def add_raster(s, space, path, pt, scale, rot):
+        from PIL import Image
+        w, h = Image.open(s.path(path)).size
+        o = Obj("raster", path=s.path(path), px=w, py=h)
+        s.rasters.append(o)
+        return o
+
+    def bbox(s, o, smin, smax):
+        d = s.db[o.ename]
+        assert grp(d, 0) == "INSERT"
+        ext = s.blockext.get(grp(d, 2), (-0.5, -0.5, 0.5, 0.5))
+        p = grp(d, 10); k = grp(d, 41) or 1.0
+        env[smin] = [p[0] + k * ext[0], p[1] + k * ext[1], 0.0]
+        env[smax] = [p[0] + k * ext[2], p[1] + k * ext[3], 0.0]
+        return None
+
+    def ent_put(s, o, code, v):
+        s._setg(o.ename, code, v); return v
+
+    def ent_move(s, o, a, b):
+        p = grp(s.db[o.ename], 10)
+        s._setg(o.ename, 10, [p[0] + b[0] - a[0], p[1] + b[1] - a[1], p[2] if len(p) > 2 else 0.0])
+
+    def install_teren(s):
+        import glob
+        s.rasters, s.blockext = [], {}
+        F = {
+            "GETFILED": lambda *a: s.ask("file"), "GETPOINT": lambda *a: s.ask("pt"), "GETREAL": lambda *a: s.ask("real"),
+            "VLA-GET-MODELSPACE": lambda d: Obj("modelspace"), "VLA-ADDRASTER": s.add_raster,
+            "VLA-GET-WIDTH": lambda o: o.px, "VLA-GET-HEIGHT": lambda o: o.py,
+            "VLA-PUT-IMAGEWIDTH": lambda o, v: o.props.__setitem__("W", v), "VLA-PUT-IMAGEHEIGHT": lambda o, v: o.props.__setitem__("H", v),
+            "VLA-PUT-ROTATION": lambda o, v: o.props.__setitem__("ROT", v), "VLA-PUT-ORIGIN": lambda o, v: o.props.__setitem__("ORIGIN", v),
+            "VLAX-3D-POINT": lambda *a: list(a[0]) + [0.0] * (3 - len(a[0])) if len(a) == 1 else list(a),
+            "VLA-ZOOMEXTENTS": lambda a: None, "VLA-GETBOUNDINGBOX": s.bbox, "VLAX-SAFEARRAY->LIST": lambda x: x,
+            "VLA-PUT-XSCALEFACTOR": lambda o, v: s.ent_put(o, 41, v), "VLA-PUT-YSCALEFACTOR": lambda o, v: s.ent_put(o, 42, v),
+            "VLA-PUT-ZSCALEFACTOR": lambda o, v: s.ent_put(o, 43, v), "VLA-MOVE": s.ent_move,
+            "VL-DIRECTORY-FILES": lambda d, pat="*", m=0: [os.path.basename(x) for x in glob.glob(os.path.join(s.path(d), pat))] or None,
+            "VL-FILENAME-EXTENSION": lambda f: (os.path.splitext(f.replace("\\", "/"))[1] or None),
+        }
+        for k, v in F.items(): funcs[Sym(k)] = v
+        s.vars.setdefault("VIEWCTR", [0.0, 0.0, 0.0])
+
     def after_load(s):
         """Inlocuiri dupa incarcarea TopoKit.lsp (rularea programelor externe)."""
         def run(cmd, wait):
             s.runs.append(cmd)
+            m = re.search(r"Expand-Archive -LiteralPath '([^']+)' -DestinationPath '([^']+)'", cmd)
+            if m:                                   # dezarhivarea KMZ (PowerShell) simulata
+                import zipfile
+                zipfile.ZipFile(s.path(m.group(1))).extractall(s.path(m.group(2)))
             return 0
         env[Sym("TK:RUN")] = run
+        s.install_teren()

@@ -662,6 +662,7 @@ class Acad:
     def install_teren(s):
         import glob
         s.rasters, s.blockext = [], {}
+        s.envs.setdefault("TEMP", s.outdir)         # fisierele temporare in folderul testului
         F = {
             "GETFILED": lambda *a: s.ask("file"), "GETPOINT": lambda *a: s.ask("pt"), "GETREAL": lambda *a: s.ask("real"),
             "VLA-GET-MODELSPACE": lambda d: Obj("modelspace"), "VLA-ADDRASTER": s.add_raster,

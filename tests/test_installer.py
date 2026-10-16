@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Test complet al instalatorului TopoKitSetup.exe sub Wine (Linux).
 
-    python3 tests/test_installer.py [--no-build] [--debug]
+    python3 tests/test_installer.py [--no-build] [--debug] [--render DIR]
+
+(--render DIR: salveaza imaginile ferestrei TopoKit, ca in docs/lansator_*.png)
 
 (--debug: mesajele de eroare Wine se scriu in jurnal si se afiseaza la esec)
 
@@ -17,6 +19,8 @@ Pasi:
      - /cmd ANEXE porneste AutoCAD (serverul COM inregistrat), asteapta sa fie
        inactiv, deschide un desen si trimite incarcarea TopoKit + ANEXE;
      - a doua pornire transmite cererea instantei care ruleaza deja;
+     - pornirea fara parametri deschide fereastra TopoKit;
+     - /snapshot deseneaza fereastra (GDI+) in PNG, la scara 1 si 1,5;
      - /quit inchide lansatorul;
   4. dezinstaleaza silentios si verifica stergerea completa.
 """
@@ -141,13 +145,31 @@ try:
     L = read(log)
     assert "Pornesc" in L and "Conectat la AutoCAD 2024" in L and "SendCommand ANEXE: 0x00000000" in L, L
 
-    wine(exe, wait=False)                                            # pornire normala: meniul TOPOKIT
+    wine(exe, wait=False)                                            # pornire normala: fereastra
+    wait_for(lambda: "Fereastra TopoKit afisata" in read(log), 30, "fereastra TopoKit")
+    assert read(acad_log).count("SEND") == 1                         # fereastra nu trimite nimic singura
+    wine(exe, "/cmd", "TOPOKIT", wait=False)
     wait_for(lambda: read(acad_log).count("SEND") >= 2, 30, "comanda TOPOKIT")
     assert read(acad_log).splitlines()[3].endswith("<LF>TOPOKIT<LF>")
     wine(exe, "/cmd", "TOPOTEREN;ERASE", wait=False)                 # doar nume de comenzi
     wait_for(lambda: read(acad_log).count("SEND") >= 3, 30, "comanda TOPOTEREN")
     assert read(acad_log).splitlines()[4].endswith(")<LF>TOPOTEREN<LF>")
     print("Lansator: conectare COM, pornirea AutoCAD, desen nou, comenzi transmise intre instante")
+
+    # imaginea ferestrei (aceeasi functie de desen ca fereastra reala)
+    from PIL import Image
+    render = sys.argv[sys.argv.index("--render") + 1] if "--render" in sys.argv else tmp
+    for name, args in (("lansator_conectat", ("on", "1", "1")), ("lansator_oprit", ("off", "-1", "1")),
+                       ("lansator_150", ("starting", "20", "1.5"))):
+        png = os.path.join(os.path.abspath(render), name + ".png")
+        assert wine(exe, "/snapshot", "Z:" + png.replace("/", "\\"), *args).returncode == 0, name
+        im = Image.open(png).convert("RGB")
+        k = 1.5 if name.endswith("150") else 1
+        assert im.size == (int(840 * k), int(600 * k)), im.size
+        r, g, b = im.getpixel((int(8 * k), int(8 * k)))                       # antetul albastru
+        assert b > 80 and r < 40, (r, g, b)
+        assert im.getpixel((int(420 * k), int(590 * k))) == (244, 247, 250)    # fundalul ferestrei
+    print("Fereastra TopoKit: pornire fara parametri, imagini la scara 1 si 1,5")
 
     wine(exe, "/quit", wait=False)
     wait_for(lambda: "Lansator oprit" in read(log), 20, "/quit")

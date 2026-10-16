@@ -54,6 +54,12 @@ VIAddVersionKey /LANG=1048 "LegalCopyright" "${APP}"
 !define MUI_ICON   "${STAGE}\app\topokit.ico"
 !define MUI_UNICON "${STAGE}\app\topokit.ico"
 !define MUI_ABORTWARNING
+!define MUI_WELCOMEFINISHPAGE_BITMAP   "${STAGE}\art\welcome.bmp"
+!define MUI_UNWELCOMEFINISHPAGE_BITMAP "${STAGE}\art\welcome.bmp"
+!define MUI_HEADERIMAGE
+!define MUI_HEADERIMAGE_RIGHT
+!define MUI_HEADERIMAGE_BITMAP         "${STAGE}\art\header.bmp"
+!define MUI_HEADERIMAGE_UNBITMAP       "${STAGE}\art\header.bmp"
 !define MUI_COMPONENTSPAGE_SMALLDESC
 
 !define MUI_WELCOMEPAGE_TITLE "Instalare ${APP} ${VERSION}"
@@ -62,7 +68,7 @@ VIAddVersionKey /LANG=1048 "LegalCopyright" "${APP}"
   • anexele Ordinului ANCPI nr. 600/2023 (planuri, Word, PDF)$\r$\n\
   • puncte, TIN, curbe de nivel, volume, georeferențiere$\r$\n$\r$\n\
 După instalare, ${APP} se încarcă automat în AutoCAD 2013 sau mai nou. \
-Lansatorul ${APP} rulează în fundal (iconița de lângă ceas) și deschide comenzile în AutoCAD.$\r$\n$\r$\n\
+Fereastra ${APP} arată conexiunea cu AutoCAD și deschide modulele cu un clic; lansatorul rămâne în fundal (iconița de lângă ceas).$\r$\n$\r$\n\
 Nu sunt necesare drepturi de administrator."
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_COMPONENTS
@@ -72,12 +78,13 @@ Nu sunt necesare drepturi de administrator."
 !define MUI_FINISHPAGE_TEXT "${APP} se încarcă automat în fiecare desen AutoCAD (comenzile TOPOKIT, ANEXE, TOPOTEREN).$\r$\n$\r$\n\
 Dacă AutoCAD este deja deschis, alegeți o comandă din iconița ${APP} de lângă ceas sau reporniți AutoCAD."
 !define MUI_FINISHPAGE_RUN "$INSTDIR\TopoKit.exe"
-!define MUI_FINISHPAGE_RUN_TEXT "Pornește ${APP} acum"
+!define MUI_FINISHPAGE_RUN_TEXT "Deschide ${APP} acum"
 !define MUI_FINISHPAGE_SHOWREADME "$INSTDIR\README.html"
 !define MUI_FINISHPAGE_SHOWREADME_TEXT "Deschide ghidul de utilizare"
 !define MUI_FINISHPAGE_SHOWREADME_NOTCHECKED
 !insertmacro MUI_PAGE_FINISH
 
+!insertmacro MUI_UNPAGE_WELCOME
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 

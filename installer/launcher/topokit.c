@@ -2,6 +2,7 @@
  * TopoKit.exe - lansatorul TopoKit (iconita din bara de sistem, langa ceas).
  *
  * Ruleaza in fundal si tine legatura cu AutoCAD prin COM (AutoCAD.Application):
+ *   - fereastra principala TopoKit (ui.c): starea conexiunii si modulele;
  *   - detecteaza AutoCAD (orice versiune 2013 - 2026) si afiseaza starea
  *     conexiunii in iconita (verde = conectat, gri = AutoCAD nepornit);
  *   - din meniul iconitei porneste comenzile TopoKit in desenul activ
@@ -11,12 +12,14 @@
  *   - optional porneste odata cu Windows (HKCU\...\Run, parametrul /background).
  *
  * Linie de comanda:
- *   TopoKit.exe               deschide meniul TOPOKIT in AutoCAD (il porneste daca e nevoie)
+ *   TopoKit.exe               deschide fereastra TopoKit (lansatorul ramane in fundal)
  *   TopoKit.exe /background   doar ruleaza in fundal (pornire cu Windows)
  *   TopoKit.exe /cmd ANEXE    trimite o comanda TopoKit in AutoCAD
  *   TopoKit.exe /quit         inchide lansatorul care ruleaza deja
+ *   TopoKit.exe /snapshot F.png [on|off|starting] [hover] [scara]
+ *                             salveaza imaginea ferestrei (documentatie, teste)
  *
- * Compilare (MinGW-w64): vezi tools/build_installer.sh
+ * Compilare (MinGW-w64): vezi tools/build_installer.py
  */
 #ifndef UNICODE
 #define UNICODE
@@ -35,6 +38,7 @@
 #include <stdio.h>
 #include <wchar.h>
 #include "resource.h"
+#include "ui.h"
 
 #define APP_TITLE   L"TopoKit"
 #define WND_CLASS   L"TopoKitLauncherWnd"
@@ -46,7 +50,7 @@
 #define POLL_MS     3000
 #define START_WAIT_MS (240 * 1000)
 
-enum { ID_STATUS = 1000, ID_CMD0 = 1001, ID_START = 1100, ID_RELOAD, ID_AUTORUN,
+enum { ID_STATUS = 1000, ID_CMD0 = 1001, ID_OPEN = 1099, ID_START = 1100, ID_RELOAD, ID_AUTORUN,
        ID_FOLDER, ID_HELP, ID_EXIT, HOTKEY_ID = 1 };
 
 static const struct { const wchar_t *label, *cmd; } CMDS[] = {
@@ -409,6 +413,7 @@ static void UpdateTray(void)
     else
         swprintf(g_nid.szTip, 128, L"TopoKit - AutoCAD nu rulează");
     Shell_NotifyIconW(NIM_MODIFY, &g_nid);
+    Ui_Refresh();
 }
 
 static void AddTray(void)
@@ -548,6 +553,53 @@ static void Poll(void)
     UpdateTray();
 }
 
+static void ShowMain(void)
+{
+    Log(L"Fereastra TopoKit afisata");
+    Ui_Show();
+}
+
+/* ------------------------------------------------------------------ legatura cu fereastra (ui.c) */
+void App_State(UiState *st)
+{
+    st->state = g_connected == TRUE ? UI_ON : g_pending[0] ? UI_STARTING : UI_OFF;
+    st->acad = g_acadName;
+    st->doc = g_docName;
+    st->autorun = AutorunEnabled();
+}
+
+void App_Action(int act, int arg)
+{
+    wchar_t f[MAX_PATH];
+    switch (act) {
+    case ACT_CMD:
+        if (arg >= 0 && arg < NCMDS) RunCommand(CMDS[arg].cmd, FALSE);
+        break;
+    case ACT_START:
+        if (g_connected != TRUE && !g_pending[0]) StartAcad(NULL);
+        break;
+    case ACT_RELOAD:
+        RunCommand(NULL, TRUE);
+        break;
+    case ACT_AUTORUN:
+        SetAutorun(!AutorunEnabled());
+        break;
+    case ACT_FOLDER:
+        ShellExecuteW(NULL, L"open", g_contents, NULL, NULL, SW_SHOWNORMAL);
+        break;
+    case ACT_HELP:
+        GetModuleFileNameW(NULL, f, MAX_PATH);
+        lstrcpyW(wcsrchr(f, L'\\') + 1, L"README.html");
+        if (GetFileAttributesW(f) == INVALID_FILE_ATTRIBUTES) swprintf(f, MAX_PATH, L"%ls\\README.md", g_contents);
+        ShellExecuteW(NULL, L"open", f, NULL, NULL, SW_SHOWNORMAL);
+        break;
+    case ACT_HIDDEN:
+        Balloon(APP_TITLE, L"TopoKit rulează în continuare în fundal. Îl găsiți în iconița de lângă ceas.");
+        break;
+    }
+    UpdateTray();
+}
+
 static void ShowMenu(void)
 {
     HMENU m = CreatePopupMenu();
@@ -559,10 +611,11 @@ static void ShowMenu(void)
         swprintf(status, 256, L"Conectat: %ls%ls%ls", g_acadName, g_docName[0] ? L" - " : L"", g_docName);
     else
         swprintf(status, 256, L"AutoCAD nu rulează");
+    AppendMenuW(m, MF_STRING, ID_OPEN, L"Deschide TopoKit");
+    SetMenuDefaultItem(m, ID_OPEN, FALSE);
     AppendMenuW(m, MF_STRING | MF_GRAYED, ID_STATUS, status);
     AppendMenuW(m, MF_SEPARATOR, 0, NULL);
     for (i = 0; i < NCMDS; i++) AppendMenuW(m, MF_STRING, ID_CMD0 + i, CMDS[i].label);
-    SetMenuDefaultItem(m, ID_CMD0, FALSE);
     AppendMenuW(m, MF_SEPARATOR, 0, NULL);
     AppendMenuW(m, MF_STRING | (g_connected == TRUE ? MF_GRAYED : 0), ID_START, L"Pornește AutoCAD");
     AppendMenuW(m, MF_STRING | (g_connected == TRUE ? 0 : MF_GRAYED), ID_RELOAD, L"Reîncarcă TopoKit în AutoCAD");
@@ -576,18 +629,14 @@ static void ShowMenu(void)
     sel = (UINT)TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY, pt.x, pt.y, 0, g_hwnd, NULL);
     PostMessageW(g_hwnd, WM_NULL, 0, 0);
     DestroyMenu(m);
-    if (sel >= ID_CMD0 && sel < (UINT)(ID_CMD0 + NCMDS)) RunCommand(CMDS[sel - ID_CMD0].cmd, FALSE);
-    else if (sel == ID_START) StartAcad(NULL);
-    else if (sel == ID_RELOAD) RunCommand(NULL, TRUE);
-    else if (sel == ID_AUTORUN) SetAutorun(!AutorunEnabled());
-    else if (sel == ID_FOLDER) ShellExecuteW(NULL, L"open", g_contents, NULL, NULL, SW_SHOWNORMAL);
-    else if (sel == ID_HELP) {
-        wchar_t f[MAX_PATH];
-        GetModuleFileNameW(NULL, f, MAX_PATH);
-        lstrcpyW(wcsrchr(f, L'\\') + 1, L"README.html");
-        if (GetFileAttributesW(f) == INVALID_FILE_ATTRIBUTES) swprintf(f, MAX_PATH, L"%ls\\README.md", g_contents);
-        ShellExecuteW(NULL, L"open", f, NULL, NULL, SW_SHOWNORMAL);
-    } else if (sel == ID_EXIT) DestroyWindow(g_hwnd);
+    if (sel == ID_OPEN) ShowMain();
+    else if (sel >= ID_CMD0 && sel < (UINT)(ID_CMD0 + NCMDS)) App_Action(ACT_CMD, (int)(sel - ID_CMD0));
+    else if (sel == ID_START) App_Action(ACT_START, 0);
+    else if (sel == ID_RELOAD) App_Action(ACT_RELOAD, 0);
+    else if (sel == ID_AUTORUN) App_Action(ACT_AUTORUN, 0);
+    else if (sel == ID_FOLDER) App_Action(ACT_FOLDER, 0);
+    else if (sel == ID_HELP) App_Action(ACT_HELP, 0);
+    else if (sel == ID_EXIT) DestroyWindow(g_hwnd);
 }
 
 /* Comanda primita de la o a doua pornire a TopoKit.exe (WM_COPYDATA) */
@@ -596,14 +645,15 @@ static void Remote(const wchar_t *arg)
     Log(L"Cerere: %ls", arg);
     if (!wcscmp(arg, L"/quit")) DestroyWindow(g_hwnd);
     else if (!wcscmp(arg, L"/background")) Poll();
-    else RunCommand(arg[0] ? arg : L"TOPOKIT", FALSE);
+    else if (!arg[0]) ShowMain();
+    else RunCommand(arg, FALSE);
 }
 
 static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
 {
     switch (msg) {
     case WM_TRAY:
-        if (LOWORD(lp) == WM_LBUTTONDBLCLK) RunCommand(L"TOPOKIT", FALSE);
+        if (LOWORD(lp) == WM_LBUTTONDBLCLK) ShowMain();
         else if (LOWORD(lp) == WM_RBUTTONUP || LOWORD(lp) == WM_CONTEXTMENU) ShowMenu();
         return 0;
     case WM_TIMER:
@@ -626,6 +676,7 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         KillTimer(h, TIMER_POLL);
         UnregisterHotKey(h, HOTKEY_ID);
         Shell_NotifyIconW(NIM_DELETE, &g_nid);
+        Ui_Destroy();
         Log(L"Lansator oprit");
         PostQuitMessage(0);
         return 0;
@@ -655,6 +706,30 @@ static void ParseArgs(wchar_t *out, int cch)
     LocalFree(argv);
 }
 
+/* /snapshot F.png [on|off|starting] [hover] [scara]: imaginea ferestrei, fara lansator */
+static BOOL Snapshot(void)
+{
+    int argc, hover = -1;
+    float scale = 1.0f;
+    wchar_t **argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    BOOL ok;
+    if (!argv || argc < 3 || _wcsicmp(argv[1], L"/snapshot")) { LocalFree(argv); return FALSE; }
+    if (argc > 3 && !_wcsicmp(argv[3], L"on")) {
+        g_connected = TRUE;
+        lstrcpyW(g_acadName, L"AutoCAD 2024");
+        lstrcpyW(g_docName, L"Plan_cadastral.dwg");
+    } else if (argc > 3 && !_wcsicmp(argv[3], L"starting")) {
+        lstrcpyW(g_pending, L"ANEXE");
+    }
+    if (argc > 4) hover = _wtoi(argv[4]);
+    if (argc > 5) scale = (float)_wtof(argv[5]);
+    if (scale < 0.5f || scale > 4.0f) scale = 1.0f;
+    ok = Ui_Init(g_inst) && Ui_Snapshot(argv[2], scale, hover);
+    LocalFree(argv);
+    ExitProcess(ok ? 0 : 2);
+    return TRUE;
+}
+
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show)
 {
     WNDCLASSEXW wc;
@@ -663,6 +738,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show)
     wchar_t arg[64];
     (void)prev; (void)cmdline; (void)show;
     g_inst = inst;
+    if (Snapshot()) return 0;
     ParseArgs(arg, 64);
 
     mutex = CreateMutexW(NULL, TRUE, MUTEX_NAME);
@@ -688,6 +764,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show)
     FindContents();
     Log(L"Fisiere LISP: %ls", g_contents);
     InitClsids();
+    Ui_Init(inst);
 
     g_icoOn = (HICON)LoadImageW(inst, MAKEINTRESOURCEW(IDI_ON), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON),
                                 GetSystemMetrics(SM_CYSMICON), 0);
@@ -709,12 +786,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show)
     Poll();
     SetTimer(g_hwnd, TIMER_POLL, POLL_MS, NULL);
 
-    if (wcscmp(arg, L"/background")) {
-        if (g_connected != TRUE) {
-            Balloon(APP_TITLE, L"TopoKit rulează în fundal (iconița de lângă ceas).");
-        }
-        RunCommand(arg[0] ? arg : L"TOPOKIT", FALSE);
-    }
+    if (!arg[0]) ShowMain();
+    else if (wcscmp(arg, L"/background")) RunCommand(arg, FALSE);
 
     while (GetMessageW(&msg, NULL, 0, 0) > 0) {
         TranslateMessage(&msg);

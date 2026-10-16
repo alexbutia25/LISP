@@ -8,7 +8,7 @@ Necesita (Linux: apt install nsis mingw-w64; Windows: NSIS 3 + MinGW-w64 in PATH
     (pe Windows merg si gcc / windres din MSYS2-MinGW64).
 
 Pasi:
-  1. compileaza lansatorul installer/launcher/topokit.c -> TopoKit.exe;
+  1. compileaza lansatorul installer/launcher/topokit.c + ui.c -> TopoKit.exe;
   2. pregateste build/stage:
        bundle/TopoKit.bundle/PackageContents.xml   (versiunea completata)
        bundle/TopoKit.bundle/Contents/             *.lsp, *.dcl, grila .gsb, anexe/, README
@@ -81,9 +81,9 @@ def main():
     res = build / "topokit_res.o"
     run([windres, f"-DTK_VER_COMMA={ver_comma}", f'-DTK_VER_STR=\\"{a.version}\\"',
          "topokit.rc", "-O", "coff", "-o", res], cwd=INST / "launcher")
-    run([gcc, "-municode", "-mwindows", "-O2", "-Wall", "-Wextra", "-s", "-static",
-         "-o", app / "TopoKit.exe", INST / "launcher" / "topokit.c", res,
-         "-lole32", "-loleaut32", "-luuid", "-lshell32", "-luser32"])
+    run([gcc, "-municode", "-mwindows", "-O2", "-Wall", "-Wextra", "-s", "-static", f'-DTK_VERSION="{a.version}"',
+         "-o", app / "TopoKit.exe", INST / "launcher" / "topokit.c", INST / "launcher" / "ui.c", res,
+         "-lgdiplus", "-lshlwapi", "-lole32", "-loleaut32", "-luuid", "-lshell32", "-lgdi32", "-luser32"])
 
     # 2. pachetul AutoCAD
     xml = (INST / "bundle" / "PackageContents.xml").read_text(encoding="utf-8")
@@ -96,6 +96,7 @@ def main():
                                      encoding="utf-8")
     shutil.copytree(ROOT / "docs", app / "docs")
     shutil.copy2(INST / "launcher" / "topokit.ico", app / "topokit.ico")
+    shutil.copytree(INST / "art", stage / "art")
 
     # 3. instalatorul
     out = pathlib.Path(a.out)

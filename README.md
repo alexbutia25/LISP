@@ -37,6 +37,8 @@ completate de codul LISP real (rulat în simulatorul din `tests/`). Fonturile ș
 2. Alegeți opțiunile: scurtătură pe desktop și pornirea în fundal odată cu Windows (ambele bifate implicit).
 3. Deschideți **TopoKit** din meniul Start sau de pe desktop. Atât.
 
+![Instalatorul TopoKit](docs/instalator.png)
+
 Ce face instalarea:
 
 | Ce | Unde |
@@ -50,22 +52,36 @@ Ce face instalarea:
   *Startup Suite* sau setări manuale: `TopoKitLoad.lsp` adaugă folderul în *Support File Search Path*
   și în *Trusted Locations* (`TRUSTEDPATHS`), apoi încarcă `TopoKit.lsp`, `TopoKitAnexe.lsp` și
   `TopoKitTeren.lsp`. Comanda `TOPOKITRELOAD` reîncarcă modulele.
+- **Fereastra TopoKit** se deschide când porniți programul. Arată starea legăturii cu AutoCAD și
+  modulele, fiecare cu iconița, descrierea și comanda AutoCAD:
+
+  ![Fereastra TopoKit](docs/lansator_conectat.png)
+
+  - **starea conexiunii**: punct verde și *Conectat la AutoCAD 2024* (cu desenul activ), gri când
+    AutoCAD nu rulează, portocaliu cât timp AutoCAD pornește. Butonul din dreapta pornește AutoCAD sau
+    reîncarcă TopoKit în desen;
+  - **modulele**: un clic pe card deschide comanda în desenul activ. Dacă AutoCAD nu rulează, este pornit,
+    iar comanda se deschide după ce AutoCAD s-a încărcat (dacă nu există niciun desen, se creează unul).
+    Din tastatură: `Enter` deschide meniul TOPOKIT, `1`–`8` deschid modulele, `Esc` ascunde fereastra;
+  - **subsolul**: comutatorul *Pornește TopoKit odată cu Windows*, folderul programului și ghidul;
+  - închiderea ferestrei nu oprește TopoKit: programul rămâne în fundal, lângă ceas. Fereastra se
+    adaptează la scalarea ecranului (100–200%), iar în Windows 11 bara de titlu preia culoarea antetului.
+
+  ![Fereastra TopoKit – AutoCAD nepornit](docs/lansator_oprit.png)
 - **Lansatorul rulează în fundal** (iconița de lângă ceas) și ține legătura cu AutoCAD prin COM:
 
   ![Iconița TopoKit](docs/topokit_icon.png)
 
   - iconița e **verde** când AutoCAD rulează (tooltip: versiunea și desenul activ) și **gri** când nu rulează;
-  - când deschideți TopoKit, se deschide meniul `TOPOKIT` în AutoCAD; dacă AutoCAD nu rulează, este
-    pornit, iar meniul apare după ce AutoCAD s-a încărcat (dacă nu există niciun desen, se creează unul);
-  - din meniul iconiței (clic dreapta) se pornesc direct `ANEXE`, `TOPOTEREN`, `VERIFICARE`, `PLANEPDF`,
-    `EXPKMZ`, `INSCADRU` și `ADDVTX`;
+  - dublu clic pe iconiță deschide fereastra TopoKit; **Ctrl+Alt+Shift+T** deschide meniul `TOPOKIT` în AutoCAD;
+  - din meniul iconiței (clic dreapta) se pornesc direct `TOPOKIT`, `ANEXE`, `TOPOTEREN`, `VERIFICARE`,
+    `PLANEPDF`, `EXPKMZ`, `INSCADRU` și `ADDVTX`;
   - tot din meniu: *Pornește AutoCAD*, *Reîncarcă TopoKit*, *Pornește odată cu Windows*, folderul
     programului și ghidul;
-  - dublu clic pe iconiță sau **Ctrl+Alt+Shift+T** deschide meniul `TOPOKIT`;
   - dacă TopoKit nu era încărcat în desen (de exemplu, AutoCAD era deschis în timpul instalării),
     lansatorul îl încarcă înainte de comandă;
   - linie de comandă: `TopoKit.exe /cmd ANEXE` (orice comandă TopoKit), `/background` (doar în fundal),
-    `/quit` (închide lansatorul). Jurnalul se află în `%LOCALAPPDATA%\TopoKit\TopoKit.log`.
+    `/quit` (închide lansatorul), `/snapshot F.png [on|off|starting]` (imaginea ferestrei). Jurnalul se află în `%LOCALAPPDATA%\TopoKit\TopoKit.log`.
 - **Dezinstalare:** *Setări → Aplicații → TopoKit* sau meniul Start → *Dezinstalare TopoKit*. Se șterg
   pachetul AutoCAD, lansatorul și setările din registru.
 - **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup.exe /S`; dezinstalare:
@@ -456,9 +472,11 @@ Limitări:
   `anexe/Anexa_NN.docx` și `anexe/catalog.json` (câmpurile fiecărei anexe).
 - **Instalatorul** se construiește cu `python3 tools/build_installer.py [--version X.Y.Z]`, care produce
   `dist/TopoKitSetup.exe`. Sunt necesare NSIS 3 și MinGW-w64 (Linux: `apt install nsis mingw-w64`).
-  Scriptul compilează lansatorul (`installer/launcher/topokit.c`, C/Win32, fără dependențe), pregătește
+  Scriptul compilează lansatorul (`installer/launcher/topokit.c` și fereastra `ui.c`, C/Win32 + GDI+,
+  fără dependențe externe), pregătește
   pachetul AutoCAD (`installer/bundle/PackageContents.xml`) și rulează `installer/TopoKit.nsi`. Versiunea
-  implicită este în `installer/VERSION`; iconițele se regenerează cu `python3 tools/make_icons.py`.
+  implicită este în `installer/VERSION`. Iconițele, iconițele modulelor și grafica instalatorului
+  (`installer/art`) se regenerează cu `python3 tools/make_icons.py`.
 - `python3 tests/test_loader.py` testează în simulator încărcătorul `TopoKitLoad.lsp`:
   - găsirea folderului din registru sau din calea de căutare;
   - adăugarea în calea de suport și în `TRUSTEDPATHS` o singură dată;
@@ -470,6 +488,8 @@ Limitări:
   - instalare silențioasă, cu verificarea fișierelor, a registrului și a scurtăturilor;
   - lansatorul conectat la un AutoCAD simulat prin COM (`tests/fake_acad.c`): pornirea AutoCAD,
     așteptarea până când AutoCAD e liber, desen nou, comenzi transmise de la a doua pornire a lansatorului;
+  - fereastra TopoKit la pornirea fără parametri și desenul ei în PNG, la scara 1 și 1,5
+    (`--render docs` actualizează imaginile `docs/lansator_*.png`);
   - `/quit`;
   - dezinstalarea completă.
 - Apelurile ActiveX reale (plotare, setările de pagină) pot fi verificate doar în AutoCAD.

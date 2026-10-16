@@ -4,6 +4,15 @@
 IDI_APP ICON "topokit.ico"
 IDI_ON  ICON "tray_on.ico"
 IDI_OFF ICON "tray_off.ico"
+IDR_LOGO      RCDATA "logo.png"
+IDR_ICON1     RCDATA "icons/m1.png"
+IDR_ICON1 + 1 RCDATA "icons/m2.png"
+IDR_ICON1 + 2 RCDATA "icons/m3.png"
+IDR_ICON1 + 3 RCDATA "icons/m4.png"
+IDR_ICON1 + 4 RCDATA "icons/m5.png"
+IDR_ICON1 + 5 RCDATA "icons/m6.png"
+IDR_ICON1 + 6 RCDATA "icons/m7.png"
+IDR_ICON1 + 7 RCDATA "icons/m8.png"
 CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "topokit.manifest"
 
 VS_VERSION_INFO VERSIONINFO

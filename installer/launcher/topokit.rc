@@ -1,0 +1,32 @@
+#include <windows.h>
+#include "resource.h"
+
+IDI_APP ICON "topokit.ico"
+IDI_ON  ICON "tray_on.ico"
+IDI_OFF ICON "tray_off.ico"
+CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "topokit.manifest"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     TK_VER_COMMA
+PRODUCTVERSION  TK_VER_COMMA
+FILEOS          VOS_NT_WINDOWS32
+FILETYPE        VFT_APP
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "041804B0"
+    BEGIN
+      VALUE "CompanyName",      "TopoKit"
+      VALUE "FileDescription",  "TopoKit - lansator AutoCAD"
+      VALUE "FileVersion",      TK_VER_STR
+      VALUE "InternalName",     "TopoKit"
+      VALUE "OriginalFilename", "TopoKit.exe"
+      VALUE "ProductName",      "TopoKit"
+      VALUE "ProductVersion",   TK_VER_STR
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x0418, 1200
+  END
+END

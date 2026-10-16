@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+"""Test complet al instalatorului TopoKitSetup.exe sub Wine (Linux).
+
+    python3 tests/test_installer.py [--no-build] [--debug]
+
+(--debug: mesajele de eroare Wine se scriu in jurnal si se afiseaza la esec)
+
+Necesita: wine (64 + 32 bit), Xvfb, makensis, mingw-w64
+    apt install nsis mingw-w64 xvfb wine64 wine32:i386
+
+Pasi:
+  1. construieste dist/TopoKitSetup.exe (tools/build_installer.py), daca nu e --no-build;
+  2. instaleaza silentios (/S) intr-un prefix Wine nou si verifica fisierele,
+     pachetul AutoCAD, registrul (ContentsDir, Run, Uninstall) si scurtaturile;
+  3. compileaza tests/fake_acad.c ("AutoCAD" COM simulat) si verifica lansatorul:
+     - porneste in fundal fara AutoCAD;
+     - /cmd ANEXE porneste AutoCAD (serverul COM inregistrat), asteapta sa fie
+       inactiv, deschide un desen si trimite incarcarea TopoKit + ANEXE;
+     - a doua pornire transmite cererea instantei care ruleaza deja;
+     - /quit inchide lansatorul;
+  4. dezinstaleaza silentios si verifica stergerea completa.
+"""
+import os, shutil, subprocess, sys, tempfile, time
+
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+SETUP = os.path.join(ROOT, "dist", "TopoKitSetup.exe")
+
+
+def need(*tools):
+    miss = [t for t in tools if not shutil.which(t)]
+    if miss:
+        print("Lipsesc:", ", ".join(miss), "- testul instalatorului este omis.")
+        sys.exit(0)
+
+
+need("wine", "wineserver", "Xvfb", "x86_64-w64-mingw32-gcc")
+if "--no-build" not in sys.argv:
+    need("makensis")
+    subprocess.run([sys.executable, os.path.join(ROOT, "tools", "build_installer.py")], check=True,
+                   stdout=subprocess.DEVNULL)
+
+tmp = tempfile.mkdtemp(prefix="topokit_wine_")
+display = ":%d" % (90 + os.getpid() % 9)
+xvfb = subprocess.Popen(["Xvfb", display], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+DEBUG = "--debug" in sys.argv
+E = dict(os.environ, WINEPREFIX=os.path.join(tmp, "prefix"), WINEARCH="win64",
+         WINEDEBUG="err+all,fixme-all" if DEBUG else "-all", DISPLAY=display,
+         WINEDLLOVERRIDES="mscoree,mshtml=")               # fara instalarea Mono / Gecko
+wine_log = os.path.join(tmp, "wine.log")
+ERR = open(wine_log, "a") if DEBUG else subprocess.DEVNULL
+USER = os.path.join(E["WINEPREFIX"], "drive_c", "users", os.environ.get("USER", "root"))
+
+
+def wine(*args, wait=True, timeout=240):
+    cmd = ["wine"] + [str(a) for a in args]
+    if wait:
+        return subprocess.run(cmd, env=E, timeout=timeout, stdout=subprocess.DEVNULL, stderr=ERR)
+    return subprocess.Popen(cmd, env=E, stdout=subprocess.DEVNULL, stderr=ERR)
+
+
+def reg(key):
+    r = subprocess.run(["wine", "reg", "query", key], env=E, capture_output=True, text=True)
+    return r.stdout if r.returncode == 0 else None
+
+
+def wait_for(cond, timeout, what):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if cond():
+            return
+        time.sleep(0.5)
+    raise AssertionError("timp depasit: " + what)
+
+
+def read(p):
+    try:
+        return open(p, encoding="utf-8-sig", errors="replace").read()
+    except OSError:
+        return ""
+
+
+try:
+    subprocess.run(["wineboot", "-i"], env=E, timeout=300, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["wineserver", "-w"], env=E, timeout=300)          # prefixul nou este gata
+    # serviciul RPC (tabela de obiecte active COM) ruleaza mereu in Windows; in Wine il pornim explicit
+    wine("net", "start", "RpcSs")
+    if not os.path.isdir(os.path.join(USER, "AppData")):            # utilizatorul Wine
+        USER = os.path.join(E["WINEPREFIX"], "drive_c", "users",
+                            next(d for d in os.listdir(os.path.join(E["WINEPREFIX"], "drive_c", "users"))
+                                 if d != "Public"))
+
+    # ------------------------------------------------------------ instalare
+    assert wine(SETUP, "/S").returncode == 0
+    bundle = os.path.join(USER, "AppData", "Roaming", "Autodesk", "ApplicationPlugins", "TopoKit.bundle")
+    app = os.path.join(USER, "AppData", "Local", "Programs", "TopoKit")
+    contents = os.path.join(bundle, "Contents")
+    for f in ("TopoKitLoad.lsp", "TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitTeren.lsp", "TopoKit.dcl",
+              "TopoKitAnexe.dcl", "TopoKitTeren.dcl", "stereo70_etrs89A.gsb", "anexe/TopoKitDocx.ps1",
+              "anexe/catalog.json", "anexe/Anexa_01.docx"):
+        src = os.path.join(ROOT, f)
+        dst = os.path.join(contents, f)
+        assert os.path.isfile(dst), f
+        assert open(src, "rb").read() == open(dst, "rb").read(), "copie diferita: " + f
+    xml = read(os.path.join(bundle, "PackageContents.xml"))
+    ver = open(os.path.join(ROOT, "installer", "VERSION")).read().strip()
+    assert 'AppVersion="%s"' % ver in xml and "@VERSION@" not in xml
+    for f in ("TopoKit.exe", "Uninstall.exe", "README.html", "docs/teren_tin_curbe.png"):
+        assert os.path.isfile(os.path.join(app, f)), f
+    r = reg(r"HKCU\Software\TopoKit")
+    assert r and "ContentsDir" in r and "TopoKit.bundle\\Contents" in r and ver in r, r
+    r = reg(r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run")
+    assert r and "TopoKit.exe\" /background" in r, r
+    r = reg(r"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\TopoKit")
+    assert r and "Uninstall.exe" in r and "QuietUninstallString" in r, r
+    start = os.path.join(USER, "AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs", "TopoKit")
+    assert os.path.isfile(os.path.join(start, "TopoKit.lnk"))
+    print("Instalare: pachet AutoCAD, lansator, registru si scurtaturi corecte")
+
+    # ------------------------------------------------------------ lansator + AutoCAD simulat
+    fake = os.path.join(tmp, "fake_acad.exe")
+    subprocess.run(["x86_64-w64-mingw32-gcc", "-municode", "-mwindows", "-O2", "-o", fake,
+                    os.path.join(ROOT, "tests", "fake_acad.c"), "-lole32", "-loleaut32", "-luuid", "-lshell32",
+                    "-static", "-s"], check=True)
+    acad_log = os.path.join(tmp, "acad.log")
+    wine(fake, "/regserver", "Z:" + acad_log.replace("/", "\\"))
+    exe = os.path.join(app, "TopoKit.exe")
+    log = os.path.join(USER, "AppData", "Local", "TopoKit", "TopoKit.log")
+
+    wine(exe, "/background", wait=False)
+    wait_for(lambda: "AutoCAD inchis" in read(log), 30, "lansatorul in fundal")
+    assert "Versiuni AutoCAD inregistrate COM: 1" in read(log), read(log)
+    assert not os.path.exists(acad_log)                              # nu porneste AutoCAD singur
+
+    wine(exe, "/cmd", "ANEXE", wait=False)                           # a doua instanta -> prima
+    wait_for(lambda: "SEND" in read(acad_log), 60, "comanda ANEXE in AutoCAD")
+    a = read(acad_log).splitlines()
+    assert a[0] == "STARTED" and a[1] == "DOCUMENTS.ADD", a
+    lsp = contents.split("drive_c")[1].replace(os.sep, "/")
+    assert a[2] == ('SEND <03><03>(progn (if (not TKL:Load) (load "C:%s/TopoKitLoad.lsp")) '
+                    '(if (not c:TOPOKIT) (TKL:Load nil)) (princ))<LF>ANEXE<LF>' % lsp), a[2]
+    L = read(log)
+    assert "Pornesc" in L and "Conectat la AutoCAD 2024" in L and "SendCommand ANEXE: 0x00000000" in L, L
+
+    wine(exe, wait=False)                                            # pornire normala: meniul TOPOKIT
+    wait_for(lambda: read(acad_log).count("SEND") >= 2, 30, "comanda TOPOKIT")
+    assert read(acad_log).splitlines()[3].endswith("<LF>TOPOKIT<LF>")
+    wine(exe, "/cmd", "TOPOTEREN;ERASE", wait=False)                 # doar nume de comenzi
+    wait_for(lambda: read(acad_log).count("SEND") >= 3, 30, "comanda TOPOTEREN")
+    assert read(acad_log).splitlines()[4].endswith(")<LF>TOPOTEREN<LF>")
+    print("Lansator: conectare COM, pornirea AutoCAD, desen nou, comenzi transmise intre instante")
+
+    wine(exe, "/quit", wait=False)
+    wait_for(lambda: "Lansator oprit" in read(log), 20, "/quit")
+    print("Lansator: /quit")
+
+    # ------------------------------------------------------------ dezinstalare
+    assert wine(os.path.join(app, "Uninstall.exe"), "/S").returncode == 0
+    wait_for(lambda: not os.path.exists(os.path.join(app, "TopoKit.exe")), 30, "dezinstalare")
+    assert not os.path.exists(bundle) and not os.path.exists(start)
+    assert reg(r"HKCU\Software\TopoKit") is None
+    assert reg(r"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\TopoKit") is None
+    assert "TopoKit" not in (reg(r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run") or "")
+    print("Dezinstalare: fisiere, pachet AutoCAD si registru sterse")
+    print("\nToate testele instalatorului au trecut.")
+except Exception:
+    for name in ("log", "acad_log") + (("wine_log",) if DEBUG else ()):
+        if name in globals():
+            print(f"--- {name}:\n" + read(globals()[name]))
+    raise
+finally:
+    subprocess.run(["wineserver", "-k"], env=E, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    xvfb.terminate()
+    shutil.rmtree(tmp, ignore_errors=True)

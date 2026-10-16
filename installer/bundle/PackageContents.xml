@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pachetul AutoCAD TopoKit (Autoloader). Instalat de TopoKitSetup.exe in
+     %APPDATA%\Autodesk\ApplicationPlugins\TopoKit.bundle. AutoCAD 2013 sau mai nou
+     (inclusiv Civil 3D, Map 3D) incarca TopoKitLoad.lsp in fiecare desen si adauga
+     folderul Contents in calea de suport. Versiunea @VERSION@ este completata la compilare. -->
+<ApplicationPackage SchemaVersion="1.0" AutodeskProduct="AutoCAD" ProductType="Application"
+    Name="TopoKit" AppVersion="@VERSION@"
+    Description="Topografie si cadastru: Stereo 70, KMZ, anexe Ordin ANCPI 600/2023, TIN, curbe de nivel, volume"
+    Author="TopoKit" Icon="./Contents/topokit.ico"
+    ProductCode="{5B505892-D373-4ABD-B1B2-7C3B0842225E}"
+    UpgradeCode="{B1C7040E-CB06-4018-8A62-BCEF2EDBBC82}">
+  <CompanyDetails Name="TopoKit" />
+  <RuntimeRequirements OS="Win32|Win64" Platform="AutoCAD*" SeriesMin="R19.0" SupportPath="./Contents" />
+  <Components Description="TopoKit (AutoLISP)">
+    <RuntimeRequirements OS="Win32|Win64" Platform="AutoCAD*" SeriesMin="R19.0" SupportPath="./Contents" />
+    <ComponentEntry AppName="TopoKit" Version="@VERSION@" ModuleName="./Contents/TopoKitLoad.lsp"
+        AppDescription="Incarca TopoKit, TopoKit Anexe si TopoKit Teren"
+        LoadOnAutoCADStartup="True" PerDocument="True" />
+  </Components>
+</ApplicationPackage>

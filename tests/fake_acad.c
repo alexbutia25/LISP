@@ -11,6 +11,12 @@
  *   fake_acad.exe /regserver JURNAL   inregistreaza ProgID-ul si serverul COM (HKCR)
  *   fake_acad.exe                     ruleaza 60 s (sau pana la SendCommand "QUIT")
  *
+ * Testul il copiaza ca "acad.exe" (lansatorul recunoaste AutoCAD dupa proces).
+ * Fereastra principala are titlul Civil 3D 2025 si primeste comenzi si prin
+ * WM_COPYDATA (dwData = 1), scrise in jurnal ca "COPYDATA <text>". Cu valoarea
+ * HKCU\Software\TopoKitTest\NoRot = "1" nu se inregistreaza in ROT (AutoCAD
+ * fara legatura COM, ca in cazurile reale cu Civil 3D 2025).
+ *
  * Jurnalul (calea din HKCU\Software\TopoKitTest\Log) primeste cate o linie
  * pentru fiecare SendCommand, cu caracterele de control scrise ca <03>, <LF>.
  */
@@ -82,7 +88,7 @@ static HRESULT STDMETHODCALLTYPE TI(IDispatch *t, UINT i, LCID l, ITypeInfo **ti
 }
 
 static const wchar_t *NAMES[] = { L"Version", L"HWND", L"Visible", L"ActiveDocument", L"Documents",
-                                  L"GetAcadState", L"Count", L"Add", L"Name", L"SendCommand", L"IsQuiescent" };
+                                  L"GetAcadState", L"Count", L"Add", L"Name", L"SendCommand", L"IsQuiescent", L"Activate" };
 #define NNAMES ((int)(sizeof(NAMES) / sizeof(NAMES[0])))
 
 static HRESULT STDMETHODCALLTYPE IDs(IDispatch *t, REFIID r, LPOLESTR *names, UINT n, LCID l, DISPID *ids)
@@ -105,7 +111,7 @@ static HRESULT STDMETHODCALLTYPE Inv(IDispatch *t, DISPID id, REFIID r, LCID l, 
     (void)r; (void)l; (void)fl; (void)ei; (void)ae;
     if (res) VariantInit(res);
     if (o->kind == O_APP && !wcscmp(name, L"Version")) {
-        res->vt = VT_BSTR; res->bstrVal = SysAllocString(L"24.3s (LMS Tech)");
+        res->vt = VT_BSTR; res->bstrVal = SysAllocString(L"25.0s (LMS Tech)");
     } else if (o->kind == O_APP && !wcscmp(name, L"HWND")) {
         res->vt = VT_I8; res->llVal = (LONGLONG)(LONG_PTR)g_hwnd;
     } else if (o->kind == O_APP && !wcscmp(name, L"Visible")) {
@@ -129,6 +135,8 @@ static HRESULT STDMETHODCALLTYPE Inv(IDispatch *t, DISPID id, REFIID r, LCID l, 
         res->vt = VT_DISPATCH; res->pdispVal = NewObj(O_DOC);
     } else if (o->kind == O_DOC && !wcscmp(name, L"Name")) {
         res->vt = VT_BSTR; res->bstrVal = SysAllocString(L"Plan_cadastral.dwg");
+    } else if (o->kind == O_DOC && !wcscmp(name, L"Activate")) {
+        LogLine(L"ACTIVATE", L"");
     } else if (o->kind == O_DOC && !wcscmp(name, L"SendCommand")) {
         if (!dp || dp->cArgs != 1 || dp->rgvarg[0].vt != VT_BSTR) return DISP_E_TYPEMISMATCH;
         LogLine(L"SEND ", dp->rgvarg[0].bstrVal);
@@ -141,6 +149,19 @@ static HRESULT STDMETHODCALLTYPE Inv(IDispatch *t, DISPID id, REFIID r, LCID l, 
 }
 
 static IDispatchVtbl g_vtbl = { QI, AddRef, Release, TIC, TI, IDs, Inv };
+
+static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
+{
+    if (msg == WM_COPYDATA) {
+        COPYDATASTRUCT *cd = (COPYDATASTRUCT *)lp;
+        if (cd && cd->dwData == 1 && cd->lpData) {
+            LogLine(L"COPYDATA ", (const wchar_t *)cd->lpData);
+            if (wcsstr((const wchar_t *)cd->lpData, L"QUIT")) g_quit = TRUE;
+        }
+        return TRUE;
+    }
+    return DefWindowProcW(h, msg, wp, lp);
+}
 
 static void SetKey(HKEY root, const wchar_t *key, const wchar_t *name, const wchar_t *val)
 {
@@ -156,6 +177,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show)
     int argc;
     wchar_t **argv = CommandLineToArgvW(GetCommandLineW(), &argc), clsid[64], key[128], exe[MAX_PATH];
     DWORD cookie = 0, size = sizeof g_log;
+    wchar_t norot[8] = L"";
+    DWORD nsz = sizeof norot;
+    WNDCLASSW wc;
     IDispatch *app;
     DWORD t0;
     MSG msg;
@@ -165,7 +189,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show)
     if (argc >= 3 && !wcscmp(argv[1], L"/regserver")) {
         GetModuleFileNameW(NULL, exe, MAX_PATH);
         SetKey(HKEY_CLASSES_ROOT, L"AutoCAD.Application\\CLSID", NULL, clsid);
-        SetKey(HKEY_CLASSES_ROOT, L"AutoCAD.Application.24\\CLSID", NULL, clsid);
+        SetKey(HKEY_CLASSES_ROOT, L"AutoCAD.Application.25\\CLSID", NULL, clsid);
+        swprintf(key, 128, L"CLSID\\%ls\\ProgID", clsid);
+        SetKey(HKEY_CLASSES_ROOT, key, NULL, L"AutoCAD.Application.25");
         swprintf(key, 128, L"CLSID\\%ls\\LocalServer32", clsid);
         SetKey(HKEY_CLASSES_ROOT, key, NULL, exe);
         SetKey(HKEY_CURRENT_USER, L"Software\\TopoKitTest", L"Log", argv[2]);
@@ -173,21 +199,27 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show)
     }
     if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\TopoKitTest", 0, KEY_READ, &h) == ERROR_SUCCESS) {
         RegQueryValueExW(h, L"Log", NULL, NULL, (BYTE *)g_log, &size);
+        RegQueryValueExW(h, L"NoRot", NULL, NULL, (BYTE *)norot, &nsz);
         RegCloseKey(h);
     }
     CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-    g_hwnd = CreateWindowExW(0, L"STATIC", L"Fake AutoCAD", WS_OVERLAPPEDWINDOW, 0, 0, 200, 100,
-                             NULL, NULL, inst, NULL);
+    memset(&wc, 0, sizeof wc);
+    wc.lpfnWndProc = WndProc;
+    wc.hInstance = inst;
+    wc.lpszClassName = L"Afx:FakeAcad";
+    RegisterClassW(&wc);
+    g_hwnd = CreateWindowExW(0, L"Afx:FakeAcad", L"Autodesk Civil 3D 2025 - [Plan_cadastral.dwg]",
+                             WS_OVERLAPPEDWINDOW | WS_VISIBLE, 0, 0, 400, 300, NULL, NULL, inst, NULL);
     Sleep(1500);                 /* AutoCAD real: cateva secunde pana la inregistrare */
     app = NewObj(O_APP);
-    RegisterActiveObject((IUnknown *)app, &CLSID_Fake, ACTIVEOBJECT_STRONG, &cookie);
-    LogLine(L"STARTED", L"");
+    if (norot[0] != L'1') RegisterActiveObject((IUnknown *)app, &CLSID_Fake, ACTIVEOBJECT_STRONG, &cookie);
+    LogLine(norot[0] == L'1' ? L"STARTED NOROT" : L"STARTED", L"");
     t0 = GetTickCount();
     while (!g_quit && GetTickCount() - t0 < 60000) {
         while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) DispatchMessageW(&msg);
         MsgWaitForMultipleObjects(0, NULL, FALSE, 100, QS_ALLINPUT);
     }
-    RevokeActiveObject(cookie, NULL);
+    if (cookie) RevokeActiveObject(cookie, NULL);
     IDispatch_Release(app);
     LogLine(L"EXIT", L"");
     CoUninitialize();

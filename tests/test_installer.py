@@ -121,7 +121,8 @@ try:
     print("Instalare: pachet AutoCAD, lansator, registru si scurtaturi corecte")
 
     # ------------------------------------------------------------ lansator + AutoCAD simulat
-    fake = os.path.join(tmp, "fake_acad.exe")
+    os.makedirs(os.path.join(tmp, "acad"))
+    fake = os.path.join(tmp, "acad", "acad.exe")                 # recunoscut dupa numele procesului
     subprocess.run(["x86_64-w64-mingw32-gcc", "-municode", "-mwindows", "-O2", "-o", fake,
                     os.path.join(ROOT, "tests", "fake_acad.c"), "-lole32", "-loleaut32", "-luuid", "-lshell32",
                     "-static", "-s"], check=True)
@@ -137,24 +138,45 @@ try:
 
     wine(exe, "/cmd", "ANEXE", wait=False)                           # a doua instanta -> prima
     wait_for(lambda: "SEND" in read(acad_log), 60, "comanda ANEXE in AutoCAD")
-    a = read(acad_log).splitlines()
-    assert a[0] == "STARTED" and a[1] == "DOCUMENTS.ADD", a
+    a = [l for l in read(acad_log).splitlines() if l != "ACTIVATE"]
+    assert a[0] == "STARTED" and a[1] == "DOCUMENTS.ADD" and "ACTIVATE" in read(acad_log), a
     lsp = contents.split("drive_c")[1].replace(os.sep, "/")
     assert a[2] == ('SEND <03><03>(progn (if (not TKL:Load) (load "C:%s/TopoKitLoad.lsp")) '
                     '(if (not c:TOPOKIT) (TKL:Load nil)) (princ))<LF>ANEXE<LF>' % lsp), a[2]
     L = read(log)
-    assert "Pornesc" in L and "Conectat la AutoCAD 2024" in L and "SendCommand ANEXE: 0x00000000" in L, L
+    assert "Pornesc" in L and "Conectat la Civil 3D 2025 (COM)" in L and "SendCommand ANEXE: 0x00000000" in L, L
 
     wine(exe, wait=False)                                            # pornire normala: fereastra
     wait_for(lambda: "Fereastra TopoKit afisata" in read(log), 30, "fereastra TopoKit")
     assert read(acad_log).count("SEND") == 1                         # fereastra nu trimite nimic singura
     wine(exe, "/cmd", "TOPOKIT", wait=False)
     wait_for(lambda: read(acad_log).count("SEND") >= 2, 30, "comanda TOPOKIT")
-    assert read(acad_log).splitlines()[3].endswith("<LF>TOPOKIT<LF>")
+    assert [l for l in read(acad_log).splitlines() if l.startswith("SEND")][1].endswith("<LF>TOPOKIT<LF>")
     wine(exe, "/cmd", "TOPOTEREN;ERASE", wait=False)                 # doar nume de comenzi
     wait_for(lambda: read(acad_log).count("SEND") >= 3, 30, "comanda TOPOTEREN")
-    assert read(acad_log).splitlines()[4].endswith(")<LF>TOPOTEREN<LF>")
+    assert [l for l in read(acad_log).splitlines() if l.startswith("SEND")][2].endswith(")<LF>TOPOTEREN<LF>")
     print("Lansator: conectare COM, pornirea AutoCAD, desen nou, comenzi transmise intre instante")
+
+    # AutoCAD fara legatura COM (nu apare in ROT): detectat dupa fereastra, comenzi prin WM_COPYDATA
+    wine(exe, "/cmd", "QUIT", wait=False)
+    wait_for(lambda: "EXIT" in read(acad_log), 30, "inchiderea AutoCAD simulat")
+    wait_for(lambda: read(log).rstrip().endswith("AutoCAD inchis / nepornit"), 30, "deconectare")
+    subprocess.run(["wine", "reg", "add", r"HKCU\Software\TopoKitTest", "/v", "NoRot", "/d", "1", "/f"], env=E,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    wine(fake, wait=False)
+    wait_for(lambda: "Conectat la Civil 3D 2025 (fereastra, fara COM)" in read(log), 40, "detectare fereastra")
+    wine(exe, "/cmd", "ANEXE", wait=False)
+    wait_for(lambda: "COPYDATA" in read(acad_log), 30, "comanda prin fereastra")
+    cp = [l for l in read(acad_log).splitlines() if l.startswith("COPYDATA")]
+    assert cp[0] == ('COPYDATA <03><03>(progn (if (not TKL:Load) (load "C:%s/TopoKitLoad.lsp")) '
+                     '(if (not c:TOPOKIT) (TKL:Load nil)) (princ))<LF>ANEXE<LF>' % lsp), cp
+    assert "Mesaj: ANEXE trimisă în Civil 3D 2025 (Plan_cadastral.dwg)" in read(log), read(log)
+    wine(exe, "/diag", wait=False)
+    diag = os.path.join(os.path.dirname(log), "diagnostic.txt")
+    wait_for(lambda: "Jurnal" in read(diag), 30, "raportul de diagnostic")
+    D = read(diag)
+    assert 'Fereastra AutoCAD: "Autodesk Civil 3D 2025 - [Plan_cadastral.dwg]"' in D and "TopoKitLoad.lsp: da" in D, D
+    print("Lansator: AutoCAD fara COM gasit dupa fereastra, comanda prin WM_COPYDATA, raport de diagnostic")
 
     # imaginea ferestrei (aceeasi functie de desen ca fereastra reala)
     from PIL import Image

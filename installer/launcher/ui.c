@@ -61,7 +61,7 @@ static const struct { const wchar_t *title, *desc, *cmd; ARGB accent; } TILES[] 
 #define C_WAIT      0xFFE0A030
 
 /* Zonele active */
-enum { HT_NONE = -1, HT_TILE0 = 0, HT_PRIMARY = 20, HT_TOGGLE, HT_FOLDER, HT_HELP };
+enum { HT_NONE = -1, HT_TILE0 = 0, HT_PRIMARY = 20, HT_TOGGLE, HT_FOLDER, HT_HELP, HT_DIAG };
 
 static HINSTANCE g_inst;
 static HWND g_wnd;
@@ -232,15 +232,16 @@ static void Layout(void)
     g_r[HT_PRIMARY] = (R){ W_DIP - 24 - 16 - 178, 120 + 18, 178, 36 };
     for (i = 0; i < NTILES; i++)
         g_r[HT_TILE0 + i] = (R){ 24 + (i % 4) * (tw + 16), 240 + (i / 4) * (th + 16), tw, th };
-    g_r[HT_TOGGLE] = (R){ 24, 556, 290, 28 };
+    g_r[HT_TOGGLE] = (R){ 24, 556, 250, 28 };
     g_r[HT_HELP] = (R){ W_DIP - 24 - 128, 556, 128, 28 };
     g_r[HT_FOLDER] = (R){ W_DIP - 24 - 128 - 12 - 116, 556, 116, 28 };
+    g_r[HT_DIAG] = (R){ W_DIP - 24 - 128 - 12 - 116 - 12 - 84, 556, 84, 28 };
 }
 
 static int HitTest(int px, int py)
 {
     float x = px / g_s, y = py / g_s;
-    int ids[] = { HT_PRIMARY, HT_TOGGLE, HT_FOLDER, HT_HELP, 0, 1, 2, 3, 4, 5, 6, 7 };
+    int ids[] = { HT_PRIMARY, HT_TOGGLE, HT_FOLDER, HT_HELP, HT_DIAG, 0, 1, 2, 3, 4, 5, 6, 7 };
     unsigned i;
     UiState st;
     for (i = 0; i < sizeof ids / sizeof ids[0]; i++) {
@@ -325,7 +326,14 @@ static void Paint(GpGraphics *g, int hover, int pressed)
         Dot(g, (c.x + 30) * s, (c.y + 36) * s, 13 * s, (dot & 0x00FFFFFF) | 0x33000000);
         Dot(g, (c.x + 30) * s, (c.y + 36) * s, 6.5f * s, dot);
         Text(g, line1, fH, C_TEXT, (R){ c.x + 56, c.y + 13, b.x - c.x - 72, 24 }, 0, 1, FALSE);
-        Text(g, line2, fBody, C_TEXT2, (R){ c.x + 56, c.y + 38, b.x - c.x - 72, 20 }, 0, 1, FALSE);
+        if (st.note) {                       /* rezultatul ultimei actiuni */
+            ARGB nc = st.noteKind == UI_NOTE_ERR ? 0xFFC8443A : st.noteKind == UI_NOTE_OK ? 0xFF23874A : C_TEAL;
+            swprintf(line2, MAX_PATH + 64, L"%ls %ls", st.noteKind == UI_NOTE_ERR ? L"\u26A0" :
+                     st.noteKind == UI_NOTE_OK ? L"\u2714" : L"\u2139", st.note);
+            Text(g, line2, fBody, nc, (R){ c.x + 56, c.y + 38, b.x - c.x - 72, 20 }, 0, 1, FALSE);
+        } else {
+            Text(g, line2, fBody, C_TEXT2, (R){ c.x + 56, c.y + 38, b.x - c.x - 72, 20 }, 0, 1, FALSE);
+        }
         if (st.state == UI_STARTING) {
             FillRound(g, b.x * s, b.y * s, b.w * s, b.h * s, 8 * s, 0xFFE9EEF2);
             Text(g, btn, fBtn, C_TEXT3, b, 1, 1, FALSE);
@@ -376,6 +384,7 @@ static void Paint(GpGraphics *g, int hover, int pressed)
         Dot(g, kx * s, (tg.y + 14) * s, 7.5f * s, 0xFFFFFFFF);
         Text(g, L"Pornește TopoKit odată cu Windows (în fundal)", fLink, C_TEXT,
              (R){ tg.x + 52, tg.y, tg.w + 40, tg.h }, 0, 1, FALSE);
+        Text(g, L"Diagnostic", hover == HT_DIAG ? fLinkU : fLink, C_LINK, g_r[HT_DIAG], 2, 1, FALSE);
         Text(g, L"Folder TopoKit", hover == HT_FOLDER ? fLinkU : fLink, C_LINK, g_r[HT_FOLDER], 2, 1, FALSE);
         Text(g, L"Ghid de utilizare", hover == HT_HELP ? fLinkU : fLink, C_LINK, g_r[HT_HELP], 2, 1, FALSE);
     }
@@ -464,6 +473,7 @@ static void Activate(int ht)
     } else if (ht == HT_TOGGLE) App_Action(ACT_AUTORUN, 0);
     else if (ht == HT_FOLDER) App_Action(ACT_FOLDER, 0);
     else if (ht == HT_HELP) App_Action(ACT_HELP, 0);
+    else if (ht == HT_DIAG) App_Action(ACT_DIAG, 0);
     InvalidateRect(g_wnd, NULL, FALSE);
 }
 
@@ -572,6 +582,11 @@ void Ui_Show(void)
 void Ui_Refresh(void)
 {
     if (g_wnd && IsWindowVisible(g_wnd)) InvalidateRect(g_wnd, NULL, FALSE);
+}
+
+HWND Ui_Hwnd(void)
+{
+    return g_wnd && IsWindowVisible(g_wnd) ? g_wnd : NULL;
 }
 
 void Ui_Destroy(void)

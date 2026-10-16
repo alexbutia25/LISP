@@ -73,7 +73,17 @@
        ((vl-catch-all-error-p r)
         (princ (strcat "\nTopoKit: eroare la incarcare - " (vl-catch-all-error-message r)))
         nil)
-       (T T)))))
+       (T (TKL:Mark) T)))))
+
+;; Marcaj pentru lansatorul TopoKit.exe (raportul de diagnostic): unde si cand
+;; s-a incarcat TopoKit ultima data
+(defun TKL:Mark ()
+  (vl-catch-all-apply 'vl-registry-write
+    (list *TKL:REGKEY* "LoadedIn"
+          (strcat (vl-princ-to-string (getvar "PRODUCT")) " " (vl-princ-to-string (getvar "ACADVER"))
+                  " - " (vl-princ-to-string (getvar "DWGNAME")))))
+  (vl-catch-all-apply 'vl-registry-write
+    (list *TKL:REGKEY* "LoadedAt" (rtos (getvar "CDATE") 2 6))))
 
 (defun c:TOPOKITRELOAD ()
   (if (TKL:Load T) (princ "\nTopoKit reincarcat."))

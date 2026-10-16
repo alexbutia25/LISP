@@ -24,6 +24,9 @@ reg = {("HKEY_CURRENT_USER\\Software\\TopoKit", "ContentsDir"): ROOT.replace("/"
 prefs = {"SupportPath": "C:\\Program Files\\Autodesk\\AutoCAD 2024\\support;C:\\Lucru"}
 acad.vars["TRUSTEDPATHS"] = ""
 M.funcs[Sym("VL-REGISTRY-READ")] = lambda k, v=None: reg.get((k, v))
+written = {}
+M.funcs[Sym("VL-REGISTRY-WRITE")] = lambda k, v, d: written.__setitem__(v, d) or d
+M.funcs.setdefault(Sym("VL-PRINC-TO-STRING"), lambda x: str(x))
 M.funcs[Sym("VLA-GET-PREFERENCES")] = lambda a: "prefs"
 M.funcs[Sym("VLA-GET-FILES")] = lambda p: "files"
 M.funcs[Sym("VLA-GET-SUPPORTPATH")] = lambda f: prefs["SupportPath"]
@@ -51,6 +54,7 @@ for c in ("C:TOPOKIT", "C:ANEXE", "C:TOPOTEREN", "C:TOPOKITRELOAD", "C:EXPKMZ"):
 assert dirs(prefs["SupportPath"])[0] == win_root and len(dirs(prefs["SupportPath"])) == 3, prefs
 assert acad.vars["TRUSTEDPATHS"] == win_root + "\\...", acad.vars["TRUSTEDPATHS"]
 assert any("TopoKit pregatit" in o for o in acad.out)
+assert "LoadedAt" in written and written["LoadedIn"].endswith("test.dwg"), written
 print("Prima incarcare: TopoKit, Anexe, Teren; cale de suport si TRUSTEDPATHS actualizate")
 
 # ---------------------------------------------------------------- desen nou: fara dubluri, fara reincarcare

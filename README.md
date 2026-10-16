@@ -82,6 +82,15 @@ Ce face instalarea:
     lansatorul îl încarcă înainte de comandă;
   - linie de comandă: `TopoKit.exe /cmd ANEXE` (orice comandă TopoKit), `/background` (doar în fundal),
     `/quit` (închide lansatorul), `/snapshot F.png [on|off|starting]` (imaginea ferestrei). Jurnalul se află în `%LOCALAPPDATA%\TopoKit\TopoKit.log`.
+- **Dacă un modul nu se deschide în AutoCAD** (de exemplu în Civil 3D 2025):
+  - rezultatul fiecărui clic apare în fereastră, sub starea conexiunii (verde = comandă trimisă, roșu = motivul);
+  - TopoKit găsește AutoCAD și când legătura COM nu funcționează: caută fereastra procesului `acad.exe`
+    și trimite comanda direct în linia de comandă (WM_COPYDATA);
+  - AutoCAD și TopoKit trebuie să ruleze cu aceleași drepturi: dacă AutoCAD e pornit „ca administrator”,
+    Windows blochează comenzile trimise din TopoKit. Porniți AutoCAD normal;
+  - **Diagnostic** (în subsolul ferestrei, sau `TopoKit.exe /diag`) deschide în Notepad un raport cu:
+    versiunile AutoCAD înregistrate, legătura COM, fereastra AutoCAD găsită, drepturile de administrator,
+    dacă pachetul TopoKit s-a încărcat în AutoCAD și ultimele rânduri din jurnal.
 - **Dezinstalare:** *Setări → Aplicații → TopoKit* sau meniul Start → *Dezinstalare TopoKit*. Se șterg
   pachetul AutoCAD, lansatorul și setările din registru.
 - **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup.exe /S`; dezinstalare:

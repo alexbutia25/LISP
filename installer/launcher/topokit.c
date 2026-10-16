@@ -16,6 +16,7 @@
  *   TopoKit.exe /background   doar ruleaza in fundal (pornire cu Windows)
  *   TopoKit.exe /cmd ANEXE    trimite o comanda TopoKit in AutoCAD
  *   TopoKit.exe /quit         inchide lansatorul care ruleaza deja
+ *   TopoKit.exe /diag         raportul de diagnostic (diagnostic.txt, in Notepad)
  *   TopoKit.exe /snapshot F.png [on|off|starting] [hover] [scara]
  *                             salveaza imaginea ferestrei (documentatie, teste)
  *
@@ -34,6 +35,7 @@
 #include <ole2.h>
 #include <oleauto.h>
 #include <shlobj.h>
+#include <shlwapi.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <wchar.h>
@@ -85,6 +87,11 @@ static int g_readyPolls;
 #define POLL_RETRY_MS 400
 static DWORD g_retryMs = POLL_RETRY_MS;  /* cat asteptam cand AutoCAD este ocupat */
 static wchar_t g_contents[MAX_PATH];    /* folderul cu TopoKit.lsp */
+static int g_mode;                      /* legatura curenta: 1 = COM, 2 = doar fereastra AutoCAD */
+static wchar_t g_note[256];             /* mesajul afisat in fereastra dupa o actiune */
+static int g_noteKind;                  /* UI_NOTE_OK / UI_NOTE_ERR / UI_NOTE_INFO */
+static DWORD g_noteTick;
+static HRESULT g_lastHr;                /* ultimul rezultat COM (diagnostic) */
 static wchar_t g_logPath[MAX_PATH];
 
 /* ------------------------------------------------------------------ jurnal */
@@ -217,12 +224,16 @@ static void InitClsids(void)
     CLSID c;
     g_nclsid = 0;
     if (SUCCEEDED(CLSIDFromProgID(L"AutoCAD.Application", &c))) g_clsid[g_nclsid++] = c;
-    for (major = 26; major >= 19 && g_nclsid < MAXCLSID; major--) {
-        int i, dup = 0;
-        swprintf(pid, 64, L"AutoCAD.Application.%d", major);
-        if (FAILED(CLSIDFromProgID(pid, &c))) continue;
-        for (i = 0; i < g_nclsid; i++) dup |= IsEqualCLSID(&c, &g_clsid[i]);
-        if (!dup) g_clsid[g_nclsid++] = c;
+    for (major = 27; major >= 19 && g_nclsid < MAXCLSID; major--) {
+        int minor;
+        for (minor = -1; minor <= 3 && g_nclsid < MAXCLSID; minor++) {   /* .25 si .25.0 ... .25.3 */
+            int i, dup = 0;
+            if (minor < 0) swprintf(pid, 64, L"AutoCAD.Application.%d", major);
+            else swprintf(pid, 64, L"AutoCAD.Application.%d.%d", major, minor);
+            if (FAILED(CLSIDFromProgID(pid, &c))) continue;
+            for (i = 0; i < g_nclsid; i++) dup |= IsEqualCLSID(&c, &g_clsid[i]);
+            if (!dup) g_clsid[g_nclsid++] = c;
+        }
     }
     Log(L"Versiuni AutoCAD inregistrate COM: %d", g_nclsid);
 }
@@ -271,6 +282,64 @@ static LONGLONG GetInt(IDispatch *d, const wchar_t *name, LONGLONG def)
     return r;
 }
 
+/* CLSID-ul inregistrat are un ProgID AutoCAD.Application*? */
+static BOOL IsAcadClsid(const wchar_t *clsidStr)
+{
+    wchar_t key[96], v[128];
+    swprintf(key, 96, L"CLSID\\%ls\\ProgID", clsidStr);
+    if (!RegGetStr(HKEY_CLASSES_ROOT, key, NULL, v, 128)) return FALSE;
+    return !_wcsnicmp(v, L"AutoCAD.Application", 19);
+}
+
+/* Cautare directa in tabela de obiecte active (ROT): intrarile AutoCAD
+ * ("!{CLSID}" cu ProgID AutoCAD.Application) si desenele deschise (*.dwg,
+ * obiect AcadDocument -> .Application). Ajuta cand versiunea instalata nu are
+ * ProgID-ul cautat de GetActiveObject (de exemplu AutoCAD / Civil 3D 2025). */
+static IDispatch *ConnectRot(void)
+{
+    IRunningObjectTable *rot = NULL;
+    IEnumMoniker *en = NULL;
+    IBindCtx *bc = NULL;
+    IMoniker *mk;
+    IDispatch *found = NULL;
+    if (FAILED(GetRunningObjectTable(0, &rot))) return NULL;
+    if (FAILED(CreateBindCtx(0, &bc)) || FAILED(IRunningObjectTable_EnumRunning(rot, &en)) || !en) goto done;
+    while (!found && IEnumMoniker_Next(en, 1, &mk, NULL) == S_OK) {
+        LPOLESTR name = NULL;
+        BOOL app = FALSE, dwg = FALSE;
+        if (SUCCEEDED(IMoniker_GetDisplayName(mk, bc, NULL, &name)) && name) {
+            size_t n = wcslen(name);
+            if (name[0] == L'!' && name[1] == L'{' && n >= 39) {
+                wchar_t g[40];
+                lstrcpynW(g, name + 1, 39);
+                app = IsAcadClsid(g);
+            }
+            dwg = n > 4 && !_wcsicmp(name + n - 4, L".dwg");
+            CoTaskMemFree(name);
+        }
+        if (app || dwg) {
+            IUnknown *u = NULL;
+            IDispatch *d = NULL;
+            if (SUCCEEDED(IRunningObjectTable_GetObject(rot, mk, &u)) && u) {
+                IUnknown_QueryInterface(u, &IID_IDispatch, (void **)&d);
+                IUnknown_Release(u);
+            }
+            if (d && dwg) {
+                found = GetObj(d, L"Application");
+                IDispatch_Release(d);
+            } else if (d) {
+                found = d;
+            }
+        }
+        IMoniker_Release(mk);
+    }
+done:
+    if (en) IEnumMoniker_Release(en);
+    if (bc) IBindCtx_Release(bc);
+    IRunningObjectTable_Release(rot);
+    return found;
+}
+
 /* AutoCAD care ruleaza (din tabela de obiecte active), sau NULL */
 static IDispatch *Connect(void)
 {
@@ -287,9 +356,104 @@ static IDispatch *Connect(void)
             if (d) { last = S_OK; return d; }
         }
     }
+    {
+        IDispatch *d = ConnectRot();
+        if (d) {
+            if (last != S_OK) Log(L"Conectat prin tabela ROT (GetActiveObject: 0x%08lX)", (unsigned long)hr);
+            last = S_OK;
+            g_lastHr = S_OK;
+            return d;
+        }
+    }
     if (hr != last && hr != MK_E_UNAVAILABLE) Log(L"Conectare COM esuata: 0x%08lX", (unsigned long)hr);
     last = hr;
+    g_lastHr = hr;
     return NULL;
+}
+
+/* ------------------------------------------------------------------ fereastra AutoCAD (fara COM) */
+typedef struct {
+    HWND hwnd;
+    DWORD pid;
+    int elevated;               /* 1 da, 0 nu, -1 necunoscut (acces refuzat: probabil administrator) */
+    wchar_t exe[MAX_PATH], title[256], product[64], doc[MAX_PATH];
+} AcadWin;
+
+static int ProcessElevated(HANDLE proc)
+{
+    HANDLE tok;
+    TOKEN_ELEVATION te;
+    DWORD n;
+    int r = -1;
+    if (OpenProcessToken(proc, TOKEN_QUERY, &tok)) {
+        if (GetTokenInformation(tok, TokenElevation, &te, sizeof te, &n)) r = te.TokenIsElevated ? 1 : 0;
+        CloseHandle(tok);
+    }
+    return r;
+}
+
+/* "Autodesk Civil 3D 2025 - [Plan.dwg]" -> produs "Civil 3D 2025", desen "Plan.dwg" */
+static void ParseTitle(AcadWin *w)
+{
+    const wchar_t *t = w->title, *b, *e;
+    wchar_t *d;
+    if (!_wcsnicmp(t, L"Autodesk ", 9)) t += 9;
+    lstrcpynW(w->product, t, 64);
+    if ((d = wcsstr(w->product, L" - "))) *d = 0;
+    if ((d = wcsstr(w->product, L"  "))) *d = 0;
+    if ((d = wcschr(w->product, L'['))) *d = 0;
+    StrTrimW(w->product, L" -");
+    w->doc[0] = 0;
+    if ((b = wcsrchr(w->title, L'[')) && (e = wcschr(b, L']')) && e > b + 1) {
+        lstrcpynW(w->doc, b + 1, (int)(e - b));
+        if ((d = wcsrchr(w->doc, L'\\'))) memmove(w->doc, d + 1, (wcslen(d + 1) + 1) * sizeof(wchar_t));
+    }
+}
+
+static BOOL CALLBACK EnumAcad(HWND h, LPARAM lp)
+{
+    AcadWin *w = (AcadWin *)lp, c;
+    HANDLE proc;
+    DWORD n = MAX_PATH;
+    const wchar_t *base;
+    if (!IsWindowVisible(h) || GetWindow(h, GW_OWNER)) return TRUE;
+    memset(&c, 0, sizeof c);
+    if (!GetWindowTextW(h, c.title, 256) || !c.title[0]) return TRUE;
+    GetWindowThreadProcessId(h, &c.pid);
+    if (!(proc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, c.pid))) return TRUE;
+    if (!QueryFullProcessImageNameW(proc, 0, c.exe, &n)) { CloseHandle(proc); return TRUE; }
+    base = wcsrchr(c.exe, L'\\') ? wcsrchr(c.exe, L'\\') + 1 : c.exe;
+    if (_wcsicmp(base, L"acad.exe")) { CloseHandle(proc); return TRUE; }
+    c.elevated = ProcessElevated(proc);
+    CloseHandle(proc);
+    c.hwnd = h;
+    ParseTitle(&c);
+    /* fereastra principala: titlul "Autodesk ..." (palete, dialoguri au alt titlu) */
+    if (!w->hwnd || (_wcsnicmp(w->title, L"Autodesk", 8) && !_wcsnicmp(c.title, L"Autodesk", 8))) *w = c;
+    return _wcsnicmp(w->title, L"Autodesk", 8) != 0;    /* prima fereastra principala in ordinea Z */
+}
+
+static BOOL FindAcadWindow(AcadWin *w)
+{
+    memset(w, 0, sizeof *w);
+    EnumWindows(EnumAcad, (LPARAM)w);
+    return w->hwnd != NULL;
+}
+
+static int SelfElevated(void)
+{
+    return ProcessElevated(GetCurrentProcess());
+}
+
+static void Note(int kind, const wchar_t *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    vswprintf(g_note, 256, fmt, ap);
+    va_end(ap);
+    g_noteKind = kind;
+    g_noteTick = GetTickCount();
+    Log(L"Mesaj: %ls", g_note);
 }
 
 /* "24.3s (LMS Tech)" -> "AutoCAD 2024" */
@@ -358,37 +522,66 @@ static void LispPath(wchar_t *out, int cch)
         if (*p == L'\\') *p = L'/';
 }
 
-/* Trimite comanda in desenul activ: incarca TopoKit daca lipseste, apoi
+/* Textul trimis in linia de comanda: incarca TopoKit daca lipseste, apoi
  * ruleaza comanda. reload = reincarca toate modulele. */
-static BOOL SendToAcad(IDispatch *app, const wchar_t *cmd, BOOL reload)
+static void CommandText(const wchar_t *cmd, BOOL reload, wchar_t *text, int cch)
 {
-    wchar_t lsp[MAX_PATH], text[3 * MAX_PATH];
+    wchar_t lsp[MAX_PATH];
+    LispPath(lsp, MAX_PATH);
+    if (reload)
+        swprintf(text, cch, L"\x03\x03(progn (if (not TKL:Load) (load \"%ls\")) (TKL:Load T) (princ))\n", lsp);
+    else
+        swprintf(text, cch,
+                 L"\x03\x03(progn (if (not TKL:Load) (load \"%ls\")) (if (not c:TOPOKIT) (TKL:Load nil)) (princ))\n%ls%ls",
+                 lsp, cmd ? cmd : L"", cmd ? L"\n" : L"");
+}
+
+/* Trimiterea prin COM (Document.SendCommand), in desenul activ */
+static HRESULT SendToAcad(IDispatch *app, const wchar_t *cmd, BOOL reload)
+{
+    wchar_t text[3 * MAX_PATH];
     IDispatch *doc;
     VARIANT arg;
-    HRESULT hr;
-    BOOL ok = FALSE;
+    HRESULT hr = E_FAIL;
     g_retryMs = 10000;
     doc = ActiveDoc(app);
     if (doc) {
-        LispPath(lsp, MAX_PATH);
-        if (reload)
-            swprintf(text, 3 * MAX_PATH,
-                     L"\x03\x03(progn (if (not TKL:Load) (load \"%ls\")) (TKL:Load T) (princ))\n", lsp);
-        else
-            swprintf(text, 3 * MAX_PATH,
-                     L"\x03\x03(progn (if (not TKL:Load) (load \"%ls\")) (if (not c:TOPOKIT) (TKL:Load nil)) (princ))\n%ls%ls",
-                     lsp, cmd ? cmd : L"", cmd ? L"\n" : L"");
+        CommandText(cmd, reload, text, 3 * MAX_PATH);
+        BringToFront(app);
+        Call(doc, DISPATCH_METHOD, L"Activate", NULL, 0, NULL);   /* fila desenului, nu fila Start */
         arg.vt = VT_BSTR;
         arg.bstrVal = SysAllocString(text);
-        BringToFront(app);
         hr = Call(doc, DISPATCH_METHOD, L"SendCommand", NULL, 1, &arg);
         SysFreeString(arg.bstrVal);
-        ok = SUCCEEDED(hr);
         Log(L"SendCommand %ls%ls: 0x%08lX", cmd ? cmd : L"", reload ? L"(reincarcare)" : L"", (unsigned long)hr);
         IDispatch_Release(doc);
+    } else {
+        Log(L"SendCommand: niciun document activ");
     }
     g_retryMs = POLL_RETRY_MS;
-    return ok;
+    return hr;
+}
+
+/* Trimiterea prin fereastra AutoCAD (WM_COPYDATA, dwData = 1: text pentru linia
+ * de comanda). Folosita cand AutoCAD nu raspunde prin COM. Intoarce 0 sau codul Win32. */
+static DWORD SendViaWindow(const AcadWin *w, const wchar_t *cmd, BOOL reload)
+{
+    wchar_t text[3 * MAX_PATH];
+    COPYDATASTRUCT cd;
+    DWORD_PTR res = 0;
+    DWORD err = 0;
+    CommandText(cmd, reload, text, 3 * MAX_PATH);
+    if (IsIconic(w->hwnd)) ShowWindow(w->hwnd, SW_RESTORE);
+    SetForegroundWindow(w->hwnd);
+    cd.dwData = 1;
+    cd.cbData = (DWORD)((wcslen(text) + 1) * sizeof(wchar_t));
+    cd.lpData = text;
+    SetLastError(0);
+    if (!SendMessageTimeoutW(w->hwnd, WM_COPYDATA, (WPARAM)g_hwnd, (LPARAM)&cd, SMTO_ABORTIFHUNG, 8000, &res))
+        err = GetLastError() ? GetLastError() : ERROR_TIMEOUT;
+    Log(L"WM_COPYDATA %ls%ls catre %ls: %lu", cmd ? cmd : L"", reload ? L"(reincarcare)" : L"", w->title,
+        (unsigned long)err);
+    return err;
 }
 
 /* ------------------------------------------------------------------ tray */
@@ -464,19 +657,90 @@ static BOOL FindAcadExe(wchar_t *exe, int cch)
     return FALSE;
 }
 
+/* Scurtatura din meniul Start catre acad.exe (pornirea "Civil 3D 2025" cu profilul
+ * ei, nu AutoCAD simplu). Preferinta: produsul folosit ultima data, apoi anul
+ * cel mai recent, apoi Civil 3D / Map 3D. */
+static int g_bestScore;
+static void ScanShortcuts(const wchar_t *dir, int depth, const wchar_t *last, wchar_t *best)
+{
+    wchar_t pat[MAX_PATH], f[MAX_PATH];
+    WIN32_FIND_DATAW fd;
+    HANDLE h;
+    swprintf(pat, MAX_PATH, L"%ls\\*", dir);
+    if ((h = FindFirstFileW(pat, &fd)) == INVALID_HANDLE_VALUE) return;
+    do {
+        if (fd.cFileName[0] == L'.') continue;
+        swprintf(f, MAX_PATH, L"%ls\\%ls", dir, fd.cFileName);
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            if (depth < 3) ScanShortcuts(f, depth + 1, last, best);
+        } else if (wcslen(fd.cFileName) > 4 && !_wcsicmp(fd.cFileName + wcslen(fd.cFileName) - 4, L".lnk")) {
+            IShellLinkW *sl = NULL;
+            IPersistFile *pf = NULL;
+            wchar_t target[MAX_PATH] = L"";
+            if (SUCCEEDED(CoCreateInstance(&CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, &IID_IShellLinkW, (void **)&sl))) {
+                if (SUCCEEDED(IShellLinkW_QueryInterface(sl, &IID_IPersistFile, (void **)&pf))) {
+                    if (SUCCEEDED(IPersistFile_Load(pf, f, STGM_READ)))
+                        IShellLinkW_GetPath(sl, target, MAX_PATH, NULL, SLGP_RAWPATH);
+                    IPersistFile_Release(pf);
+                }
+                IShellLinkW_Release(sl);
+            }
+            if (wcslen(target) > 8 && !_wcsicmp(target + wcslen(target) - 8, L"acad.exe")) {
+                const wchar_t *y = fd.cFileName;
+                int score = 0, year = 0;
+                for (; *y; y++)
+                    if (y[0] == L'2' && y[1] == L'0' && iswdigit(y[2]) && iswdigit(y[3])) { year = _wtoi(y); break; }
+                score = year * 10;
+                if (StrStrIW(fd.cFileName, L"Civil 3D")) score += 3;
+                else if (StrStrIW(fd.cFileName, L"Map 3D")) score += 2;
+                if (last[0] && StrStrIW(fd.cFileName, last)) score += 100000;
+                if (StrStrIW(fd.cFileName, L"Reset") || StrStrIW(fd.cFileName, L"Uninstall")) score = 0;
+                if (score > g_bestScore) { g_bestScore = score; lstrcpynW(best, f, MAX_PATH); }
+            }
+        }
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+}
+
+static BOOL FindAcadShortcut(wchar_t *lnk)
+{
+    wchar_t dir[MAX_PATH], last[64];
+    static const int where[] = { CSIDL_PROGRAMS, CSIDL_COMMON_PROGRAMS, CSIDL_DESKTOPDIRECTORY,
+                                 CSIDL_COMMON_DESKTOPDIRECTORY };
+    unsigned i;
+    RegGetStr(HKEY_CURRENT_USER, REG_APP, L"LastProduct", last, 64);
+    g_bestScore = 0;
+    lnk[0] = 0;
+    for (i = 0; i < sizeof where / sizeof where[0]; i++)
+        if (SUCCEEDED(SHGetFolderPathW(NULL, where[i], NULL, 0, dir))) ScanShortcuts(dir, 0, last, lnk);
+    return lnk[0] != 0;
+}
+
+static HWND MsgOwner(void)
+{
+    HWND u = Ui_Hwnd();
+    return u ? u : g_hwnd;
+}
+
 static void StartAcad(const wchar_t *cmd)
 {
-    wchar_t exe[MAX_PATH];
-    if (!FindAcadExe(exe, MAX_PATH)) {
+    wchar_t exe[MAX_PATH], lnk[MAX_PATH];
+    const wchar_t *what;
+    BOOL viaLnk = FindAcadShortcut(lnk);
+    if (!viaLnk && !FindAcadExe(exe, MAX_PATH)) {
         Log(L"AutoCAD nu a fost gasit");
-        MessageBoxW(g_hwnd, L"AutoCAD nu a fost găsit pe acest calculator.\n\n"
-                    L"TopoKit funcționează în AutoCAD 2013 sau mai nou (inclusiv Civil 3D / Map 3D).",
-                    APP_TITLE, MB_ICONWARNING);
+        Note(UI_NOTE_ERR, L"AutoCAD nu a fost găsit pe acest calculator");
+        MessageBoxW(MsgOwner(), L"AutoCAD nu a fost găsit pe acest calculator.\n\n"
+                    L"TopoKit funcționează în AutoCAD 2013 sau mai nou (inclusiv Civil 3D / Map 3D). "
+                    L"Dacă AutoCAD este instalat, porniți-l normal: TopoKit se conectează singur.",
+                    APP_TITLE, MB_ICONWARNING | MB_SETFOREGROUND);
         return;
     }
-    Log(L"Pornesc %ls", exe);
-    if ((INT_PTR)ShellExecuteW(NULL, L"open", exe, NULL, NULL, SW_SHOWNORMAL) <= 32) {
-        MessageBoxW(g_hwnd, L"AutoCAD nu a putut fi pornit.", APP_TITLE, MB_ICONWARNING);
+    what = viaLnk ? lnk : exe;
+    Log(L"Pornesc %ls", what);
+    if ((INT_PTR)ShellExecuteW(NULL, L"open", what, NULL, NULL, SW_SHOWNORMAL) <= 32) {
+        Note(UI_NOTE_ERR, L"AutoCAD nu a putut fi pornit");
+        MessageBoxW(MsgOwner(), L"AutoCAD nu a putut fi pornit.", APP_TITLE, MB_ICONWARNING | MB_SETFOREGROUND);
         return;
     }
     lstrcpynW(g_pending, cmd ? cmd : L"", 64);
@@ -487,16 +751,57 @@ static void StartAcad(const wchar_t *cmd)
     UpdateTray();
 }
 
+static void ReportWindowError(const AcadWin *w, DWORD err)
+{
+    if (err == ERROR_ACCESS_DENIED || (w->elevated != 0 && SelfElevated() == 0))
+        Note(UI_NOTE_ERR, L"%ls rulează ca administrator: porniți AutoCAD normal (fără „Run as administrator”)",
+             w->product[0] ? w->product : L"AutoCAD");
+    else if (err == ERROR_TIMEOUT)
+        Note(UI_NOTE_ERR, L"%ls nu răspunde – terminați comanda curentă și încercați din nou",
+             w->product[0] ? w->product : L"AutoCAD");
+    else
+        Note(UI_NOTE_ERR, L"Comanda nu a putut fi trimisă în %ls (cod %lu)", w->product[0] ? w->product : L"AutoCAD",
+             (unsigned long)err);
+}
+
+static void NoteSent(const wchar_t *cmd, BOOL reload, const wchar_t *product, const wchar_t *doc)
+{
+    if (reload)
+        Note(UI_NOTE_OK, L"TopoKit a fost reîncărcat în %ls", product);
+    else
+        Note(UI_NOTE_OK, L"%ls trimisă în %ls%ls%ls%ls", cmd, product, doc && doc[0] ? L" (" : L"",
+             doc && doc[0] ? doc : L"", doc && doc[0] ? L")" : L"");
+}
+
 /* Comanda ceruta de utilizator: in AutoCAD daca ruleaza, altfel il porneste */
 static void RunCommand(const wchar_t *cmd, BOOL reload)
 {
     IDispatch *app = Connect();
+    AcadWin w;
+    BOOL haveWin = FindAcadWindow(&w);
+    const wchar_t *product = haveWin && w.product[0] ? w.product : g_acadName[0] ? g_acadName : L"AutoCAD";
     if (app) {
-        if (!SendToAcad(app, cmd, reload))
-            Balloon(APP_TITLE, L"AutoCAD este ocupat. Încercați din nou după terminarea comenzii curente.");
+        HRESULT hr = SendToAcad(app, cmd, reload);
         IDispatch_Release(app);
+        if (SUCCEEDED(hr)) { NoteSent(cmd, reload, product, g_docName); return; }
+        if (haveWin) {                                   /* COM a refuzat: incercam prin fereastra */
+            DWORD err = SendViaWindow(&w, cmd, reload);
+            if (!err) NoteSent(cmd, reload, product, w.doc);
+            else ReportWindowError(&w, err);
+            return;
+        }
+        if (hr == RPC_E_CALL_REJECTED || hr == RPC_E_SERVERCALL_RETRYLATER)
+            Note(UI_NOTE_ERR, L"AutoCAD este ocupat – terminați comanda curentă (Esc) și încercați din nou");
+        else
+            Note(UI_NOTE_ERR, L"AutoCAD a refuzat comanda (cod 0x%08lX) – deschideți un desen și încercați din nou",
+                 (unsigned long)hr);
+    } else if (haveWin) {
+        DWORD err = SendViaWindow(&w, cmd, reload);
+        if (!err) NoteSent(cmd, reload, product, w.doc);
+        else ReportWindowError(&w, err);
     } else if (g_pending[0]) {
         lstrcpynW(g_pending, cmd ? cmd : L" ", 64);
+        Note(UI_NOTE_INFO, L"AutoCAD pornește – %ls se deschide imediat ce este gata", cmd ? cmd : L"TopoKit");
     } else {
         StartAcad(cmd);
     }
@@ -506,51 +811,181 @@ static void RunCommand(const wchar_t *cmd, BOOL reload)
 static void Poll(void)
 {
     IDispatch *app = Connect();
+    AcadWin w;
+    BOOL haveWin = FindAcadWindow(&w);
     BOOL was = g_connected;
-    if (app && !AcadName(app, g_acadName, 64)) {
+    int wasMode = g_mode;
+    wchar_t name[64];
+    if (haveWin && w.product[0]) {
+        wchar_t last[64];
+        if (!RegGetStr(HKEY_CURRENT_USER, REG_APP, L"LastProduct", last, 64) || wcscmp(last, w.product)) {
+            HKEY h;
+            if (RegCreateKeyExW(HKEY_CURRENT_USER, REG_APP, 0, NULL, 0, KEY_SET_VALUE, NULL, &h, NULL) == ERROR_SUCCESS) {
+                RegSetValueExW(h, L"LastProduct", 0, REG_SZ, (const BYTE *)w.product,
+                               (DWORD)((wcslen(w.product) + 1) * sizeof(wchar_t)));
+                RegCloseKey(h);
+            }
+        }
+    }
+    if (app && !AcadName(app, name, 64)) {
         /* AutoCAD ruleaza dar respinge apelurile: pastram starea anterioara */
         IDispatch_Release(app);
-        if (g_connected != TRUE) { lstrcpyW(g_acadName, L"AutoCAD"); g_connected = TRUE; UpdateTray(); }
+        if (g_connected != TRUE) {
+            lstrcpyW(g_acadName, haveWin && w.product[0] ? w.product : L"AutoCAD");
+            g_connected = TRUE;
+            g_mode = 1;
+            UpdateTray();
+        }
         return;
     }
     if (app) {
         IDispatch *doc;
+        lstrcpyW(g_acadName, haveWin && w.product[0] ? w.product : name);
         g_docName[0] = 0;
         if ((doc = GetObj(app, L"ActiveDocument"))) {
             GetStr(doc, L"Name", g_docName, MAX_PATH);
             IDispatch_Release(doc);
         }
         g_connected = TRUE;
+        g_mode = 1;
         if (g_pending[0]) {
             /* AutoCAD tocmai pornit: asteptam sa fie inactiv doua sondaje la rand */
             if (Quiescent(app)) g_readyPolls++;
             else g_readyPolls = 0;
             if (g_readyPolls >= 2) {
                 wchar_t cmd[64];
+                HRESULT hr;
                 lstrcpyW(cmd, g_pending);
                 g_pending[0] = 0;
-                SendToAcad(app, cmd[0] == L' ' ? NULL : cmd, FALSE);
+                hr = SendToAcad(app, cmd[0] == L' ' ? NULL : cmd, FALSE);
+                if (SUCCEEDED(hr)) NoteSent(cmd[0] == L' ' ? L"TopoKit" : cmd, FALSE, g_acadName, g_docName);
             }
         }
         IDispatch_Release(app);
+    } else if (haveWin) {
+        /* AutoCAD vizibil, dar fara legatura COM: lucram prin fereastra lui */
+        lstrcpyW(g_acadName, w.product[0] ? w.product : L"AutoCAD");
+        lstrcpyW(g_docName, w.doc);
+        g_connected = TRUE;
+        g_mode = 2;
+        if (g_pending[0]) {
+            if (++g_readyPolls >= 4) {                   /* ~12 s dupa aparitia ferestrei */
+                wchar_t cmd[64];
+                DWORD err;
+                lstrcpyW(cmd, g_pending);
+                g_pending[0] = 0;
+                err = SendViaWindow(&w, cmd[0] == L' ' ? NULL : cmd, FALSE);
+                if (!err) NoteSent(cmd[0] == L' ' ? L"TopoKit" : cmd, FALSE, g_acadName, g_docName);
+                else ReportWindowError(&w, err);
+            }
+        }
     } else {
         g_connected = FALSE;
+        g_mode = 0;
         g_docName[0] = 0;
         if (g_pending[0] && GetTickCount() - g_pendingSince > START_WAIT_MS) {
             g_pending[0] = 0;
-            Balloon(APP_TITLE, L"AutoCAD nu a răspuns. Deschideți TopoKit din nou după ce AutoCAD a pornit.");
+            Note(UI_NOTE_ERR, L"AutoCAD nu a pornit în 4 minute – porniți-l manual, TopoKit se conectează singur");
         }
     }
-    if (was != g_connected) {
-        Log(g_connected ? L"Conectat la %ls" : L"AutoCAD inchis / nepornit%ls", g_connected ? g_acadName : L"");
-        if (g_connected == TRUE && was != -1) {
+    if (was != g_connected || wasMode != g_mode) {
+        if (g_connected == TRUE)
+            Log(L"Conectat la %ls (%ls)", g_acadName, g_mode == 1 ? L"COM" : L"fereastra, fara COM");
+        else
+            Log(L"AutoCAD inchis / nepornit");
+        if (g_connected == TRUE && was != TRUE && was != -1) {
             wchar_t t[256];
-            swprintf(t, 256, L"TopoKit este conectat la %ls. Comenzile TopoKit sunt în meniul acestei iconițe "
-                     L"și în AutoCAD (TOPOKIT, ANEXE, TOPOTEREN).", g_acadName);
+            swprintf(t, 256, L"TopoKit este conectat la %ls.", g_acadName);
             Balloon(APP_TITLE, t);
         }
     }
     UpdateTray();
+}
+
+/* Raportul de diagnostic (%LOCALAPPDATA%\\TopoKit\\diagnostic.txt), deschis in Notepad */
+static void Diagnostic(void)
+{
+    wchar_t path[MAX_PATH], v[MAX_PATH], lnk[MAX_PATH];
+    FILE *f;
+    AcadWin w;
+    IDispatch *app;
+    OSVERSIONINFOW os = { sizeof os, 0, 0, 0, 0, { 0 } };
+    int i;
+    lstrcpyW(path, g_logPath);
+    if (!path[0]) return;
+    lstrcpyW(wcsrchr(path, L'\\') + 1, L"diagnostic.txt");
+    if (!(f = _wfopen(path, L"w, ccs=UTF-8"))) return;
+    {
+        typedef LONG(WINAPI * RtlGetVersionFn)(OSVERSIONINFOW *);
+        RtlGetVersionFn rgv = (RtlGetVersionFn)(void *)GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "RtlGetVersion");
+        if (rgv) rgv(&os);
+    }
+    fwprintf(f, L"TopoKit %hs - diagnostic\n\n", TK_VERSION);
+    fwprintf(f, L"Windows %lu.%lu build %lu; TopoKit ca administrator: %ls\n", os.dwMajorVersion, os.dwMinorVersion,
+             os.dwBuildNumber, SelfElevated() == 1 ? L"DA" : L"nu");
+    fwprintf(f, L"Fisiere LISP: %ls (%ls)\n", g_contents, PathFileExistsW(g_contents) ? L"exista" : L"LIPSESTE");
+    for (i = 0; i < 3; i++) {
+        static const wchar_t *files[] = { L"TopoKitLoad.lsp", L"TopoKit.lsp", L"anexe\\TopoKitDocx.ps1" };
+        swprintf(v, MAX_PATH, L"%ls\\%ls", g_contents, files[i]);
+        fwprintf(f, L"  %ls: %ls\n", files[i], PathFileExistsW(v) ? L"da" : L"LIPSESTE");
+    }
+    fwprintf(f, L"\nProgID-uri AutoCAD.Application inregistrate: %d\n", g_nclsid);
+    for (i = 0; i < g_nclsid; i++) {
+        wchar_t g[40], key[96], pid[128], srv[2 * MAX_PATH];
+        StringFromGUID2(&g_clsid[i], g, 40);
+        swprintf(key, 96, L"CLSID\\%ls\\ProgID", g);
+        RegGetStr(HKEY_CLASSES_ROOT, key, NULL, pid, 128);
+        swprintf(key, 96, L"CLSID\\%ls\\LocalServer32", g);
+        RegGetStr(HKEY_CLASSES_ROOT, key, NULL, srv, 2 * MAX_PATH);
+        fwprintf(f, L"  %ls %ls -> %ls\n", g, pid, srv);
+    }
+    app = Connect();
+    fwprintf(f, L"Legatura COM: %ls (ultimul cod 0x%08lX)\n", app ? L"DA" : L"nu", (unsigned long)g_lastHr);
+    if (app) {
+        wchar_t ver[64], dn[MAX_PATH];
+        IDispatch *doc;
+        GetStr(app, L"Version", ver, 64);
+        fwprintf(f, L"  Version: %ls; desene deschise: ", ver);
+        if ((doc = GetObj(app, L"Documents"))) {
+            fwprintf(f, L"%lld", GetInt(doc, L"Count", -1));
+            IDispatch_Release(doc);
+        }
+        if ((doc = GetObj(app, L"ActiveDocument"))) {
+            GetStr(doc, L"Name", dn, MAX_PATH);
+            fwprintf(f, L"; activ: %ls", dn);
+            IDispatch_Release(doc);
+        }
+        fwprintf(f, L"; liber: %ls\n", Quiescent(app) ? L"da" : L"nu (comanda in curs)");
+        IDispatch_Release(app);
+    }
+    if (FindAcadWindow(&w))
+        fwprintf(f, L"Fereastra AutoCAD: \"%ls\"\n  produs: %ls; desen: %ls\n  %ls (pid %lu); administrator: %ls\n",
+                 w.title, w.product, w.doc, w.exe, (unsigned long)w.pid,
+                 w.elevated == 1 ? L"DA" : w.elevated == 0 ? L"nu" : L"probabil DA (acces refuzat)");
+    else
+        fwprintf(f, L"Fereastra AutoCAD: negasita (acad.exe nu ruleaza?)\n");
+    fwprintf(f, L"Pornire AutoCAD: %ls\n", FindAcadShortcut(lnk) ? lnk : FindAcadExe(v, MAX_PATH) ? v : L"negasit");
+    if (RegGetStr(HKEY_CURRENT_USER, REG_APP, L"LoadedAt", v, MAX_PATH)) {
+        wchar_t in[128] = L"";
+        RegGetStr(HKEY_CURRENT_USER, REG_APP, L"LoadedIn", in, 128);
+        fwprintf(f, L"TopoKit incarcat ultima data in AutoCAD: %ls (%ls)\n", v, in);
+    } else {
+        fwprintf(f, L"TopoKit incarcat in AutoCAD: niciodata (pachetul nu a fost incarcat)\n");
+    }
+    {   /* ultimele randuri din jurnal */
+        FILE *lg = _wfopen(g_logPath, L"r, ccs=UTF-8");
+        static wchar_t lines[40][400];
+        int n = 0, k;
+        if (lg) {
+            while (fgetws(lines[n % 40], 400, lg)) n++;
+            fclose(lg);
+            fwprintf(f, L"\nJurnal (ultimele %d randuri):\n", n < 40 ? n : 40);
+            for (k = n < 40 ? 0 : n - 40; k < n; k++) fwprintf(f, L"%ls", lines[k % 40]);
+        }
+    }
+    fclose(f);
+    ShellExecuteW(NULL, L"open", L"notepad.exe", path, NULL, SW_SHOWNORMAL);
+    Note(UI_NOTE_INFO, L"Raportul de diagnostic s-a deschis în Notepad");
 }
 
 static void ShowMain(void)
@@ -566,6 +1001,11 @@ void App_State(UiState *st)
     st->acad = g_acadName;
     st->doc = g_docName;
     st->autorun = AutorunEnabled();
+    st->note = NULL;
+    if (g_note[0] && GetTickCount() - g_noteTick < (DWORD)(g_noteKind == UI_NOTE_ERR ? 45000 : 12000)) {
+        st->note = g_note;
+        st->noteKind = g_noteKind;
+    }
 }
 
 void App_Action(int act, int arg)
@@ -592,6 +1032,9 @@ void App_Action(int act, int arg)
         lstrcpyW(wcsrchr(f, L'\\') + 1, L"README.html");
         if (GetFileAttributesW(f) == INVALID_FILE_ATTRIBUTES) swprintf(f, MAX_PATH, L"%ls\\README.md", g_contents);
         ShellExecuteW(NULL, L"open", f, NULL, NULL, SW_SHOWNORMAL);
+        break;
+    case ACT_DIAG:
+        Diagnostic();
         break;
     case ACT_HIDDEN:
         Balloon(APP_TITLE, L"TopoKit rulează în continuare în fundal. Îl găsiți în iconița de lângă ceas.");
@@ -645,6 +1088,7 @@ static void Remote(const wchar_t *arg)
     Log(L"Cerere: %ls", arg);
     if (!wcscmp(arg, L"/quit")) DestroyWindow(g_hwnd);
     else if (!wcscmp(arg, L"/background")) Poll();
+    else if (!wcscmp(arg, L"/diag")) Diagnostic();
     else if (!arg[0]) ShowMain();
     else RunCommand(arg, FALSE);
 }
@@ -698,7 +1142,7 @@ static void ParseArgs(wchar_t *out, int cch)
             lstrcpynW(out, argv[++i], cch);
             for (p = out; *p; p++)              /* doar nume de comenzi */
                 if (!iswalnum(*p) && *p != L'_' && *p != L'-') { *p = 0; break; }
-        } else if (!_wcsicmp(argv[i], L"/background") || !_wcsicmp(argv[i], L"/quit")) {
+        } else if (!_wcsicmp(argv[i], L"/background") || !_wcsicmp(argv[i], L"/quit") || !_wcsicmp(argv[i], L"/diag")) {
             lstrcpynW(out, argv[i], cch);
             _wcslwr(out);
         }
@@ -787,6 +1231,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show)
     SetTimer(g_hwnd, TIMER_POLL, POLL_MS, NULL);
 
     if (!arg[0]) ShowMain();
+    else if (!wcscmp(arg, L"/diag")) Diagnostic();
     else if (wcscmp(arg, L"/background")) RunCommand(arg, FALSE);
 
     while (GetMessageW(&msg, NULL, 0, 0) > 0) {

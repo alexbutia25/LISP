@@ -42,7 +42,7 @@ tk_modul : boxed_column {
 //  Dialogul principal (comenzile TOPOKIT / MYTOPO)
 // ---------------------------------------------------------------------------
 topokit_main : dialog {
-  label = "TopoKit - Topografie & Cadastru";
+  label = "TopoKit - Topografie si Cadastru";
 
   // ---------------- antet: sigla + titlu ----------------
   : row {
@@ -177,7 +177,7 @@ topokit_main : dialog {
 //  Sub-dialog dedicat comenzii INSCADRU (format, scara, indicator)
 // ---------------------------------------------------------------------------
 topokit_cadru : dialog {
-  label = "TopoKit - Inserare Format, Cadru & Indicator";
+  label = "TopoKit - Inserare Format, Cadru si Indicator";
   : row {
     : column {
       : boxed_column {

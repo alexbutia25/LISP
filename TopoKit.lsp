@@ -1356,7 +1356,7 @@
     "//  Dialogul principal (comenzile TOPOKIT / MYTOPO)"
     "// ---------------------------------------------------------------------------"
     "topokit_main : dialog {"
-    "  label = \"TopoKit - Topografie & Cadastru\";"
+    "  label = \"TopoKit - Topografie si Cadastru\";"
     ""
     "  // ---------------- antet: sigla + titlu ----------------"
     "  : row {"
@@ -1491,7 +1491,7 @@
     "//  Sub-dialog dedicat comenzii INSCADRU (format, scara, indicator)"
     "// ---------------------------------------------------------------------------"
     "topokit_cadru : dialog {"
-    "  label = \"TopoKit - Inserare Format, Cadru & Indicator\";"
+    "  label = \"TopoKit - Inserare Format, Cadru si Indicator\";"
     "  : row {"
     "    : column {"
     "      : boxed_column {"
@@ -1750,7 +1750,7 @@
 ;; TK:InitCadruTiles - inițializează controalele comune de format/scară
 (defun TK:InitCadruTiles ()
   (start_list "pl_format")
-  (foreach x *TK:FORMATE* (add_list (strcat (car x) "  (" (rtos (cadr x) 2 0) " x " (rtos (caddr x) 2 0) " mm)")))
+  (foreach x *TK:FORMATE* (add_list (strcat (car x) " (" (rtos (cadr x) 2 0) "x" (rtos (caddr x) 2 0) ")")))
   (end_list)
   (start_list "pl_scara")
   (foreach s *TK:SCARI* (add_list (strcat "1:" (itoa s))))

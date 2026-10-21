@@ -141,8 +141,10 @@ try:
     a = [l for l in read(acad_log).splitlines() if l != "ACTIVATE"]
     assert a[0] == "STARTED" and a[1] == "DOCUMENTS.ADD" and "ACTIVATE" in read(acad_log), a
     lsp = contents.split("drive_c")[1].replace(os.sep, "/")
-    assert a[2] == ('SEND <03><03>(progn (if (not TKL:Load) (load "C:%s/TopoKitLoad.lsp")) '
+    # fara caractere de control: AutoCAD 2025/2026 le respinge in SendCommand ("Invalid input")
+    assert a[2] == ('SEND (progn (if (not TKL:Load) (load "C:%s/TopoKitLoad.lsp")) '
                     '(if (not c:TOPOKIT) (TKL:Load nil)) (princ))<LF>ANEXE<LF>' % lsp), a[2]
+    assert "REJECTED" not in read(acad_log), read(acad_log)
     L = read(log)
     assert "Pornesc" in L and "Conectat la Civil 3D 2025 (COM)" in L and "SendCommand ANEXE: 0x00000000" in L, L
 

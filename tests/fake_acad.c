@@ -108,7 +108,7 @@ static HRESULT STDMETHODCALLTYPE Inv(IDispatch *t, DISPID id, REFIID r, LCID l, 
 {
     Obj *o = (Obj *)t;
     const wchar_t *name = id >= 1 && id <= NNAMES ? NAMES[id - 1] : L"?";
-    (void)r; (void)l; (void)fl; (void)ei; (void)ae;
+    (void)r; (void)l; (void)fl; (void)ae;
     if (res) VariantInit(res);
     if (o->kind == O_APP && !wcscmp(name, L"Version")) {
         res->vt = VT_BSTR; res->bstrVal = SysAllocString(L"25.0s (LMS Tech)");
@@ -138,7 +138,19 @@ static HRESULT STDMETHODCALLTYPE Inv(IDispatch *t, DISPID id, REFIID r, LCID l, 
     } else if (o->kind == O_DOC && !wcscmp(name, L"Activate")) {
         LogLine(L"ACTIVATE", L"");
     } else if (o->kind == O_DOC && !wcscmp(name, L"SendCommand")) {
+        const wchar_t *c;
         if (!dp || dp->cArgs != 1 || dp->rgvarg[0].vt != VT_BSTR) return DISP_E_TYPEMISMATCH;
+        /* ca AutoCAD 2025/2026: caracterele de control (Ctrl+C, Esc) -> "Invalid input" */
+        for (c = dp->rgvarg[0].bstrVal; *c; c++)
+            if (*c < 32 && *c != L'\n' && *c != L'\r') {
+                LogLine(L"REJECTED ", dp->rgvarg[0].bstrVal);
+                if (ei) {
+                    memset(ei, 0, sizeof *ei);
+                    ei->bstrDescription = SysAllocString(L"Invalid input");
+                    ei->scode = (SCODE)0x80200003;
+                }
+                return DISP_E_EXCEPTION;
+            }
         LogLine(L"SEND ", dp->rgvarg[0].bstrVal);
         if (wcsstr(dp->rgvarg[0].bstrVal, L"QUIT")) g_quit = TRUE;
     } else {

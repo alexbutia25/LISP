@@ -48,6 +48,7 @@
 #define REG_APP     L"Software\\TopoKit"
 #define REG_RUN     L"Software\\Microsoft\\Windows\\CurrentVersion\\Run"
 #define WM_TRAY     (WM_APP + 1)
+#define WM_REMOTE   (WM_APP + 2)    /* cererea altei instante, procesata dupa WM_COPYDATA */
 #define TIMER_POLL  1
 #define POLL_MS     3000
 #define START_WAIT_MS (240 * 1000)
@@ -92,6 +93,7 @@ static wchar_t g_note[256];             /* mesajul afisat in fereastra dupa o ac
 static int g_noteKind;                  /* UI_NOTE_OK / UI_NOTE_ERR / UI_NOTE_INFO */
 static DWORD g_noteTick;
 static HRESULT g_lastHr;                /* ultimul rezultat COM (diagnostic) */
+static wchar_t g_excep[256];            /* ultima eroare raportata de AutoCAD (EXCEPINFO) */
 static wchar_t g_logPath[MAX_PATH];
 
 /* ------------------------------------------------------------------ jurnal */
@@ -243,13 +245,28 @@ static HRESULT Call(IDispatch *d, WORD flags, const wchar_t *name, VARIANT *res,
     DISPID id, put = DISPID_PROPERTYPUT;
     LPOLESTR n = (LPOLESTR)name;
     DISPPARAMS dp = { argv, NULL, (UINT)argc, 0 };
+    EXCEPINFO ei;
     HRESULT hr;
+    wchar_t *p;
     if (res) VariantInit(res);
     if (!d) return E_POINTER;
     hr = IDispatch_GetIDsOfNames(d, &IID_NULL, &n, 1, LOCALE_USER_DEFAULT, &id);
     if (FAILED(hr)) return hr;
     if (flags & DISPATCH_PROPERTYPUT) { dp.rgdispidNamedArgs = &put; dp.cNamedArgs = 1; }
-    return IDispatch_Invoke(d, id, &IID_NULL, LOCALE_USER_DEFAULT, flags, &dp, res, NULL, NULL);
+    memset(&ei, 0, sizeof ei);
+    hr = IDispatch_Invoke(d, id, &IID_NULL, LOCALE_USER_DEFAULT, flags, &dp, res, &ei, NULL);
+    if (hr == DISP_E_EXCEPTION) {
+        /* 0x80020009 spune doar "exceptie": textul si codul AutoCAD sunt in EXCEPINFO */
+        if (ei.pfnDeferredFillIn) ei.pfnDeferredFillIn(&ei);
+        swprintf(g_excep, 256, L"%ls: %ls (0x%08lX)", name, ei.bstrDescription ? ei.bstrDescription : L"?",
+                 (unsigned long)(ei.scode ? ei.scode : ei.wCode));
+        for (p = g_excep; *p; p++)
+            if (*p == L'\r' || *p == L'\n') *p = L' ';
+    }
+    SysFreeString(ei.bstrSource);
+    SysFreeString(ei.bstrDescription);
+    SysFreeString(ei.bstrHelpFile);
+    return hr;
 }
 
 static IDispatch *GetObj(IDispatch *d, const wchar_t *name)
@@ -523,17 +540,21 @@ static void LispPath(wchar_t *out, int cch)
 }
 
 /* Textul trimis in linia de comanda: incarca TopoKit daca lipseste, apoi
- * ruleaza comanda. reload = reincarca toate modulele. */
-static void CommandText(const wchar_t *cmd, BOOL reload, wchar_t *text, int cch)
+ * ruleaza comanda. reload = reincarca toate modulele. cancel = incepe cu doua
+ * Ctrl+C (anuleaza comanda in curs); doar pentru WM_COPYDATA: SendCommand
+ * respinge orice caracter de control (Ctrl+C, Esc) cu "Invalid input"
+ * (0x80200003, vazut ca 0x80020009) - verificat in Civil 3D 2026. */
+static void CommandText(const wchar_t *cmd, BOOL reload, BOOL cancel, wchar_t *text, int cch)
 {
     wchar_t lsp[MAX_PATH];
+    const wchar_t *pre = cancel ? L"\x03\x03" : L"";
     LispPath(lsp, MAX_PATH);
     if (reload)
-        swprintf(text, cch, L"\x03\x03(progn (if (not TKL:Load) (load \"%ls\")) (TKL:Load T) (princ))\n", lsp);
+        swprintf(text, cch, L"%ls(progn (if (not TKL:Load) (load \"%ls\")) (TKL:Load T) (princ))\n", pre, lsp);
     else
         swprintf(text, cch,
-                 L"\x03\x03(progn (if (not TKL:Load) (load \"%ls\")) (if (not c:TOPOKIT) (TKL:Load nil)) (princ))\n%ls%ls",
-                 lsp, cmd ? cmd : L"", cmd ? L"\n" : L"");
+                 L"%ls(progn (if (not TKL:Load) (load \"%ls\")) (if (not c:TOPOKIT) (TKL:Load nil)) (princ))\n%ls%ls",
+                 pre, lsp, cmd ? cmd : L"", cmd ? L"\n" : L"");
 }
 
 /* Trimiterea prin COM (Document.SendCommand), in desenul activ */
@@ -546,14 +567,16 @@ static HRESULT SendToAcad(IDispatch *app, const wchar_t *cmd, BOOL reload)
     g_retryMs = 10000;
     doc = ActiveDoc(app);
     if (doc) {
-        CommandText(cmd, reload, text, 3 * MAX_PATH);
+        CommandText(cmd, reload, FALSE, text, 3 * MAX_PATH);
         BringToFront(app);
         Call(doc, DISPATCH_METHOD, L"Activate", NULL, 0, NULL);   /* fila desenului, nu fila Start */
         arg.vt = VT_BSTR;
         arg.bstrVal = SysAllocString(text);
+        g_excep[0] = 0;
         hr = Call(doc, DISPATCH_METHOD, L"SendCommand", NULL, 1, &arg);
         SysFreeString(arg.bstrVal);
-        Log(L"SendCommand %ls%ls: 0x%08lX", cmd ? cmd : L"", reload ? L"(reincarcare)" : L"", (unsigned long)hr);
+        Log(L"SendCommand %ls%ls: 0x%08lX%ls%ls", cmd ? cmd : L"", reload ? L"(reincarcare)" : L"", (unsigned long)hr,
+            g_excep[0] ? L" - " : L"", g_excep);
         IDispatch_Release(doc);
     } else {
         Log(L"SendCommand: niciun document activ");
@@ -570,7 +593,7 @@ static DWORD SendViaWindow(const AcadWin *w, const wchar_t *cmd, BOOL reload)
     COPYDATASTRUCT cd;
     DWORD_PTR res = 0;
     DWORD err = 0;
-    CommandText(cmd, reload, text, 3 * MAX_PATH);
+    CommandText(cmd, reload, TRUE, text, 3 * MAX_PATH);
     if (IsIconic(w->hwnd)) ShowWindow(w->hwnd, SW_RESTORE);
     SetForegroundWindow(w->hwnd);
     cd.dwData = 1;
@@ -780,6 +803,11 @@ static void RunCommand(const wchar_t *cmd, BOOL reload)
     AcadWin w;
     BOOL haveWin = FindAcadWindow(&w);
     const wchar_t *product = haveWin && w.product[0] ? w.product : g_acadName[0] ? g_acadName : L"AutoCAD";
+    if (app && haveWin && !Quiescent(app)) {
+        /* comanda in curs: SendCommand n-o poate anula (nu accepta Ctrl+C), fereastra da */
+        IDispatch_Release(app);
+        app = NULL;
+    }
     if (app) {
         HRESULT hr = SendToAcad(app, cmd, reload);
         IDispatch_Release(app);
@@ -941,6 +969,7 @@ static void Diagnostic(void)
     }
     app = Connect();
     fwprintf(f, L"Legatura COM: %ls (ultimul cod 0x%08lX)\n", app ? L"DA" : L"nu", (unsigned long)g_lastHr);
+    if (g_excep[0]) fwprintf(f, L"  ultima eroare AutoCAD: %ls\n", g_excep);
     if (app) {
         wchar_t ver[64], dn[MAX_PATH];
         IDispatch *doc;
@@ -1112,10 +1141,19 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         if (cd && cd->dwData == 0x544B && cd->lpData && cd->cbData < sizeof arg) {
             memcpy(arg, cd->lpData, cd->cbData);
             arg[127] = 0;
-            Remote(arg);
+            /* in timpul unui SendMessage COM refuza apelurile catre AutoCAD
+             * (RPC_E_CANTCALLOUT_ININPUTSYNCCALL, 0x8001010D): raspundem si
+             * procesam cererea dupa aceea */
+            PostMessageW(h, WM_REMOTE, 0, (LPARAM)_wcsdup(arg));
         }
         return TRUE;
     }
+    case WM_REMOTE:
+        if (lp) {
+            Remote((const wchar_t *)lp);
+            free((void *)lp);
+        }
+        return 0;
     case WM_DESTROY:
         KillTimer(h, TIMER_POLL);
         UnregisterHotKey(h, HOTKEY_ID);

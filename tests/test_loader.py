@@ -46,7 +46,7 @@ def dirs(path): return [p for p in path.split(";") if p]
 # ---------------------------------------------------------------- prima incarcare (AutoCAD porneste)
 M.load(os.path.join(ROOT, "TopoKitLoad.lsp"))
 acad.after_load()
-win_root = "\\" + ROOT.strip("/").replace("/", "\\")
+win_root = ROOT if os.name == "nt" else "\\" + ROOT.strip("/").replace("/", "\\")
 assert fn("TKL:Dir") == win_root, fn("TKL:Dir")
 assert loads == ["TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitTeren.lsp"], loads
 for c in ("C:TOPOKIT", "C:ANEXE", "C:TOPOTEREN", "C:TOPOKITRELOAD", "C:EXPKMZ"):
@@ -83,9 +83,12 @@ print("Folder gasit si fara registru; comparatii fara diferente de litere / sepa
 
 # ---------------------------------------------------------------- expresia trimisa de TopoKit.exe
 src = open(os.path.join(ROOT, "installer", "launcher", "topokit.c"), encoding="utf-8").read()
-m = re.search(r'L"\\x03\\x03(\(progn \(if \(not TKL:Load\) \(load \\"%ls\\"\)\) \(if \(not c:TOPOKIT\).*?)\\n%ls%ls"', src)
+m = re.search(r'L"%ls(\(progn \(if \(not TKL:Load\) \(load \\"%ls\\"\)\) \(if \(not c:TOPOKIT\).*?)\\n%ls%ls"', src)
 assert m, "expresia de incarcare din topokit.c"
-expr = m.group(1).replace('\\"', '"').replace("%ls", ROOT + "/TopoKitLoad.lsp")
+expr = m.group(1).replace('\\"', '"').replace("%ls", ROOT.replace("\\", "/") + "/TopoKitLoad.lsp")  # ca LispPath()
+# SendCommand (AutoCAD 2025/2026) respinge caracterele de control: Ctrl+C doar pentru WM_COPYDATA
+assert re.search(r'CommandText\(cmd, reload, FALSE,[^)]*\);\s*BringToFront', src), "SendCommand fara Ctrl+C"
+assert "CommandText(cmd, reload, TRUE," in src, "WM_COPYDATA cu Ctrl+C"
 for k in ("TKL:LOAD", "C:TOPOKIT", "TK:START", "TKA:GENERATE", "TKT:MENU"):
     env.pop(Sym(k), None)
 loads.clear()

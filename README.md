@@ -90,7 +90,10 @@ Ce face instalarea:
     Windows blochează comenzile trimise din TopoKit. Porniți AutoCAD normal;
   - **Diagnostic** (în subsolul ferestrei, sau `TopoKit.exe /diag`) deschide în Notepad un raport cu:
     versiunile AutoCAD înregistrate, legătura COM, fereastra AutoCAD găsită, drepturile de administrator,
-    dacă pachetul TopoKit s-a încărcat în AutoCAD și ultimele rânduri din jurnal.
+    dacă pachetul TopoKit s-a încărcat în AutoCAD, ultima eroare raportată de AutoCAD și ultimele rânduri din jurnal;
+  - prin COM, comanda se trimite fără caractere de control: AutoCAD 2025/2026 respinge Ctrl+C / Esc
+    în `SendCommand` („Invalid input”, cod 0x80020009). Dacă AutoCAD are o comandă în curs, TopoKit
+    o anulează prin fereastra AutoCAD (WM_COPYDATA) înainte de a trimite modulul.
 - **Dezinstalare:** *Setări → Aplicații → TopoKit* sau meniul Start → *Dezinstalare TopoKit*. Se șterg
   pachetul AutoCAD, lansatorul și setările din registru.
 - **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup.exe /S`; dezinstalare:

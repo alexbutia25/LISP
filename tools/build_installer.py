@@ -19,9 +19,10 @@ import argparse, html, pathlib, re, shutil, subprocess, sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 INST = ROOT / "installer"
-LSP = ["TopoKitLoad.lsp", "TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitTeren.lsp"]
-DCL = ["TopoKit.dcl", "TopoKitAnexe.dcl", "TopoKitTeren.dcl"]
+LSP = ["TopoKitLoad.lsp", "TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitTeren.lsp", "TopoKitInclinare.lsp"]
+DCL = ["TopoKit.dcl", "TopoKitAnexe.dcl", "TopoKitTeren.dcl", "TopoKitInclinare.dcl"]
 GRID = "stereo70_etrs89A.gsb"
+TDGRID = "ETRS89_KRASOVSCHI42_2DJ.GRD"   # grila oficiala ANCPI TransDatRO
 
 
 def tool(*names):
@@ -88,7 +89,7 @@ def main():
     # 2. pachetul AutoCAD
     xml = (INST / "bundle" / "PackageContents.xml").read_text(encoding="utf-8")
     (bundle / "PackageContents.xml").write_text(xml.replace("@VERSION@", a.version), encoding="utf-8")
-    for f in LSP + DCL + [GRID, "README.md"]:
+    for f in LSP + DCL + [GRID, TDGRID, "README.md"]:
         shutil.copy2(ROOT / f, contents / f)
     shutil.copytree(ROOT / "anexe", contents / "anexe")
     shutil.copy2(INST / "launcher" / "topokit.ico", contents / "topokit.ico")

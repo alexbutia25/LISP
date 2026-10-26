@@ -48,7 +48,7 @@ M.load(os.path.join(ROOT, "TopoKitLoad.lsp"))
 acad.after_load()
 win_root = ROOT if os.name == "nt" else "\\" + ROOT.strip("/").replace("/", "\\")
 assert fn("TKL:Dir") == win_root, fn("TKL:Dir")
-assert loads == ["TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitTeren.lsp"], loads
+assert loads == ["TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitTeren.lsp", "TopoKitInclinare.lsp"], loads
 for c in ("C:TOPOKIT", "C:ANEXE", "C:TOPOTEREN", "C:TOPOKITRELOAD", "C:EXPKMZ"):
     assert defined(c), c
 assert dirs(prefs["SupportPath"])[0] == win_root and len(dirs(prefs["SupportPath"])) == 3, prefs
@@ -67,7 +67,7 @@ print("Al doilea desen: folderul nu se adauga din nou, modulele nu se reincarca"
 # ---------------------------------------------------------------- TOPOKITRELOAD
 loads.clear()
 fn("C:TOPOKITRELOAD")
-assert loads == ["TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitTeren.lsp"], loads
+assert loads == ["TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitTeren.lsp", "TopoKitInclinare.lsp"], loads
 assert any("TopoKit reincarcat" in o for o in acad.out)
 print("TOPOKITRELOAD reincarca toate modulele")
 
@@ -89,11 +89,11 @@ expr = m.group(1).replace('\\"', '"').replace("%ls", ROOT.replace("\\", "/") + "
 # SendCommand (AutoCAD 2025/2026) respinge caracterele de control: Ctrl+C doar pentru WM_COPYDATA
 assert re.search(r'CommandText\(cmd, reload, FALSE,[^)]*\);\s*BringToFront', src), "SendCommand fara Ctrl+C"
 assert "CommandText(cmd, reload, TRUE," in src, "WM_COPYDATA cu Ctrl+C"
-for k in ("TKL:LOAD", "C:TOPOKIT", "TK:START", "TKA:GENERATE", "TKT:MENU"):
+for k in ("TKL:LOAD", "C:TOPOKIT", "TK:START", "TKA:GENERATE", "TKT:MENU", "TKI:RUN"):
     env.pop(Sym(k), None)
 loads.clear()
 run(expr)
-assert loads == ["TopoKitLoad.lsp", "TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitTeren.lsp"], loads
+assert loads == ["TopoKitLoad.lsp", "TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitTeren.lsp", "TopoKitInclinare.lsp"], loads
 loads.clear()
 run(expr)                                             # deja incarcat: nimic
 assert loads == [], loads

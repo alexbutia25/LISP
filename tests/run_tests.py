@@ -192,4 +192,53 @@ if os.path.exists(GRID):
     fn("TK:GridClose")
 else:
     print("Grila stereo70_etrs89A.gsb lipseste: testele NTv2 sunt omise (setati TOPOKIT_GRID)")
+
+# ---------------------------------------------------------------- TransDatRO (ANCPI)
+TDG = os.path.join(os.path.dirname(__file__), "..", "ETRS89_KRASOVSCHI42_2DJ.GRD")
+tdd = open(TDG, "rb").read()
+funcs.update({Sym("FINDFILE"): lambda f: TDG if f.endswith(".GRD") else None, Sym("GETVAR"): lambda v: 0})
+env[Sym("TK:BINOPEN")] = lambda f: "td"
+env[Sym("TK:BINREAD")] = lambda st, pos, n: list(tdd[pos:pos+n])
+env[Sym("TK:BINCLOSE")] = lambda st: None
+env[Sym("*TK:GRID*")] = None
+assert fn("TK:TdOpen"), "grila TransDatRO nu s-a deschis"
+def dms(d, m, s): return d + m / 60 + s / 3600
+# punctele oficiale din Help_TransDatRO_code_source (ANCPI): x (N), y (E), lat, lon (rotunjite la 0.1")
+official = [(693771.731, 310723.518, (47, 42, 56.4), (22, 28, 32.0)), (721361.806, 641283.450, (47, 58, 33.2), (26, 53, 26.7)),
+            (516470.189, 165265.572, (46, 3, 57.4), (20, 40, 11.6)), (402327.815, 713143.130, (45, 5, 18.2), (27, 42, 24.0)),
+            (329703.378, 333185.413, (44, 26, 51.3), (22, 54, 9.3)), (249343.594, 518651.464, (43, 44, 37.2), (25, 13, 48.1)),
+            (528076.247, 411159.899, (46, 14, 47.6), (23, 50, 46.1))]
+env[Sym("*TK:NTD*")] = 0
+worst = 0
+for x, y, la, lo in official:
+    r = fn("TK:Stereo70ToWGS84", [y, x])
+    worst = max(worst, math.hypot(math.radians(r[1] - dms(*la)) * 6378137,
+                                  math.radians(r[0] - dms(*lo)) * 6378137 * math.cos(math.radians(r[1]))))
+assert worst < 0.001 and env[Sym("*TK:NTD*")] == 7, worst
+assert fn("TK:TdToEtrs", [348668.167, 188993.152]) is None        # in afara grilei
+assert fn("TK:TdToEtrs", [170257.544, 725005.421]) is None        # in afara granitei (noduri 999)
+assert "TransDatRO" in fn("TK:MethodText")
+print(f"TransDatRO: 7 puncte oficiale ANCPI, eroare maxima {worst*1000:.2f} mm; punctele din afara grilei sunt respinse")
+
+# ---------------------------------------------------------------- KML cu mai multe obiecte
+files.clear()
+funcs.update({Sym("OPEN"): lambda f, m, enc=None: FH(f), Sym("CLOSE"): lambda h: None,
+              Sym("WRITE-LINE"): lambda s, h: files.__setitem__(h.n, files[h.n] + s + "\n") or s,
+              Sym("GETVAR"): lambda v: {"DWGNAME": "Plan.dwg"}[v]})
+sq = [[588000.0, 325000.0, 0.0], [588100.0, 325000.0, 0.0], [588100.0, 325080.0, 0.0], [588000.0, 325080.0, 0.0]]
+feats = [["polygon", "CADASTRU", [255, 0, 0], "Lot 1", sq, [DP("Suprafata", "8000.00 mp")]],
+         ["polyline", "DRUM", [0, 128, 255], "DRUM", [[588000.0, 324990.0, 0.0], [588100.0, 324990.0, 0.0]], None],
+         ["point", "PUNCTE", [255, 255, 0], "101", [[588050.0, 325040.0, 12.5]], [DP("Z", "12.500")]],
+         ["text", "TEXT", [255, 255, 255], "Lot <1> & B", [[588050.0, 325040.0, 0.0]], None]]
+assert fn("TK:WriteKmlMulti", "m.kml", "Plan & test", feats) == 4
+doc = xml.dom.minidom.parseString(files["m.kml"].encode())
+assert len(doc.getElementsByTagName("Placemark")) == 4 and len(doc.getElementsByTagName("Folder")) == 8
+assert len(doc.getElementsByTagName("Polygon")) == 1 and len(doc.getElementsByTagName("LineString")) == 1
+ring = doc.getElementsByTagName("Polygon")[0].getElementsByTagName("coordinates")[0].firstChild.data.split()
+assert len(ring) == 5 and ring[0] == ring[-1]
+assert "ff0000ff" in files["m.kml"] and "400000ff" in files["m.kml"]           # rosu: linie opaca, umplere 25 %
+assert "TransDatRO" in doc.getElementsByTagName("description")[0].firstChild.data
+assert fn("TK:KmlColor", [1, 2, 255], 255) == "ffff0201"
+print("KML cu mai multe obiecte: categorii, straturi, stiluri si coordonate corecte")
+fn("TK:TdClose")
 print("\nToate testele au trecut.")

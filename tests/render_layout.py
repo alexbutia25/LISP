@@ -21,7 +21,13 @@ _fonts = {}
 def font(style, px):
     key = (style, max(4, int(round(px))))
     if key not in _fonts:
-        _fonts[key] = ImageFont.truetype(FONT_DIR + FONTS.get((style or "TK_ARIAL").upper(), FONTS["TK_ARIAL"]), key[1])
+        name = FONTS.get((style or "TK_ARIAL").upper(), FONTS["TK_ARIAL"])
+        try:
+            _fonts[key] = ImageFont.truetype(FONT_DIR + name, key[1])
+        except OSError:                   # Windows: Arial in locul Liberation Sans
+            win = {"LiberationSans-Regular.ttf": "arial.ttf", "LiberationSans-Bold.ttf": "arialbd.ttf",
+                   "LiberationSans-Italic.ttf": "ariali.ttf"}[name]
+            _fonts[key] = ImageFont.truetype(win, key[1])
     return _fonts[key]
 
 

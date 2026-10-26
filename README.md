@@ -6,9 +6,10 @@ Suită modulară AutoLISP + DCL pentru AutoCAD (în stilul TopoLT):
 |---|---|
 | `TOPOKIT` / `MYTOPO` | Meniul grafic (DCL) cu cele 5 module și setările lor |
 | `ADDVTX` | Corecție topologică – vertex-uri la intersecțiile poliliniilor |
-| `EXPKMZ` | Export parcelă închisă în KMZ/KML (Stereo 70 → WGS84) + deschidere în Google Earth Pro |
+| `EXPKMZ` | Export în KMZ/KML pentru Google Earth Pro: o parcelă sau mai multe obiecte pe straturi, cu transformarea oficială **TransDatRO** (Stereo 70 → ETRS89, ~1 mm) |
 | `INSCADRU` | Format A4…A0 (portrait/landscape), cadru și indicator la scară |
 | `ANEXE` | Generatorul de anexe pentru **Ordinul ANCPI nr. 600/2023**: PAD, dezlipire/alipire, releveu și documentele Word ([detalii](#4-generator-de-anexe--ordinul-ancpi-nr-6002023-anexe)) |
+| `INCLINARE` | Planul de înclinare / verticalitate (silozuri, stâlpi, coșuri, turnuri) din puncte măsurate pe rânduri, pe planșă A4…A0 cu cartuș ([detalii](#6-plan-de-înclinare--inclinare)) |
 | `TOPOTEREN` | Modulul de teren: import puncte și desenare pe coduri, model TIN, curbe de nivel, volume, raster georeferențiat, KML/KMZ, tabele și legende ([detalii](#5-teren--puncte-model-3d-curbe-de-nivel-volume-topoteren)) |
 
 ## Interfața
@@ -141,47 +142,52 @@ datele extinse sunt copiate), deci primesc un handle nou.
 
 ## 2. Export KMZ – `EXPKMZ`
 
-1. Selectați o polilinie închisă (flag *Closed* sau capete care coincid).
-2. Vertex-urile sunt transformate din Stereo 70 în ETRS89/WGS84 direct în LISP:
-   - **inversa proiecției stereografice oblice** (EPSG metoda 9809, sferă conformă Gauss) pe
-     elipsoidul Krasovsky 1940: φ₀ = 46°N, λ₀ = 25°E, k₀ = 0.99975, FE = FN = 500 000 m;
-   - **grila de distorsiuni NTv2** `stereo70_etrs89A.gsb` (metoda implicită, **precizie centimetrică**).
-     Este sub-grila „ANCPI+TN”, derivată din grila oficială ANCPI/TransDatRO, cu pas de 35″ × 50″ (~1 km).
-     Deplasările se interpolează biliniar, exact ca în PROJ `hgridshift`. Fișierul binar este citit
-     direct din LISP (prin `ADODB.Stream`), așa că nu e nevoie de alte programe;
-   - **Helmert 7 parametri** (rezervă) S-42 → WGS84 (EPSG:15994, *Coordinate Frame*):
-     tx = 2.329 m, ty = −147.042 m, tz = −92.080 m, rx = 0.309″, ry = −0.325″, rz = −0.497″, ds = 5.69 ppm.
-     Se folosește dacă grila lipsește sau pentru punctele din afara zonei acoperite de grilă, de exemplu
-     la graniță. Numărul punctelor transformate astfel este raportat.
+1. Selectați **o polilinie închisă** (exportul unei parcele, ca până acum) sau **mai multe obiecte**:
+   polilinii (închise → poligoane, deschise → polilinii), linii, arce, cercuri, elipse, spline, puncte
+   AutoCAD, **puncte COGO Civil 3D**, blocuri (cu atributele lor) și texte / MTEXT.
+2. Exportul mai multor obiecte (ca în convertorul DXF → KMZ „Bogdanel”):
+   - obiectele sunt grupate în foldere pe **categorii** (Poligoane, Polilinii, Linii, Puncte, Texte) și
+     apoi pe **straturi**, cu **culoarea din desen** (true color, index sau a stratului);
+   - poligoanele au suprafața (mp și ha), perimetrul și, opțional, inventarul de coordonate Stereo 70;
+     un poligon primește ca nume textul selectat din interiorul lui cel mai apropiat de centru
+     (ex. „Lot 1”, numărul cadastral), altfel numele stratului;
+   - punctele au X (N), Y (E), cota și, la blocuri, atributele; numele punctului vine din atributul
+     NR/NUMAR/PUNCT (sau din primul atribut), la punctele COGO din numărul punctului;
+   - axele inversate sunt **detectate automat** (dacă punctele intră în Stereo 70 doar cu X = Nord).
+3. Transformarea Stereo 70 → ETRS89 se face direct în LISP, în această ordine:
+   - **TransDatRO** – portarea algoritmului oficial ANCPI (TransDatRO_code_source 1.06) din sursa
+     convertorului Bogdanel: corecția din grila `ETRS89_KRASOVSCHI42_2DJ.GRD` (61 KB, inclusă) cu
+     interpolare bicubică B-spline pe 4 × 4 noduri, Helmert 2D, apoi stereografic invers pe GRS80.
+     Punctele din afara granițelor României (noduri 999 ale grilei) trec la metoda următoare;
+   - **grila NTv2** `stereo70_etrs89A.gsb` (biliniar, ca PROJ `hgridshift`), pentru puncte pe care
+     TransDatRO nu le acoperă;
+   - **Helmert 7 parametri** S-42 → WGS84 (EPSG:15994): tx = 2.329 m, ty = −147.042 m, tz = −92.080 m,
+     rx = 0.309″, ry = −0.325″, rz = −0.497″, ds = 5.69 ppm, dacă nicio grilă nu acoperă punctul.
+     Numărul punctelor transformate cu fiecare metodă este raportat.
 
    | Metodă | Precizie |
    |---|---|
-   | Grila NTv2 – față de cele 11 puncte de control ETRS89 publicate cu grila | 2–13 mm |
-   | Grila NTv2 din LISP – față de PROJ `hgridshift` (296 de puncte aleatoare) | < 0.01 mm |
+   | TransDatRO din LISP – față de cele 7 puncte oficiale ANCPI (Help TransDatRO) | ≤ 0.52 mm |
+   | TransDatRO din LISP – față de portarea Python Bogdanel (363 de puncte aleatoare) | < 0.0001 mm |
+   | Grila NTv2 – față de cele 7 puncte oficiale ANCPI | 3–18 mm |
    | Helmert – față de grilă, pe teritoriul României | 0.3 m median, ~1.5 m (p99) |
 
-   **Grila este inclusă în depozit** (`stereo70_etrs89A.gsb`, 5.7 MB). Păstrați-o în același folder cu
-   `TopoKit.lsp`; se caută și în căile de suport AutoCAD și în folderul desenului. Dialogul `TOPOKIT` arată
-   dacă a fost găsită. Sursa este [tudorbarascu/stereo70-etrs89](https://github.com/tudorbarascu/stereo70-etrs89),
-   iar grila a fost generată de Daniel Urdă ([ntv2generator](https://github.com/danieluct/ntv2generator)) din grila
-   ANCPI. Sursa nu precizează o licență. Punctele de control folosite la testare sunt în
-   `tests/data/verification_points/`.
+   Viteza în Civil 3D 2026: ~0.1 ms pe punct (celula grilei citite este păstrată în memorie).
+
+   Grilele se caută lângă `TopoKit.lsp`, în căile de suport AutoCAD și (NTv2) în folderul desenului.
+   Fișierele binare se citesc prin `ADODB.Stream`. Grila NTv2 provine din
+   [tudorbarascu/stereo70-etrs89](https://github.com/tudorbarascu/stereo70-etrs89) (generată de Daniel Urdă
+   din grila ANCPI); punctele de control NTv2 sunt în `tests/data/verification_points/`.
 
    Coordonatele rezultate sunt în ETRS89. Față de WGS84 actual (ITRF), ETRS89 diferă cu ~0.8 m în 2026
-   din cauza derivei plăcii eurasiatice. Diferența este sub precizia imaginilor Google Earth, care au de
-   regulă erori de 1–5 m, dar contează dacă folosiți coordonatele pentru măsurători GNSS. Pentru lucrări
-   oficiale, TransDatRO rămâne referința.
-3. Fișierul `NumeDesen_NumeParcela_AAAAMMZZ_hhmmss.kmz` se salvează în folderul desenului
-   (sau în `C:\Temp` dacă desenul nu a fost salvat). Conține poligonul (contur roșu, umplere
-   semitransparentă), suprafața, perimetrul și, opțional, punctele de contur numerotate.
-   Arcele sunt densificate (16 sub-segmente).
-4. KMZ-ul (arhiva ZIP cu `doc.kml`) este creat cu PowerShell `Compress-Archive`. Dacă PowerShell nu
-   este disponibil, se salvează un fișier `.kml`.
+   din cauza derivei plăcii eurasiatice; diferența este sub precizia imaginilor Google Earth (1–5 m).
+4. Fișierul `NumeDesen_Nume_AAAAMMZZ_hhmmss.kmz` se salvează în folderul desenului (sau în `C:\Temp`
+   dacă desenul nu a fost salvat). Arcele sunt densificate. KMZ-ul este creat cu PowerShell
+   `Compress-Archive`; dacă PowerShell nu este disponibil, se salvează un fișier `.kml`.
 5. Fișierul se deschide automat în Google Earth Pro, dacă aplicația este găsită (în registru sau în
    `Program Files`). Altfel se deschide cu aplicația asociată extensiei.
 
-La coordonate în afara domeniului Stereo 70 (de exemplu axe inversate sau un sistem local) programul
-cere confirmare înainte de export.
+La coordonate în afara domeniului Stereo 70 (și nici cu axele inversate) programul cere confirmare.
 
 ## 3. Format, cadru și indicator – `INSCADRU`
 
@@ -447,22 +453,56 @@ Limitări:
 - Curbele de nivel sunt poligonale (fără netezire).
 - „Harta online” deschide harta în browser; nu inserează în desen imaginile hărților online.
 
+## 6. Plan de înclinare – `INCLINARE`
+
+Planul de verticalitate al unei construcții înalte (siloz, stâlp, coș, turn), portat din programul
+„Plan Inclinare”: același model de calcul și același desen (verificat element cu element).
+
+1. Selectați punctele măsurate – **puncte COGO Civil 3D** (codul = descrierea), puncte AutoCAD
+   (codul = stratul) sau blocuri – ori apăsați Enter și alegeți un fișier CSV/TXT (Nr, X, Y, Z, Cod).
+2. În dialog alegeți rândurile (până la 4, de la stânga la dreapta), după codul punctelor: implicit
+   `stanga` și `dreapta`; mai multe coduri pe un rând se separă prin virgulă. Lista „Alege din coduri”
+   arată codurile găsite; dacă niciun cod nu se potrivește, dialogul propune singur codurile
+   (ex. `S_1` / `D_1` / `spate`). Rezultatul și planșa aleasă se actualizează la fiecare modificare.
+3. Indicați colțul stânga-jos al planului. Desenul se face pe stratul `PLAN_INCLINARE`.
+
+Modelul de calcul:
+- punctele unui rând se ordonează după cotă; **verticala de referință** (linia verde) trece prin
+  punctul cel mai de jos al rândului; H = Z − Z(bază);
+- **abaterea totală** = distanța orizontală de la punct la verticală; **abaterea proiectată** = proiecția
+  pe axa rândul din stânga → rândul din dreapta (prin punctele de bază);
+- direcția de aplecare se deduce pe aceeași axă (`auto`) sau se alege (`stanga` / `dreapta`, necesar
+  pentru un singur rând);
+- linia roșie unește pozițiile reale, linia gri arată abaterea la lungimea reală (desen 1:1, în metri),
+  cu valoarea în cm / mm / m; la vârf se scriu abaterea, H, procentul și mm/m;
+- planșa A4…A0, portret sau peisaj, la 1:100…1:2000, aleasă sau automat („scara mare” = cea mai
+  detaliată scară care încape pe cel mai mic format; „format mic” = invers), cu chenar și cartuș
+  (beneficiar, obiectiv, întocmit, nr. planșă, data). Textele au mărimea în mm pe hârtie.
+
+Setările se păstrează între sesiuni (registru `HKCU\Software\TopoKit\Inclinare`).
+
 ## Detalii tehnice
 
 - Fiecare comandă are propriul `*error*`: variabilele de sistem `CMDECHO`, `OSMODE`, `ATTREQ` și
   `DIMZIN` se salvează la pornire și se restabilesc la final sau la anulare/eroare.
-- Fișierul grilă se închide automat la sfârșitul exportului sau la eroare/anulare.
+- Fișierele grilă se închid automat la sfârșitul exportului sau la eroare/anulare.
+- Metodele COM cu parametri opționali (`ADODB.Stream.Open`, `Shell.Application.ShellExecute`) se apelează
+  cu `vlax-invoke`: în Civil 3D 2026 `vlax-invoke-method` fără acești parametri eșuează
+  („too few actual parameters”), iar grila nu se putea citi.
 - Toate modificările unei comenzi formează un singur grup **UNDO**.
 - Setările din dialog se păstrează pe toată durata sesiunii AutoCAD și sunt folosite și de comenzile directe.
 
 ## Dezvoltare
 
 - După modificarea unui fișier `.dcl`, rulați `python3 tools/embed_dcl.py` ca să actualizați copiile
-  incluse în `TopoKit.lsp` și `TopoKitAnexe.lsp`.
+  incluse în `TopoKit.lsp`, `TopoKitAnexe.lsp`, `TopoKitTeren.lsp` și `TopoKitInclinare.lsp`.
 - `python3 tests/run_tests.py` rulează testele offline, fără AutoCAD, printr-un interpretor AutoLISP
   minimal. Testele acoperă conversia Stereo 70 → WGS84 comparată cu PROJ (dacă `pyproj` este instalat),
   comanda `ADDVTX` pe entități simulate (linii, arce, contacte în T, suprapuneri, polilinii 3D),
-  caroiajul, validitatea XML a KML-ului și citirea grilei NTv2 față de punctele de control și față de PROJ.
+  caroiajul, validitatea XML a KML-ului (și a celui cu mai multe obiecte), citirea grilei NTv2 față de
+  punctele de control și față de PROJ și TransDatRO față de punctele oficiale ANCPI.
+- `python3 tests/test_inclinare.py [--render DIR]` testează planul de înclinare pe exemplul
+  `tests/data/inclinare_siloz.csv` (valorile programului original, dialogul, desenul).
 - `python3 tests/test_anexe.py [--render DIR] [--word]` testează generatorul de anexe într-un simulator
   AutoCAD (`tests/acad_sim.py`). Simulatorul acoperă baza de date de entități, layout-urile,
   viewport-urile (`MVIEW`/`ZOOM`), ldata și dialogurile DCL: fișierele `.dcl` sunt analizate sintactic,

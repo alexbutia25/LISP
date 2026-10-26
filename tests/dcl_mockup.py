@@ -10,8 +10,15 @@ from acad_sim import parse_dcl, KNOWN_TILES
 
 CW, LH, GAP = 7, 15, 6
 BG, LINE, WHITE, SEL = (240, 240, 240), (160, 160, 160), (255, 255, 255), (0, 120, 215)
-F = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11)
-FB = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 11)
+def _font(linux, win):
+    try:
+        return ImageFont.truetype(linux, 11)
+    except OSError:                       # Windows
+        return ImageFont.truetype(win, 11)
+
+
+F = _font("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "segoeui.ttf")
+FB = _font("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "segoeuib.ttf")
 ACI = {1: (255, 0, 0), 2: (255, 255, 0), 3: (0, 255, 0), 4: (0, 255, 255), 5: (0, 0, 255), 6: (255, 0, 255),
        7: (0, 0, 0), 8: (128, 128, 128), 9: (192, 192, 192), 250: (51, 51, 51), 251: (80, 80, 80),
        252: (105, 105, 105), 253: (130, 130, 130), 254: (190, 190, 190), 255: (255, 255, 255)}

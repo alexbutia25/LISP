@@ -81,8 +81,8 @@ topokit_main : dialog {
       label = " 2   Export Google Earth ";
       : tk_icon { key = "img_kmz"; }
       : paragraph {
-        : text_part { label = "Conturul parcelei (polilinie inchisa)"; }
-        : text_part { label = "in KMZ: Stereo 70 > ETRS89 / WGS84."; }
+        : text_part { label = "Parcela sau obiecte pe straturi"; }
+        : text_part { label = "in KMZ: Stereo 70 > ETRS89 (TransDatRO)."; }
         : text_part { key = "tx_grid"; label = ""; width = 38; }
       }
       : boxed_column {
@@ -93,8 +93,8 @@ topokit_main : dialog {
           : radio_button { key = "rb_kmz"; label = "KMZ"; }
           : radio_button { key = "rb_kml"; label = "KML"; }
         }
-        : toggle { key = "tg_grid";   label = "Grila NTv2 ANCPI (precizie cm)"; mnemonic = "G"; }
-        : toggle { key = "tg_puncte"; label = "Exporta si punctele de contur"; }
+        : toggle { key = "tg_grid";   label = "TransDatRO ANCPI (precizie mm)"; mnemonic = "G"; }
+        : toggle { key = "tg_puncte"; label = "Puncte de contur / inventar"; }
         : toggle { key = "tg_swap";   label = "Axe inversate (X desen = Nord)"; }
         : toggle { key = "tg_ge";     label = "Deschide in Google Earth Pro"; }
       }

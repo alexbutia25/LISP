@@ -185,6 +185,7 @@ funcs.update({Sym(k):v for k,v in {
  'SUBSTR':lambda s,i,n=None: s[i-1:] if n is None else s[i-1:i-1+n],
  'VL-STRING-SEARCH':lambda p,s,st=0: (lambda r: None if r<0 else r)(s.find(p,st)),
  'VL-STRING-TRIM':lambda c,s: s.strip(c),'VL-STRING-RIGHT-TRIM':lambda c,s: s.rstrip(c),
+ 'ACAD_STRLSORT':lambda l: sorted(l, key=lambda s: s.upper()) if l else None,
  'STRCASE':lambda s,lo=None: s.lower() if truthy(lo) else s.upper(),
  'SET':lambda s,v: env.__setitem__(s,v) or v,'EVAL':lambda x: ev(x),
  'VL-LOAD-COM':lambda:None,'NUMBERP':lambda a: T if isinstance(a,(int,float)) else None,
@@ -315,6 +316,7 @@ def prin1(x):
     if isinstance(x, list): return '(' + ' '.join(prin1(e) for e in x) + ')'
     return str(x)
 funcs[Sym('VL-PRIN1-TO-STRING')] = prin1
+funcs[Sym('VL-PRINC-TO-STRING')] = lambda x: x if isinstance(x, str) else prin1(x)
 funcs[Sym('CHR')] = lambda n: chr(n)
 funcs[Sym('VL-POSITION')] = lambda x, l: next((i for i, e in enumerate(lst(l)) if e == x), None)
 def _distof(s, mode=2):

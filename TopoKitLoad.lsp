@@ -10,7 +10,8 @@
 ;;;   - adauga folderul in calea de suport (Support File Search Path), ca
 ;;;     dialogurile .dcl, grila .gsb si sabloanele din "anexe" sa fie gasite;
 ;;;   - adauga folderul in locatiile de incredere (TRUSTEDPATHS), daca lipseste;
-;;;   - incarca TopoKit.lsp (care incarca TopoKitAnexe.lsp si TopoKitTeren.lsp).
+;;;   - incarca TopoKit.lsp (care incarca TopoKitAnexe.lsp, TopoKitTeren.lsp si
+;;;     TopoKitInclinare.lsp).
 ;;;
 ;;; (TKL:Load T) reincarca toate modulele (comanda TOPOKITRELOAD).
 ;;; ==========================================================================
@@ -65,7 +66,7 @@
     (T
      (vl-catch-all-apply 'TKL:AddSupport (list dir))
      (vl-catch-all-apply 'TKL:AddTrusted (list dir))
-     (if force (setq TK:Start nil TKA:Generate nil TKT:Menu nil))
+     (if force (setq TK:Start nil TKA:Generate nil TKT:Menu nil TKI:Run nil))
      (setq *TKL:DIR* dir)
      (if (or force (not TK:Start))
        (setq r (vl-catch-all-apply 'load (list (strcat dir "\\TopoKit.lsp")))))
@@ -90,5 +91,5 @@
   (princ))
 
 (if (TKL:Load nil)
-  (princ "\nTopoKit pregatit: TOPOKIT (meniu), ANEXE (Ordin 600/2023), TOPOTEREN (teren, TIN, volume)."))
+  (princ "\nTopoKit pregatit: TOPOKIT (meniu), ANEXE (Ordin 600/2023), TOPOTEREN (teren, TIN, volume), INCLINARE."))
 (princ)

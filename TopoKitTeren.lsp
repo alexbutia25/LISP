@@ -851,8 +851,8 @@
       (if (null kml)
         (TKT:Msg "Arhiva KMZ nu contine un fisier KML.")
         (progn
-          (if (= *TK:USEGRID* "1") (TK:GridOpen))
-          (setq *TK:NHELM* 0 items (TKT:KmlPlacemarks (TKT:ReadAll kml)))
+          (if (= *TK:USEGRID* "1") (TK:TransOpen))
+          (setq *TK:NTD* 0 *TK:NNTV2* 0 *TK:NHELM* 0 items (TKT:KmlPlacemarks (TKT:ReadAll kml)))
           (foreach it items
             (setq pts (mapcar '(lambda (ll / en) (setq en (TKT:WgsToS70 (car ll) (cadr ll))) (TKT:ToDwg (car en) (cadr en) 0.0))
                               (cadr it)))
@@ -871,7 +871,7 @@
             (if (and pts (/= (car it) ""))
               (TKT:Txt (car it) (car pts) (TKT:H) 0.0 "L" "KML")))
           (setq meth (TK:MethodText))
-          (TK:GridClose)
+          (TK:TransClose)
           (vl-catch-all-apply 'vla-ZoomExtents (list (vlax-get-acad-object)))
           (TKT:Msg (strcat "S-au importat " (itoa n) " linii/poligoane si " (itoa np) " puncte din " f
                            " (WGS84 -> Stereo 70, " meth ")."))
@@ -881,9 +881,9 @@
 (defun TKT:Map (/ p ll url)
   (setq p (getpoint "\nPunctul de afisat pe harta online <centrul ecranului>: "))
   (if (null p) (setq p (getvar "VIEWCTR")))
-  (if (= *TK:USEGRID* "1") (TK:GridOpen))
+  (if (= *TK:USEGRID* "1") (TK:TransOpen))
   (setq ll (TK:Stereo70ToWGS84 (TK:PtEN p)))
-  (TK:GridClose)
+  (TK:TransClose)
   (setq url (strcat "https://www.google.com/maps/search/?api=1&query=" (rtos (cadr ll) 2 7) "," (rtos (car ll) 2 7)))
   (TK:Run (strcat "explorer.exe \"" url "\"") nil)
   (TKT:Msg (strcat "Harta: " url))

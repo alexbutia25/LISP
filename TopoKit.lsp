@@ -92,7 +92,7 @@
 (defun TK:Error (msg)
   (if *TK:FH* (progn (vl-catch-all-apply 'close (list *TK:FH*)) (setq *TK:FH* nil)))
   (setq *TK:DLGRUN* nil)
-  (TK:GridClose)
+  (TK:TransClose)
   (TK:Stop)
   (if (and msg (not (wcmatch (strcase msg T) "*break*,*cancel*,*exit*")))
     (princ (strcat "\n** Eroare TopoKit: " msg " **")))
@@ -750,7 +750,10 @@
           (vl-catch-all-apply
             '(lambda ()
                (vlax-put-property st 'Type 1)          ; 1 = adTypeBinary
-               (vlax-invoke-method st 'Open)
+               ;; vlax-invoke completează parametrii opționali ai metodei Open;
+               ;; vlax-invoke-method fără ei eșuează ("too few actual parameters",
+               ;; verificat în Civil 3D 2026) și grila nu se citea deloc
+               (vlax-invoke st 'Open)
                (vlax-invoke-method st 'LoadFromFile f))))
       (progn (vlax-release-object st) nil)
       st)))
@@ -870,28 +873,216 @@
               (list (* pi (/ (+ lat dlat) 648000.0))
                     (* pi (/ (- (+ lonw dlon)) 648000.0))))))))))
 
-;; TK:MethodText - descrierea metodei de transformare folosite la ultimul export
-(defun TK:MethodText ()
+;;; --------------------------------------------------------------------------
+;;;  TransDatRO - algoritmul oficial ANCPI (TransDatRO_code_source 1.06)
+;;;  Stereo 70 -> ETRS89, cu grila ETRS89_KRASOVSCHI42_2DJ.GRD:
+;;;    1. corecția din grilă (interpolare bicubică B-spline pe 4x4 noduri):
+;;;       E -= dE, N -= dN
+;;;    2. Helmert 2D Stereo 70 -> stereografic oblic pe GRS80
+;;;    3. stereografic invers pe elipsoidul GRS80 -> (lat lon) ETRS89
+;;;  Precizie: < 1 mm față de punctele de control publicate de ANCPI.
+;;;  Grila: antet 6 x float64 (minE maxE minN maxN pasE pasN), apoi pentru
+;;;  fiecare nod perechea (dE dN) float64; 999 = nod în afara României.
+;;; --------------------------------------------------------------------------
+
+(setq *TK:TDNAME* "ETRS89_KRASOVSCHI42_2DJ.GRD")
+
+;; TK:TdFind - caută grila TransDatRO (căile de suport, folderul TopoKit.lsp)
+(defun TK:TdFind (/ lsp f)
   (cond
-    ((null *TK:GRID*) "Helmert 7 parametri EPSG:15994 (precizie ~0.3-1.5 m)")
-    ((> (cond (*TK:NHELM*) (0)) 0)
-     (strcat "grila NTv2 ANCPI (precizie centimetrica); " (itoa *TK:NHELM*)
-             " puncte in afara grilei transformate cu Helmert (~1 m)"))
-    (T "grila NTv2 ANCPI stereo70_etrs89A.gsb (precizie centimetrica)")))
+    ((findfile *TK:TDNAME*))
+    ((and (setq lsp (findfile "TopoKit.lsp"))
+          (findfile (setq f (strcat (vl-filename-directory lsp) "\\" *TK:TDNAME*))))
+     f)))
+
+;; TK:TdOpen - deschide grila TransDatRO. *TK:TD* =
+;; (flux minE maxE minN maxN pasE pasN nrColoane) sau nil
+(defun TK:TdOpen (/ f st h v i)
+  (setq *TK:TD* nil *TK:TDCELL* nil)
+  (if (and (setq f (TK:TdFind)) (setq st (TK:BinOpen f)))
+    (progn
+      (setq h (TK:BinRead st 0 48) i 0)
+      (repeat 6 (setq v (cons (TK:F64 (TK:Sub h (* 8 i) 8)) v) i (1+ i)))
+      (setq v (reverse v))
+      (if (and (> (nth 4 v) 0.0) (> (nth 5 v) 0.0) (> (nth 1 v) (nth 0 v)) (> (nth 3 v) (nth 2 v)))
+        (setq *TK:TD* (append (list st) v
+                              (list (fix (+ 0.5 (/ (- (nth 1 v) (nth 0 v)) (nth 4 v)) 1.0)))))
+        (TK:BinClose st))))
+  *TK:TD*)
+
+;; TK:TdClose - închide grila TransDatRO
+(defun TK:TdClose ()
+  (if *TK:TD* (TK:BinClose (car *TK:TD*)))
+  (setq *TK:TD* nil *TK:TDCELL* nil))
+
+;; TK:Bspline - interpolarea bicubică TransDatRO în celula (XK YK) din
+;; valorile celor 16 noduri AZ (rândurile -1..2, coloanele 0..3)
+(defun TK:Bspline (xk yk az / a cf c ff px py)
+  (setq a (cons 0.0 az))
+  (setq cf (list 0.0
+                 (nth 6 a) (nth 7 a) (nth 10 a) (nth 11 a)
+                 (/ (+ (- (nth 8 a)) (* 4 (nth 7 a)) (* -3 (nth 6 a))) 2.0)
+                 (/ (+ (* 3 (nth 7 a)) (* -4 (nth 6 a)) (nth 5 a)) 2.0)
+                 (/ (+ (- (nth 12 a)) (* 4 (nth 11 a)) (* -3 (nth 10 a))) 2.0)
+                 (/ (+ (* 3 (nth 11 a)) (* -4 (nth 10 a)) (nth 9 a)) 2.0)
+                 (/ (+ (- (nth 14 a)) (* 4 (nth 10 a)) (* -3 (nth 6 a))) 2.0)
+                 (/ (+ (- (nth 15 a)) (* 4 (nth 11 a)) (* -3 (nth 7 a))) 2.0)
+                 (/ (+ (* 3 (nth 10 a)) (* -4 (nth 6 a)) (nth 2 a)) 2.0)
+                 (/ (+ (* 3 (nth 11 a)) (* -4 (nth 7 a)) (nth 3 a)) 2.0)
+                 (/ (- (+ (nth 1 a) (nth 11 a)) (+ (nth 3 a) (nth 9 a))) 4.0)
+                 (/ (- (+ (nth 2 a) (nth 12 a)) (+ (nth 4 a) (nth 10 a))) 4.0)
+                 (/ (- (+ (nth 5 a) (nth 15 a)) (+ (nth 7 a) (nth 13 a))) 4.0)
+                 (/ (- (+ (nth 6 a) (nth 16 a)) (+ (nth 8 a) (nth 14 a))) 4.0)))
+  (setq c (list
+            (nth 1 cf)
+            (nth 5 cf)
+            (+ (* -3 (nth 1 cf)) (* 3 (nth 2 cf)) (* -2 (nth 5 cf)) (- (nth 6 cf)))
+            (+ (* 2 (nth 1 cf)) (* -2 (nth 2 cf)) (nth 5 cf) (nth 6 cf))
+            (nth 9 cf)
+            (nth 13 cf)
+            (+ (* -3 (nth 9 cf)) (* 3 (nth 10 cf)) (* -2 (nth 13 cf)) (- (nth 14 cf)))
+            (+ (* 2 (nth 9 cf)) (* -2 (nth 10 cf)) (nth 13 cf) (nth 14 cf))
+            (+ (* -3 (nth 1 cf)) (* 3 (nth 3 cf)) (* -2 (nth 9 cf)) (- (nth 11 cf)))
+            (+ (* -3 (nth 5 cf)) (* 3 (nth 7 cf)) (* -2 (nth 13 cf)) (- (nth 15 cf)))
+            (+ (* 9 (nth 1 cf)) (* -9 (nth 2 cf)) (* -9 (nth 3 cf)) (* 9 (nth 4 cf)) (* 6 (nth 5 cf)) (* 3 (nth 6 cf))
+               (* -6 (nth 7 cf)) (* -3 (nth 8 cf)) (* 6 (nth 9 cf)) (* -6 (nth 10 cf)) (* 3 (nth 11 cf))
+               (* -3 (nth 12 cf)) (* 4 (nth 13 cf)) (* 2 (nth 14 cf)) (* 2 (nth 15 cf)) (nth 16 cf))
+            (+ (* -6 (nth 1 cf)) (* 6 (nth 2 cf)) (* 6 (nth 3 cf)) (* -6 (nth 4 cf)) (* -3 (nth 5 cf)) (* -3 (nth 6 cf))
+               (* 3 (nth 7 cf)) (* 3 (nth 8 cf)) (* -4 (nth 9 cf)) (* 4 (nth 10 cf)) (* -2 (nth 11 cf))
+               (* 2 (nth 12 cf)) (* -2 (nth 13 cf)) (* -2 (nth 14 cf)) (- (nth 15 cf)) (- (nth 16 cf)))
+            (+ (* 2 (nth 1 cf)) (* -2 (nth 3 cf)) (nth 9 cf) (nth 11 cf))
+            (+ (* 2 (nth 5 cf)) (* -2 (nth 7 cf)) (nth 13 cf) (nth 15 cf))
+            (+ (* -6 (nth 1 cf)) (* 6 (nth 2 cf)) (* 6 (nth 3 cf)) (* -6 (nth 4 cf)) (* -4 (nth 5 cf)) (* -2 (nth 6 cf))
+               (* 4 (nth 7 cf)) (* 2 (nth 8 cf)) (* -3 (nth 9 cf)) (* 3 (nth 10 cf)) (* -3 (nth 11 cf))
+               (* 3 (nth 12 cf)) (* -2 (nth 13 cf)) (- (nth 14 cf)) (* -2 (nth 15 cf)) (- (nth 16 cf)))
+            (+ (* 4 (nth 1 cf)) (* -4 (nth 2 cf)) (* -4 (nth 3 cf)) (* 4 (nth 4 cf)) (* 2 (nth 5 cf)) (* 2 (nth 6 cf))
+               (* -2 (nth 7 cf)) (* -2 (nth 8 cf)) (* 2 (nth 9 cf)) (* -2 (nth 10 cf)) (* 2 (nth 11 cf))
+               (* -2 (nth 12 cf)) (nth 13 cf) (nth 14 cf) (nth 15 cf) (nth 16 cf))))
+  ;; ff(i) = xk^px * yk^py, i = 1..16 (py exterior, px interior)
+  (setq py 0)
+  (repeat 4
+    (setq px 0)
+    (repeat 4 (setq ff (cons (* (expt xk px) (expt yk py)) ff) px (1+ px)))
+    (setq py (1+ py)))
+  (apply '+ (mapcar '* c (reverse ff))))
+
+;; TK:TdShift - corecția (dE dN) din grilă pentru punctul Stereo 70 (E N),
+;; sau nil în afara grilei / a graniței României. Ultima celulă citită este
+;; păstrată în *TK:TDCELL* (punctele vecine nu mai citesc fișierul).
+(defun TK:TdShift (e n / g mE mN sE sN col row xk yk b ax ay k dr)
+  (if (setq g *TK:TD*)
+    (progn
+      (setq mE (nth 1 g) mN (nth 3 g) sE (nth 5 g) sN (nth 6 g))
+      (if (and (> e (+ mE sE)) (< e (- (nth 2 g) sE)) (> n (+ mN sN)) (< n (- (nth 4 g) sN)))
+        (progn
+          (setq col (fix (/ (- e mE) sE)) row (fix (/ (- n mN) sN))
+                xk  (/ (- e (+ mE (* col sE))) sE)
+                yk  (/ (- n (+ mN (* row sN))) sN))
+          (if (not (and *TK:TDCELL* (= col (car *TK:TDCELL*)) (= row (cadr *TK:TDCELL*))))
+            (progn
+              (foreach dr '(-1 0 1 2)
+                ;; cele 4 noduri ale rândului (coloanele col..col+3): 64 de octeți consecutivi
+                (setq b (TK:BinRead (car g) (+ 48 (* 16 (+ (* (+ row dr) (nth 7 g)) col -1))) 64) k 0)
+                (repeat 4
+                  (setq ax (cons (TK:F64 (TK:Sub b (* 16 k) 8)) ax)
+                        ay (cons (TK:F64 (TK:Sub b (+ 8 (* 16 k)) 8)) ay)
+                        k (1+ k))))
+              (setq ax (reverse ax) ay (reverse ay)
+                    *TK:TDCELL* (list col row ax ay
+                                      (vl-some '(lambda (v) (= 999 (fix v))) (append ax ay))))))
+          (if (not (nth 4 *TK:TDCELL*))
+            (list (TK:Bspline xk yk (nth 2 *TK:TDCELL*)) (TK:Bspline xk yk (nth 3 *TK:TDCELL*)))))))))
+
+;; TK:TdConst - constantele proiecției stereografice pe GRS80 (ca în TransDatRO)
+(defun TK:TdConst (/ a f b ep br1 w raza n s1 s2 w1 c w2 hi0)
+  (if (null *TK:TDC*)
+    (setq a 6378137.0 f (/ 1.0 298.257222101) b (* a (- 1.0 f))
+          ep (sqrt (/ (- (* a a) (* b b)) (* a a)))
+          br1 (TK:Rad 46.0)
+          w (sqrt (- 1.0 (* ep ep (sin br1) (sin br1))))
+          raza (sqrt (* (/ (* a (- 1.0 (* ep ep))) (* w w w)) (/ a w)))
+          n (sqrt (+ 1.0 (/ (* ep ep (expt (cos br1) 4)) (- 1.0 (* ep ep)))))
+          s1 (/ (+ 1.0 (sin br1)) (- 1.0 (sin br1)))
+          s2 (/ (- 1.0 (* ep (sin br1))) (+ 1.0 (* ep (sin br1))))
+          w1 (exp (* n (log (* s1 (exp (* ep (log s2)))))))
+          c (/ (* (+ n (sin br1)) (- 1.0 (/ (- w1 1.0) (+ w1 1.0))))
+               (* (- n (sin br1)) (+ 1.0 (/ (- w1 1.0) (+ w1 1.0)))))
+          w2 (* c w1)
+          hi0 (/ (- w2 1.0) (+ w2 1.0))
+          hi0 (atan (/ hi0 (sqrt (- 1.0 (* hi0 hi0)))))
+          *TK:TDC* (list (TK:Rad 25.0) 0.99975 ep raza n c hi0)))
+  *TK:TDC*)
+
+;; TK:TdStereoInv - stereografic invers pe GRS80: (N E) -> (lat lon) radiani
+(defun TK:TdStereoInv (north east / cs la0 k0 ep raza n c hi0 g h ii j lam hi csi fi fic csii it)
+  (setq cs (TK:TdConst) la0 (nth 0 cs) k0 (nth 1 cs) ep (nth 2 cs) raza (nth 3 cs)
+        n (nth 4 cs) c (nth 5 cs) hi0 (nth 6 cs)
+        g (* 2.0 raza k0 (TK:Tan (- (/ pi 4.0) (/ hi0 2.0))))
+        h (+ (* 4.0 raza k0 (TK:Tan hi0)) g)
+        ii (atan (/ (- east 500000.0) (+ h (- north 500000.0))))
+        j (- (atan (/ (- east 500000.0) (- g (- north 500000.0)))) ii)
+        lam (+ j (* 2.0 ii) la0)
+        hi (+ hi0 (* 2.0 (atan (/ (- north 500000.0 (* (- east 500000.0) (TK:Tan (/ j 2.0)))) (* 2.0 raza k0)))))
+        csi (/ (* 0.5 (log (/ (+ 1.0 (sin hi)) (* c (- 1.0 (sin hi)))))) n)
+        fi (- (* 2.0 (atan (exp csi))) (/ pi 2.0))
+        it 0)
+  (while (and (< it 50) (or (null fic) (> (abs (* 648000.0 (/ (- fi fic) pi))) 1e-9)))
+    (setq fic fi
+          csii (log (* (TK:Tan (+ (/ fi 2.0) (/ pi 4.0)))
+                       (exp (* (/ ep 2.0) (log (/ (- 1.0 (* ep (sin fi))) (+ 1.0 (* ep (sin fi)))))))))
+          fi (- fi (/ (* (- csii csi) (cos fi) (- 1.0 (* ep ep (sin fi) (sin fi)))) (- 1.0 (* ep ep))))
+          it (1+ it)))
+  (list fi (+ la0 (/ (- lam la0) n))))
+
+;; TK:TdToEtrs - TransDatRO complet: (E N) Stereo 70 -> (lat lon) ETRS89 în
+;; radiani, sau nil dacă punctul este în afara grilei
+(defun TK:TdToEtrs (en / d m rz e n)
+  (if (setq d (TK:TdShift (car en) (cadr en)))
+    (setq m  (+ 1.0 (* -0.11559991 1e-6))
+          rz (* 0.22739706 (/ pi 648000.0))
+          e  (- (car en) (car d))
+          n  (- (cadr en) (cadr d))
+          d  (TK:TdStereoInv (+ (* n m (cos rz)) (* e m (sin rz)) -31.8051)
+                             (+ (- (* e m (cos rz)) (* n m (sin rz))) -119.7358)))))
+
+;; TK:MethodText - descrierea metodei de transformare folosite la ultimul export
+(defun TK:MethodText (/ nt ng nh)
+  (setq nt (cond (*TK:NTD*) (0)) ng (cond (*TK:NNTV2*) (0)) nh (cond (*TK:NHELM*) (0)))
+  (cond
+    ((and (null *TK:TD*) (null *TK:GRID*)) "Helmert 7 parametri EPSG:15994 (precizie ~0.3-1.5 m)")
+    ((and (= ng 0) (= nh 0) *TK:TD*) "TransDatRO ANCPI, grila ETRS89_KRASOVSCHI42_2DJ (precizie ~1 mm)")
+    ((and (= nt 0) (= nh 0)) "grila NTv2 ANCPI stereo70_etrs89A.gsb (precizie centimetrica)")
+    (T (strcat (if *TK:TD* "TransDatRO ANCPI (precizie ~1 mm)" "grila NTv2 ANCPI (precizie centimetrica)")
+               (if (and *TK:TD* (> ng 0)) (strcat "; " (itoa ng) " puncte cu grila NTv2 (~1 cm)") "")
+               (if (> nh 0) (strcat "; " (itoa nh) " puncte in afara grilei transformate cu Helmert (~1 m)") "")))))
 
 ;; TK:Stereo70ToWGS84 - conversia completă: (E N) Stereo 70 -> (lon lat)
-;; ETRS89/WGS84 în grade zecimale. Folosește grila NTv2 dacă este deschisă
-;; și acoperă punctul; altfel transformarea Helmert (contorizată în *TK:NHELM*).
+;; ETRS89/WGS84 în grade zecimale. Ordinea: TransDatRO (oficial ANCPI),
+;; grila NTv2, apoi Helmert 7 parametri. Contoare: *TK:NTD*, *TK:NNTV2*, *TK:NHELM*.
 (defun TK:Stereo70ToWGS84 (en / geo fk fw ll)
-  (setq geo (TK:S70ToGeo en))
-  (if (not (setq ll (TK:GridShift geo)))
-    (setq fk  (/ 1.0 298.3)
-          fw  (/ 1.0 298.257223563)
-          ll  (TK:CartToGeo
-                (TK:Helmert (TK:GeoToCart (car geo) (cadr geo) 0.0 6378245.0 (- (* 2.0 fk) (* fk fk))))
-                6378137.0 (- (* 2.0 fw) (* fw fw)))
-          *TK:NHELM* (1+ (cond (*TK:NHELM*) (0)))))
+  (cond
+    ((setq ll (TK:TdToEtrs en))
+     (setq *TK:NTD* (1+ (cond (*TK:NTD*) (0)))))
+    ((setq ll (TK:GridShift (setq geo (TK:S70ToGeo en))))
+     (setq *TK:NNTV2* (1+ (cond (*TK:NNTV2*) (0)))))
+    (T
+     (setq fk  (/ 1.0 298.3)
+           fw  (/ 1.0 298.257223563)
+           ll  (TK:CartToGeo
+                 (TK:Helmert (TK:GeoToCart (car geo) (cadr geo) 0.0 6378245.0 (- (* 2.0 fk) (* fk fk))))
+                 6378137.0 (- (* 2.0 fw) (* fw fw)))
+           *TK:NHELM* (1+ (cond (*TK:NHELM*) (0))))))
   (list (TK:Deg (cadr ll)) (TK:Deg (car ll))))
+
+;; TK:TransOpen / TK:TransClose - deschid / închid grilele (TransDatRO și
+;; NTv2) și resetează contoarele. TK:TransOpen returnează T dacă una există.
+(defun TK:TransOpen ()
+  (setq *TK:NTD* 0 *TK:NNTV2* 0 *TK:NHELM* 0)
+  (TK:TdOpen)
+  (TK:GridOpen)
+  (or *TK:TD* *TK:GRID*))
+
+(defun TK:TransClose () (TK:TdClose) (TK:GridClose))
 
 ;; TK:PtEN - coordonatele Stereo 70 (E N) ale unui punct din desen,
 ;; ținând cont de opțiunea de inversare a axelor
@@ -1037,6 +1228,246 @@
       (setq *TK:FH* nil)
       T)))
 
+;;; --------------------------------------------------------------------------
+;;;  Export KMZ cu mai multe obiecte (ca în convertorul DXF -> KMZ Bogdanel):
+;;;  poligoane, polilinii, linii, puncte și texte, grupate pe categorii și
+;;;  straturi, cu culoarea din desen. Un obiect = (tip strat rgb nume puncte info)
+;;;  tip: "polygon" | "polyline" | "line" | "point" | "text"; info: listă (eticheta . valoare)
+;;; --------------------------------------------------------------------------
+
+(setq *TK:KMLCAT* '(("polygon" . "Poligoane") ("polyline" . "Polilinii") ("line" . "Linii")
+                    ("point" . "Puncte") ("text" . "Texte")))
+
+;; TK:AciRgb - culoarea RGB (r g b) a indexului ACI (AcCmColor; tabel pentru 1-9)
+(defun TK:AciRgb (i / c r)
+  (cond
+    ((cdr (assoc i *TK:ACIRGB*)))
+    ((setq c (assoc i '((1 255 0 0) (2 255 255 0) (3 0 255 0) (4 0 255 255) (5 0 0 255)
+                        (6 255 0 255) (7 255 255 255) (8 128 128 128) (9 192 192 192))))
+     (cdr c))
+    ((and (setq c (vl-catch-all-apply 'vla-GetInterfaceObject
+                    (list (vlax-get-acad-object) (strcat "AutoCAD.AcCmColor." (itoa (atoi (getvar "ACADVER")))))))
+          (not (vl-catch-all-error-p c))
+          (not (vl-catch-all-error-p (vl-catch-all-apply 'vla-put-ColorIndex (list c i)))))
+     (setq r (list (vla-get-Red c) (vla-get-Green c) (vla-get-Blue c)))
+     (vlax-release-object c)
+     (setq *TK:ACIRGB* (cons (cons i r) *TK:ACIRGB*))
+     r)
+    ('(255 255 255))))
+
+;; TK:EdRgb - culoarea (r g b) din lista DXF ED: true color (420), index (62)
+;; sau, pentru DUPASTRAT, culoarea stratului
+(defun TK:EdRgb (ed / tc ci ld)
+  (cond
+    ((setq tc (cdr (assoc 420 ed)))
+     (list (logand (lsh tc -16) 255) (logand (lsh tc -8) 255) (logand tc 255)))
+    ((and (setq ci (cdr (assoc 62 ed))) (< 0 ci 256)) (TK:AciRgb ci))
+    ((and (setq ld (tblobjname "LAYER" (cdr (assoc 8 ed)))) (setq ld (entget ld)))
+     (if (assoc 420 ld) (TK:EdRgb (list (assoc 420 ld))) (TK:AciRgb (abs (cond ((cdr (assoc 62 ld))) (7))))))
+    ('(255 255 255))))
+
+;; TK:KmlColor - culoarea KML aabbggrr pentru (r g b) și opacitatea A (0-255)
+(defun TK:Hex2 (n) (strcat (substr "0123456789abcdef" (1+ (/ n 16)) 1) (substr "0123456789abcdef" (1+ (rem n 16)) 1)))
+(defun TK:KmlColor (rgb a)
+  (strcat (TK:Hex2 a) (TK:Hex2 (caddr rgb)) (TK:Hex2 (cadr rgb)) (TK:Hex2 (car rgb))))
+
+;; TK:CurveDens - punctele unei curbe oarecare (arc, cerc, elipsă, spline),
+;; împărțită în N segmente egale
+(defun TK:CurveDens (e n / len k out)
+  (setq len (vlax-curve-getDistAtParam e (vlax-curve-getEndParam e)) k 0)
+  (repeat (1+ n)
+    (setq out (cons (vlax-curve-getPointAtDist e (min len (* len (/ k (float n))))) out) k (1+ k)))
+  (TK:DropDup (reverse out)))
+
+;; TK:MText - textul simplu al unui MTEXT (fără codurile de formatare)
+(defun TK:MText (s / i j out c)
+  (setq s (TK:StrReplace (TK:StrReplace s "\\P" " ") "\\~" " ") out "" i 1)
+  (while (<= i (strlen s))
+    (setq c (substr s i 1))
+    (cond
+      ((member c '("{" "}")))
+      ((and (= c "\\") (< i (strlen s)) (wcmatch (substr s (1+ i) 1) "[\\{}]"))
+       (setq out (strcat out (substr s (1+ i) 1)) i (1+ i)))
+      ((and (= c "\\") (setq j (vl-string-search ";" s i)) (wcmatch (substr s (1+ i) 1) "[ACFHQTWfhpcLlOoKk]"))
+       (if (wcmatch (substr s (1+ i) 1) "[LlOoKk]") (setq i (1+ i)) (setq i (1+ j))))
+      (T (setq out (strcat out c))))
+    (setq i (1+ i)))
+  (vl-string-trim " " out))
+
+;; TK:EntFeat - obiectul KML corespunzător entității E (sau nil)
+(defun TK:EntFeat (e / ed typ lay rgb o pts cl at nm v)
+  (setq ed (entget e) typ (cdr (assoc 0 ed)) lay (cdr (assoc 8 ed)) rgb (TK:EdRgb ed))
+  (cond
+    ((wcmatch typ "LWPOLYLINE,POLYLINE")
+     (if (and (= typ "POLYLINE") (/= 0 (logand (cdr (assoc 70 ed)) 80))) ; plase / polifețe
+       nil
+       (progn
+         (setq cl (TK:IsClosed e) pts (car (TK:CurvePts e)))
+         (if (not cl) (setq pts (append pts (list (vlax-curve-getEndPoint e)))))
+         (cond
+           ((and cl (>= (length pts) 3))
+            (list "polygon" lay rgb lay pts
+                  (list (cons "Suprafata" (strcat (rtos (vlax-curve-getArea e) 2 2) " mp ("
+                                                  (rtos (/ (vlax-curve-getArea e) 10000.0) 2 4) " ha)"))
+                        (cons "Perimetru" (strcat (rtos (vlax-curve-getDistAtParam e (vlax-curve-getEndParam e)) 2 2) " m")))))
+           ((>= (length pts) 2)
+            (list "polyline" lay rgb lay pts
+                  (list (cons "Lungime" (strcat (rtos (vlax-curve-getDistAtParam e (vlax-curve-getEndParam e)) 2 2) " m")))))))))
+    ((= typ "LINE")
+     (list "line" lay rgb lay (list (cdr (assoc 10 ed)) (cdr (assoc 11 ed)))
+           (list (cons "Lungime" (strcat (rtos (distance (TK:2d (cdr (assoc 10 ed))) (TK:2d (cdr (assoc 11 ed)))) 2 2) " m")))))
+    ((= typ "CIRCLE")
+     (setq pts (TK:CurveDens e 48))
+     (list "polygon" lay rgb lay (reverse (cdr (reverse pts)))
+           (list (cons "Raza" (strcat (rtos (cdr (assoc 40 ed)) 2 3) " m")))))
+    ((wcmatch typ "ARC,ELLIPSE,SPLINE")
+     (setq pts (TK:CurveDens e 48))
+     (if (and (vlax-curve-isClosed e) (>= (length pts) 4))
+       (list "polygon" lay rgb lay (reverse (cdr (reverse pts))) nil)
+       (list "polyline" lay rgb lay pts
+             (list (cons "Lungime" (strcat (rtos (vlax-curve-getDistAtParam e (vlax-curve-getEndParam e)) 2 2) " m"))))))
+    ((= typ "POINT")
+     (list "point" lay rgb (strcat "Punct " lay) (list (cdr (assoc 10 ed)))
+           (list (cons "Z" (rtos (caddr (cdr (assoc 10 ed))) 2 3)))))
+    ((= typ "AECC_COGO_POINT")
+     (setq o (vlax-ename->vla-object e)
+           v (mapcar '(lambda (p / r) (setq r (vl-catch-all-apply 'vlax-get-property (list o p)))
+                        (if (vl-catch-all-error-p r) nil r))
+                     '(Easting Northing Elevation Number RawDescription)))
+     (if (and (numberp (car v)) (numberp (cadr v)))
+       (list "point" lay rgb (if (nth 3 v) (vl-princ-to-string (nth 3 v)) "Punct COGO")
+             (list (list (car v) (cadr v) (cond ((nth 2 v)) (0.0))))
+             (list (cons "Z" (if (numberp (nth 2 v)) (rtos (nth 2 v) 2 3) "-"))
+                   (cons "Descriere" (if (nth 4 v) (vl-princ-to-string (nth 4 v)) ""))))))
+    ((= typ "INSERT")
+     (setq nm (cdr (assoc 2 ed)) at (list (cons "Bloc" nm)))
+     (if (= 1 (cdr (assoc 66 ed)))
+       (progn
+         (setq o (entnext e))
+         (while (and o (= "ATTRIB" (cdr (assoc 0 (setq v (entget o))))))
+           (if (/= "" (cdr (assoc 1 v))) (setq at (cons (cons (cdr (assoc 2 v)) (cdr (assoc 1 v))) at)))
+           (setq o (entnext o)))))
+     (setq at (reverse at))
+     (list "point" lay rgb
+           (cond ((cdr (vl-some '(lambda (a) (if (wcmatch (strcase (car a)) "NR*,NUM*,PUNCT*,PCT*,NAME,ID") a)) (cdr at))))
+                 ((cdr (cadr at)))
+                 (nm))
+           (list (cdr (assoc 10 ed))) at))
+    ((wcmatch typ "TEXT,MTEXT")
+     (setq v (if (= typ "MTEXT") (TK:MText (cdr (assoc 1 ed))) (cdr (assoc 1 ed))))
+     (if (/= v "")
+       (list "text" lay rgb (substr v 1 80)
+             (list (if (and (= typ "TEXT") (or (/= 0 (cond ((cdr (assoc 72 ed))) (0))) (/= 0 (cond ((cdr (assoc 73 ed))) (0)))))
+                     (cdr (assoc 11 ed)) (cdr (assoc 10 ed))))
+             nil)))))
+
+;; TK:SwapAuto - verifică axele pentru punctele PTS: dacă nu se încadrează în
+;; Stereo 70 cu setarea curentă, dar se încadrează cu axele inversate, comută
+;; *TK:SWAPXY* și anunță. Returnează T dacă punctele sunt în Stereo 70.
+(defun TK:SwapAuto (pts)
+  (cond
+    ((TK:InStereo70 pts) T)
+    ((progn (setq *TK:SWAPXY* (if (= *TK:SWAPXY* "1") "0" "1")) (TK:InStereo70 pts))
+     (princ (strcat "\nAxele desenului par inversate: se foloseste "
+                    (if (= *TK:SWAPXY* "1") "X desen = Nord." "X desen = Est.")))
+     T)
+    (T (setq *TK:SWAPXY* (if (= *TK:SWAPXY* "1") "0" "1")) nil)))
+
+;; TK:KmlFeat - textul KML (Placemark) al obiectului F
+(defun TK:KmlFeat (f sid / typ pts ll en desc i co)
+  (setq typ (car f) pts (nth 4 f)
+        co (apply 'strcat (mapcar '(lambda (p) (strcat (TK:Coord (TK:Stereo70ToWGS84 (TK:PtEN p))) " "))
+                                  (if (= typ "polygon") (append pts (list (car pts))) pts)))
+        desc (strcat "<b>Strat:</b> " (TK:XmlEsc (cadr f)) "<br/>"))
+  (foreach a (nth 5 f) (setq desc (strcat desc "<b>" (TK:XmlEsc (car a)) ":</b> " (TK:XmlEsc (cdr a)) "<br/>")))
+  (cond
+    ((= typ "point")
+     (setq en (TK:PtEN (car pts))
+           desc (strcat desc "<b>X (N):</b> " (rtos (cadr en) 2 3) "<br/><b>Y (E):</b> " (rtos (car en) 2 3))))
+    ((and (= typ "polygon") (= *TK:PUNCTE* "1") (<= (length pts) 400))
+     (setq desc (strcat desc "<br/><b>Inventar de coordonate (Stereo 70)</b><table border='1' cellpadding='2' "
+                        "style='border-collapse:collapse'><tr><th>Pct</th><th>X (N)</th><th>Y (E)</th></tr>")
+           i 0)
+     (foreach p pts
+       (setq en (TK:PtEN p) i (1+ i)
+             desc (strcat desc "<tr><td>" (itoa i) "</td><td>" (rtos (cadr en) 2 3) "</td><td>" (rtos (car en) 2 3) "</td></tr>")))
+     (setq desc (strcat desc "</table>"))))
+  (strcat "<Placemark><name>" (TK:XmlEsc (nth 3 f)) "</name><description><![CDATA[" desc "]]></description>"
+          "<styleUrl>#" sid "</styleUrl>"
+          (cond
+            ((= typ "polygon")
+             (strcat "<Polygon><tessellate>1</tessellate><outerBoundaryIs><LinearRing><coordinates>" co
+                     "</coordinates></LinearRing></outerBoundaryIs></Polygon>"))
+            ((wcmatch typ "polyline,line")
+             (strcat "<LineString><tessellate>1</tessellate><coordinates>" co "</coordinates></LineString>"))
+            (T (strcat "<Point><coordinates>" co "</coordinates></Point>")))
+          "</Placemark>"))
+
+;; TK:WriteKmlMulti - scrie KML-ul pentru lista de obiecte FEATS (categorii ->
+;; straturi -> obiecte). Returnează numărul de obiecte scrise sau nil.
+(defun TK:WriteKmlMulti (file nm feats / fh styles key sub lays lst body xs ys cen ext cnt st)
+  ;; stilurile: câte unul pentru fiecare (tip culoare)
+  (foreach f feats
+    (setq key (list (car f) (caddr f)))
+    (if (not (assoc key styles))
+      (setq styles (cons (list key (strcat "s" (itoa (length styles)))) styles))))
+  ;; corpul (categorii -> straturi -> obiecte), calculat înaintea antetului,
+  ;; ca descrierea să conțină metoda de transformare folosită efectiv
+  (foreach cat *TK:KMLCAT*
+    (if (setq sub (vl-remove-if-not '(lambda (f) (= (car f) (car cat))) feats))
+      (progn
+        (setq lays nil)
+        (foreach f sub (if (not (member (cadr f) lays)) (setq lays (cons (cadr f) lays))))
+        (setq body (cons (strcat "<Folder><name>" (cdr cat) " (" (itoa (length sub)) ")</name>") body))
+        (foreach ly (acad_strlsort lays)
+          (setq lst (vl-remove-if-not '(lambda (f) (= (cadr f) ly)) sub)
+                body (cons (strcat "<Folder><name>" (TK:XmlEsc ly) " (" (itoa (length lst)) ")</name>") body))
+          (foreach f lst (setq body (cons (TK:KmlFeat f (cadr (assoc (list (car f) (caddr f)) styles))) body)))
+          (setq body (cons "</Folder>" body)))
+        (setq body (cons "</Folder>" body)))))
+  ;; vederea inițială: centrul și întinderea obiectelor
+  (foreach f feats (foreach p (nth 4 f) (setq xs (cons (car (TK:PtEN p)) xs) ys (cons (cadr (TK:PtEN p)) ys))))
+  (setq cnt (list *TK:NTD* *TK:NNTV2* *TK:NHELM*)
+        cen (TK:Stereo70ToWGS84 (list (/ (+ (apply 'min xs) (apply 'max xs)) 2.0) (/ (+ (apply 'min ys) (apply 'max ys)) 2.0)))
+        ext (max 200.0 (* 1.5 (max (- (apply 'max xs) (apply 'min xs)) (- (apply 'max ys) (apply 'min ys)))))
+        *TK:NTD* (car cnt) *TK:NNTV2* (cadr cnt) *TK:NHELM* (caddr cnt))   ; centrul nu se numără
+  (if (setq fh (TK:OpenW file))
+    (progn
+      (setq *TK:FH* fh)
+      (foreach l
+        (list (strcat "<?xml version=\"1.0\" encoding=\"" *TK:ENC* "\"?>")
+              "<kml xmlns=\"http://www.opengis.net/kml/2.2\"><Document>"
+              (strcat "<name>" (TK:XmlEsc nm) "</name><open>1</open>")
+              (strcat "<description>Exportat din " (TK:XmlEsc (getvar "DWGNAME"))
+                      " cu TopoKit. Transformare Stereo 70 -&gt; ETRS89: " (TK:MethodText) "</description>")
+              (strcat "<LookAt><longitude>" (rtos (car cen) 2 9) "</longitude><latitude>" (rtos (cadr cen) 2 9)
+                      "</latitude><altitude>0</altitude><heading>0</heading><tilt>0</tilt><range>"
+                      (rtos ext 2 1) "</range></LookAt>"))
+        (write-line l fh))
+      (foreach st (reverse styles)
+        (setq key (car st))
+        (write-line
+          (strcat "<Style id=\"" (cadr st) "\">"
+                  (cond
+                    ((= (car key) "polygon")
+                     (strcat "<LineStyle><color>" (TK:KmlColor (cadr key) 255) "</color><width>2</width></LineStyle>"
+                             "<PolyStyle><color>" (TK:KmlColor (cadr key) 64) "</color></PolyStyle>"))
+                    ((wcmatch (car key) "polyline,line")
+                     (strcat "<LineStyle><color>" (TK:KmlColor (cadr key) 255) "</color><width>2</width></LineStyle>"))
+                    ((= (car key) "point")
+                     (strcat "<IconStyle><color>" (TK:KmlColor (cadr key) 255) "</color><scale>0.7</scale><Icon><href>"
+                             "http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle>"
+                             "<LabelStyle><scale>0.8</scale></LabelStyle>"))
+                    (T (strcat "<IconStyle><scale>0</scale></IconStyle><LabelStyle><color>" (TK:KmlColor (cadr key) 255)
+                               "</color><scale>0.9</scale></LabelStyle>")))
+                  "</Style>")
+          fh))
+      (foreach l (reverse body) (write-line l fh))
+      (write-line "</Document></kml>" fh)
+      (close fh)
+      (setq *TK:FH* nil)
+      (length feats))))
+
 ;; TK:PsQ - dublează apostroafele pentru un șir PowerShell între '...'
 (defun TK:PsQ (s) (TK:StrReplace s "'" "''"))
 
@@ -1076,7 +1507,7 @@
     ((vl-registry-read (strcat "HKEY_CLASSES_ROOT\\" (vl-filename-extension file)))
      (if (setq sh (vlax-create-object "Shell.Application"))
        (progn
-         (vl-catch-all-apply 'vlax-invoke-method (list sh 'ShellExecute file))
+         (vl-catch-all-apply 'vlax-invoke (list sh 'ShellExecute file))   ; parametri opționali
          (vlax-release-object sh)
          (princ "\nFisierul a fost deschis cu aplicatia asociata."))))
     (T (princ "\nGoogle Earth Pro nu a fost gasit; deschideti manual fisierul generat."))))
@@ -1088,62 +1519,143 @@
   (if (not (vl-file-directory-p d)) (vl-mkdir d))
   (if (vl-file-directory-p d) d (TK:TempDir)))
 
-;; C:EXPKMZ - exportă o parcelă (polilinie închisă) în KMZ/KML pentru
-;; Google Earth, cu transformarea Stereo 70 -> WGS84 inclusă.
-(defun c:EXPKMZ (/ *error* e nm cv cont vtx area per dir file tmp kml ok)
+;; TK:SelExport - selecția pentru EXPKMZ (set de selecție sau nil)
+(defun TK:SelExport ()
+  (princ (strcat "\nSelectati parcela (o polilinie inchisa) sau mai multe obiecte de exportat"
+                 "\n(polilinii, linii, arce, cercuri, puncte, puncte COGO, blocuri, texte): "))
+  (ssget '((0 . "LWPOLYLINE,POLYLINE,LINE,ARC,CIRCLE,ELLIPSE,SPLINE,POINT,INSERT,TEXT,MTEXT,AECC_COGO_POINT"))))
+
+;; TK:KmlOut - scrie fișierul (KMZ sau KML, după opțiune) cu funcția WRITER
+;; (fișier -> non-nil la succes). Returnează calea fișierului scris sau nil.
+(defun TK:KmlOut (base writer / file tmp kml ok)
+  (setq file (strcat (TK:OutDir) base (if (= *TK:KMZ* "1") ".kmz" ".kml")))
+  (if (= *TK:KMZ* "1")
+    ;; KMZ: KML-ul se scrie ca doc.kml într-un director temporar și se arhivează
+    (progn
+      (setq tmp (strcat (TK:TempDir) "TopoKit_kmz"))
+      (vl-mkdir tmp)
+      (setq kml (strcat tmp "\\doc.kml"))
+      (if (findfile kml) (vl-file-delete kml))
+      (if (apply writer (list kml))
+        (if (TK:MakeKmz kml file)
+          (setq ok T)
+          (progn
+            ;; arhivarea a eșuat: se păstrează fișierul KML
+            (setq file (strcat (substr file 1 (- (strlen file) 4)) ".kml"))
+            (if (findfile file) (vl-file-delete file))
+            (setq ok (vl-file-copy kml file))
+            (princ "\nArhivarea KMZ nu a reusit (PowerShell indisponibil); s-a salvat fisier KML.")))))
+    (setq ok (apply writer (list file))))
+  (if ok file (progn (princ (strcat "\nNu s-a putut scrie fisierul: " file)) nil)))
+
+;; TK:TransStart - deschide grilele de transformare (cu avertisment dacă lipsesc)
+(defun TK:TransStart ()
+  (setq *TK:NTD* 0 *TK:NNTV2* 0 *TK:NHELM* 0)
+  (if (and (= *TK:USEGRID* "1") (not (TK:TransOpen)))
+    (princ (strcat "\nATENTIE: grila " *TK:TDNAME* " nu a fost gasita (copiati-o langa TopoKit.lsp)."
+                   "\nSe foloseste transformarea Helmert, precizie ~0.3-1.5 m."))))
+
+;; TK:CheckDomain - axele (inversare automată) și domeniul Stereo 70 pentru PTS;
+;; T dacă exportul poate continua
+(defun TK:CheckDomain (pts)
+  (or (TK:SwapAuto pts)
+      (progn
+        (initget "Da Nu")
+        (= "Da" (getkword "\nCoordonatele par in afara domeniului Stereo 70 (verificati desenul). Continuati? [Da/Nu] <Nu>: ")))))
+
+;; TK:ExpParcel - exportul unei parcele (polilinie închisă): poligon, punctele
+;; de contur numerotate, suprafață și perimetru
+(defun TK:ExpParcel (e / nm cv cont vtx area per file)
+  ;; numele parcelei (din dialog sau din linia de comandă)
+  (if (not *TK:DLGRUN*)
+    (progn
+      (setq nm (vl-string-trim " " (getstring T (strcat "\nNumele parcelei <" *TK:NUME* ">: "))))
+      (if (/= nm "") (setq *TK:NUME* nm))))
+  (setq cv (TK:CurvePts e) cont (car cv) vtx (cadr cv)
+        area (vlax-curve-getArea e)
+        per  (vlax-curve-getDistAtParam e (vlax-curve-getEndParam e)))
+  (cond
+    ((< (length vtx) 3) (princ "\nPolilinia are mai putin de 3 vertex-uri distincte."))
+    ((not (TK:CheckDomain vtx)) (princ "\nExport anulat."))
+    (T
+     (TK:TransStart)
+     (if (setq file (TK:KmlOut (strcat (TK:SafeName (vl-filename-base (getvar "DWGNAME"))) "_"
+                                       (TK:SafeName *TK:NUME*) "_" (TK:Stamp))
+                               (function (lambda (f) (TK:WriteKml f *TK:NUME* cont vtx area per)))))
+       (progn
+         (princ (strcat "\nExport finalizat: " file
+                        "\n" (itoa (length vtx)) " puncte, S = " (rtos area 2 2) " mp, P = " (rtos per 2 2) " m."
+                        "\nTransformare: " (TK:MethodText)))
+         (if (= *TK:OPENGE* "1") (TK:OpenGE file))))
+     (TK:TransClose))))
+
+;; TK:InPoly - T dacă punctul P este în interiorul poligonului PTS (în plan)
+(defun TK:InPoly (p pts / in)
+  (mapcar '(lambda (a b)
+             (if (and (/= (> (cadr a) (cadr p)) (> (cadr b) (cadr p)))
+                      (< (car p) (+ (car a) (/ (* (- (car b) (car a)) (- (cadr p) (cadr a))) (- (cadr b) (cadr a))))))
+               (setq in (not in))))
+          pts (append (cdr pts) (list (car pts))))
+  in)
+
+;; TK:NamePolys - poligoanele primesc ca nume textul selectat aflat în interiorul
+;; lor cel mai aproape de centru (ex. "Lot 1", numărul cadastral); altfel
+;; rămâne numele stratului
+(defun TK:NamePolys (feats / txts)
+  (setq txts (vl-remove-if-not '(lambda (f) (= (car f) "text")) feats))
+  (mapcar '(lambda (f / cen best bd d)
+             (if (= (car f) "polygon")
+               (progn
+                 (setq cen (list (/ (apply '+ (mapcar 'car (nth 4 f))) (length (nth 4 f)))
+                                 (/ (apply '+ (mapcar 'cadr (nth 4 f))) (length (nth 4 f)))))
+                 (foreach t1 txts
+                   (if (and (TK:InPoly (car (nth 4 t1)) (nth 4 f))
+                            (or (null bd) (< (setq d (distance cen (TK:2d (car (nth 4 t1))))) bd)))
+                     (setq best t1 bd (distance cen (TK:2d (car (nth 4 t1)))))))
+                 (if best (list (car f) (cadr f) (caddr f) (nth 3 best) (nth 4 f) (nth 5 f)) f))
+               f))
+          feats))
+
+;; TK:ExpMulti - exportul mai multor obiecte, grupate pe categorii și straturi
+(defun TK:ExpMulti (ss / i feats f nm file cnt)
+  (setq i 0)
+  (repeat (sslength ss)
+    (if (setq f (TK:EntFeat (ssname ss i))) (setq feats (cons f feats)))
+    (setq i (1+ i)))
+  (setq feats (TK:NamePolys (reverse feats)))
+  (cond
+    ((null feats) (princ "\nNiciun obiect exportabil in selectie."))
+    ((not (TK:CheckDomain (apply 'append (mapcar '(lambda (f) (nth 4 f)) feats)))) (princ "\nExport anulat."))
+    (T
+     (setq nm (if *TK:DLGRUN* *TK:NUME*
+                (vl-string-trim " " (getstring T (strcat "\nNumele exportului <" (vl-filename-base (getvar "DWGNAME")) ">: ")))))
+     (if (= nm "") (setq nm (vl-filename-base (getvar "DWGNAME"))))
+     (TK:TransStart)
+     (if (setq file (TK:KmlOut (strcat (TK:SafeName (vl-filename-base (getvar "DWGNAME"))) "_" (TK:SafeName nm) "_" (TK:Stamp))
+                               (function (lambda (f) (TK:WriteKmlMulti f nm feats)))))
+       (progn
+         (setq cnt (mapcar '(lambda (c / k) (setq k (length (vl-remove-if-not '(lambda (f) (= (car f) (car c))) feats)))
+                              (if (> k 0) (strcat (itoa k) " " (strcase (cdr c) T)) ""))
+                           *TK:KMLCAT*))
+         (princ (strcat "\nExport finalizat: " file
+                        "\n" (itoa (length feats)) " obiecte:"
+                        (apply 'strcat (mapcar '(lambda (c) (if (/= c "") (strcat " " c ";") "")) cnt))
+                        "\nTransformare: " (TK:MethodText)))
+         (if (= *TK:OPENGE* "1") (TK:OpenGE file))))
+     (TK:TransClose))))
+
+;; C:EXPKMZ - exportă în KMZ/KML pentru Google Earth, cu transformarea
+;; Stereo 70 -> ETRS89 TransDatRO: o parcelă (o polilinie închisă) sau
+;; mai multe obiecte, grupate pe categorii și straturi.
+(defun c:EXPKMZ (/ *error* ss e)
   (defun *error* (msg) (TK:Error msg))
   (TK:Start)
-  (if (setq e (TK:SelClosedPoly))
-    (progn
-      ;; numele parcelei (din dialog sau din linia de comandă)
-      (if (not *TK:DLGRUN*)
-        (progn
-          (setq nm (vl-string-trim " " (getstring T (strcat "\nNumele parcelei <" *TK:NUME* ">: "))))
-          (if (/= nm "") (setq *TK:NUME* nm))))
-      (setq cv (TK:CurvePts e) cont (car cv) vtx (cadr cv)
-            area (vlax-curve-getArea e)
-            per  (vlax-curve-getDistAtParam e (vlax-curve-getEndParam e)))
-      (cond
-        ((< (length vtx) 3) (princ "\nPolilinia are mai putin de 3 vertex-uri distincte."))
-        ((and (not (TK:InStereo70 vtx))
-              (progn
-                (initget "Da Nu")
-                (/= "Da" (getkword "\nCoordonatele par in afara domeniului Stereo 70 (verificati axele). Continuati? [Da/Nu] <Nu>: "))))
-         (princ "\nExport anulat."))
-        (T
-         ;; grila NTv2 pentru precizie centimetrică (altfel Helmert)
-         (setq *TK:NHELM* 0)
-         (if (and (= *TK:USEGRID* "1") (not (TK:GridOpen)))
-           (princ (strcat "\nATENTIE: grila " *TK:GRIDNAME* " nu a fost gasita (copiati-o langa TopoKit.lsp)."
-                          "\nSe foloseste transformarea Helmert, precizie ~0.3-1.5 m.")))
-         (setq dir  (TK:OutDir)
-               file (strcat dir (TK:SafeName (vl-filename-base (getvar "DWGNAME"))) "_"
-                            (TK:SafeName *TK:NUME*) "_" (TK:Stamp)
-                            (if (= *TK:KMZ* "1") ".kmz" ".kml")))
-         (if (= *TK:KMZ* "1")
-           ;; KMZ: KML-ul se scrie ca doc.kml într-un director temporar și se arhivează
-           (progn
-             (setq tmp (strcat (TK:TempDir) "TopoKit_kmz"))
-             (vl-mkdir tmp)
-             (setq kml (strcat tmp "\\doc.kml"))
-             (if (TK:WriteKml kml *TK:NUME* cont vtx area per)
-               (if (TK:MakeKmz kml file)
-                 (setq ok T)
-                 (progn
-                   ;; arhivarea a eșuat: se păstrează fișierul KML
-                   (setq file (strcat (substr file 1 (- (strlen file) 4)) ".kml"))
-                   (if (findfile file) (vl-file-delete file))
-                   (setq ok (vl-file-copy kml file))
-                   (princ "\nArhivarea KMZ nu a reusit (PowerShell indisponibil); s-a salvat fisier KML.")))))
-           (setq ok (TK:WriteKml file *TK:NUME* cont vtx area per)))
-         (if ok
-           (progn
-             (princ (strcat "\nExport finalizat: " file
-                            "\n" (itoa (length vtx)) " puncte, S = " (rtos area 2 2) " mp, P = " (rtos per 2 2) " m."
-                            "\nTransformare: " (TK:MethodText)))
-             (if (= *TK:OPENGE* "1") (TK:OpenGE file)))
-           (princ (strcat "\nNu s-a putut scrie fisierul: " file)))
-         (TK:GridClose)))))
+  (if (setq ss (TK:SelExport))
+    (if (and (= 1 (sslength ss))
+             (wcmatch (cdr (assoc 0 (entget (setq e (ssname ss 0))))) "LWPOLYLINE,POLYLINE")
+             (TK:IsClosed e))
+      (TK:ExpParcel e)
+      (TK:ExpMulti ss)))
   (TK:Stop)
   (princ))
 
@@ -1395,8 +1907,8 @@
     "      label = \" 2   Export Google Earth \";"
     "      : tk_icon { key = \"img_kmz\"; }"
     "      : paragraph {"
-    "        : text_part { label = \"Conturul parcelei (polilinie inchisa)\"; }"
-    "        : text_part { label = \"in KMZ: Stereo 70 > ETRS89 / WGS84.\"; }"
+    "        : text_part { label = \"Parcela sau obiecte pe straturi\"; }"
+    "        : text_part { label = \"in KMZ: Stereo 70 > ETRS89 (TransDatRO).\"; }"
     "        : text_part { key = \"tx_grid\"; label = \"\"; width = 38; }"
     "      }"
     "      : boxed_column {"
@@ -1407,8 +1919,8 @@
     "          : radio_button { key = \"rb_kmz\"; label = \"KMZ\"; }"
     "          : radio_button { key = \"rb_kml\"; label = \"KML\"; }"
     "        }"
-    "        : toggle { key = \"tg_grid\";   label = \"Grila NTv2 ANCPI (precizie cm)\"; mnemonic = \"G\"; }"
-    "        : toggle { key = \"tg_puncte\"; label = \"Exporta si punctele de contur\"; }"
+    "        : toggle { key = \"tg_grid\";   label = \"TransDatRO ANCPI (precizie mm)\"; mnemonic = \"G\"; }"
+    "        : toggle { key = \"tg_puncte\"; label = \"Puncte de contur / inventar\"; }"
     "        : toggle { key = \"tg_swap\";   label = \"Axe inversate (X desen = Nord)\"; }"
     "        : toggle { key = \"tg_ge\";     label = \"Deschide in Google Earth Pro\"; }"
     "      }"
@@ -1729,6 +2241,7 @@
       (set_tile "tx_status"
         (strcat "Toleranta: " (get_tile "eb_tol") " m     |     Transformare: "
                 (cond ((/= (get_tile "tg_grid") "1") "Helmert 7p (~0.3-1.5 m)")
+                      ((TK:TdFind) "TransDatRO ANCPI (~1 mm)")
                       ((TK:GridFind) "grila NTv2 ANCPI (~1 cm)")
                       (T "grila LIPSA -> Helmert 7p (~0.3-1.5 m)"))
                 "     |     Plansa: " (car fm) (if (= (get_tile "rr_orient") "rb_port") " Portrait" " Landscape")
@@ -1848,7 +2361,9 @@
      (set_tile "tg_swap" *TK:SWAPXY*)
      (set_tile "tg_ge" *TK:OPENGE*)
      (set_tile "tg_grid" *TK:USEGRID*)
-     (set_tile "tx_grid" (if (TK:GridFind) "Grila NTv2 gasita: precizie ~1 cm" "Grila NTv2 lipsa: precizie ~1 m"))
+     (set_tile "tx_grid" (cond ((TK:TdFind) "Grila TransDatRO gasita: precizie ~1 mm")
+                               ((TK:GridFind) "Grila NTv2 gasita: precizie ~1 cm")
+                               ("Grila TransDatRO lipsa: precizie ~1 m")))
      ;; imagini
      (TK:DrawLogo "img_logo")
      (TK:DrawSep "img_sep")
@@ -1901,4 +2416,7 @@
 ;; Modulul de teren (puncte, TIN, curbe de nivel, volume, raster, KML)
 (if (and (not *TKT:LOADING*) (not TKT:Menu) (findfile "TopoKitTeren.lsp"))
   (load (findfile "TopoKitTeren.lsp")))
+;; Planul de înclinare (verticalitate: silozuri, stâlpi, coșuri, turnuri)
+(if (and (not *TKI:LOADING*) (not TKI:Run) (findfile "TopoKitInclinare.lsp"))
+  (load (findfile "TopoKitInclinare.lsp")))
 (princ)

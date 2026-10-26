@@ -35,7 +35,7 @@
 
 /* Cardurile modulelor - aceeasi ordine ca tabelul CMDS din topokit.c */
 static const struct { const wchar_t *title, *desc, *cmd; ARGB accent; } TILES[] = {
-    { L"Meniu TopoKit", L"Toate modulele și setările într-un singur dialog", L"TOPOKIT", 0xFF1B6A8F },
+    { L"Setări module", L"Toleranță, opțiuni KMZ, format și cadru", L"TOPOKITSET", 0xFF1B6A8F },
     { L"Anexe ANCPI", L"Planuri și documente, Ordinul 600/2023", L"ANEXE", 0xFF6A4FB6 },
     { L"Teren și volume", L"Puncte, model TIN, curbe de nivel, calcul de volume", L"TOPOTEREN", 0xFF2E8B57 },
     { L"Verificare", L"Controlul documentației înainte de predare", L"VERIFICARE", 0xFFD08A12 },
@@ -524,7 +524,7 @@ static LRESULT CALLBACK UiProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
     }
     case WM_KEYDOWN:
         if (wp == VK_ESCAPE) { SendMessageW(h, WM_CLOSE, 0, 0); return 0; }
-        if (wp == VK_RETURN) { App_Action(ACT_CMD, 0); return 0; }
+        if (wp == VK_RETURN) { App_Action(ACT_CMD, 0); return 0; }      /* Setari module */
         if (wp >= '1' && wp <= '9') { App_Action(ACT_CMD, (int)(wp - '1')); return 0; }
         if (wp == '0') { App_Action(ACT_CMD, 9); return 0; }
         break;

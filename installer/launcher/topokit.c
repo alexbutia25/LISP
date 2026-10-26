@@ -57,7 +57,7 @@ enum { ID_STATUS = 1000, ID_CMD0 = 1001, ID_OPEN = 1099, ID_START = 1100, ID_REL
        ID_FOLDER, ID_HELP, ID_EXIT, HOTKEY_ID = 1 };
 
 static const struct { const wchar_t *label, *cmd; } CMDS[] = {
-    { L"Meniu TopoKit\tCtrl+Alt+Shift+T", L"TOPOKIT" },
+    { L"Setări module (TopoKit)", L"TOPOKITSET" },
     { L"Generator anexe (Ordin ANCPI 600/2023)", L"ANEXE" },
     { L"Teren: puncte, TIN, curbe de nivel, volume", L"TOPOTEREN" },
     { L"Verificare documentație", L"VERIFICARE" },
@@ -1159,7 +1159,7 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         if (wp == TIMER_POLL) Poll();
         return 0;
     case WM_HOTKEY:
-        if (wp == HOTKEY_ID) RunCommand(L"TOPOKIT", FALSE);
+        if (wp == HOTKEY_ID) ShowMain();          /* fereastra TopoKit */
         return 0;
     case WM_COPYDATA: {
         COPYDATASTRUCT *cd = (COPYDATASTRUCT *)lp;

@@ -4,7 +4,9 @@ Suită modulară AutoLISP + DCL pentru AutoCAD (în stilul TopoLT):
 
 | Comandă | Modul |
 |---|---|
-| `TOPOKIT` / `MYTOPO` | Meniul grafic: toate modulele ca în fereastra TopoKit (carduri cu pictograme) și setările lor |
+| `TOPOKIT` | Deschide **fereastra TopoKit** cu toate modulele (aceeași ca la pornirea programului) |
+| `TOPOKITSET` | Setările modulelor: toleranța corecției topologice, opțiunile KMZ, formatul și cadrul planșei |
+| `MYTOPO` | Meniul cu module direct în AutoCAD (dialog), dacă fereastra TopoKit nu e instalată |
 | `ADDVTX` | Corecție topologică – vertexi la intersecțiile poliliniilor |
 | `EXPKMZ` | Export în KMZ/KML pentru Google Earth Pro: o parcelă sau mai multe obiecte pe straturi, cu transformarea oficială **TransDatRO** (Stereo 70 → ETRS89, ~1 mm) |
 | `INSCADRU` | Format A4…A0 (portrait/landscape), cadru și indicator la scară |
@@ -68,7 +70,7 @@ Ce face instalarea:
     reîncarcă TopoKit în desen;
   - **modulele**: un clic pe card deschide comanda în desenul activ. Dacă AutoCAD nu rulează, este pornit,
     iar comanda se deschide după ce AutoCAD s-a încărcat (dacă nu există niciun desen, se creează unul).
-    Din tastatură: `Enter` deschide meniul TOPOKIT, `1`–`9` și `0` deschid modulele, `Esc` ascunde fereastra;
+    Din tastatură: `Enter` deschide Setări module, `1`–`9` și `0` deschid modulele, `Esc` ascunde fereastra;
   - **subsolul**: comutatorul *Pornește TopoKit odată cu Windows*, folderul programului și ghidul;
   - închiderea ferestrei nu oprește TopoKit: programul rămâne în fundal, lângă ceas. Fereastra se
     adaptează la scalarea ecranului (100–200%), iar în Windows 11 bara de titlu preia culoarea antetului.
@@ -79,7 +81,7 @@ Ce face instalarea:
   ![Iconița TopoKit](docs/topokit_icon.png)
 
   - iconița e **verde** când AutoCAD rulează (tooltip: versiunea și desenul activ) și **gri** când nu rulează;
-  - dublu clic pe iconiță deschide fereastra TopoKit; **Ctrl+Alt+Shift+T** deschide meniul `TOPOKIT` în AutoCAD;
+  - dublu clic pe iconiță deschide fereastra TopoKit; **Ctrl+Alt+Shift+T** deschide fereastra TopoKit;
   - din meniul iconiței (clic dreapta) se pornesc direct `TOPOKIT`, `ANEXE`, `TOPOTEREN`, `VERIFICARE`,
     `PLANEPDF`, `EXPKMZ`, `DWGKMZ`, `INSCADRU`, `ADDVTX` și programul Plan Înclinare;
   - tot din meniu: *Pornește AutoCAD*, *Reîncarcă TopoKit*, *Pornește odată cu Windows*, folderul

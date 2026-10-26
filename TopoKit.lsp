@@ -2691,17 +2691,39 @@
 (defun TK:MainSetari (/ r)
   (if (setq r (TK:SetariDialog)) (done_dialog r) (TK:UpdStatus)))
 
-;; C:TOPOKIT - meniul principal. Dacă între timp s-a instalat altă versiune
-;; TopoKit (AutoCAD era deschis), întâi se reîncarcă modulele, ca dialogul de
-;; pe disc să fie folosit de codul aceleiași versiuni.
-(defun c:TOPOKIT ()
-  (if (and TKL:Stale (not *TK:RELOADED*) (TKL:Stale))
-    (progn
-      (setq *TK:RELOADED* T)
-      (TKL:Load T)
-      (c:TOPOKIT)
-      (setq *TK:RELOADED* nil))
-    (TK:MainMenu))
+;; TK:LauncherExe - fereastra TopoKit (TopoKit.exe din folderul de instalare)
+(defun TK:LauncherExe (/ d f)
+  (if (and (setq d (vl-registry-read "HKEY_CURRENT_USER\\Software\\TopoKit" "InstallDir"))
+           (findfile (setq f (strcat (vl-string-right-trim "\\" d) "\\TopoKit.exe"))))
+    f))
+
+;; C:TOPOKIT - meniul principal: fereastra TopoKit (aceeași ca la pornirea
+;; programului, cu cardurile modulelor); fără TopoKit.exe, dialogul din AutoCAD.
+;; Dacă între timp s-a instalat altă versiune (AutoCAD era deschis), întâi se
+;; reîncarcă modulele, ca dialogurile de pe disc să fie folosite de același cod.
+(defun c:TOPOKIT (/ exe)
+  (cond
+    ((and TKL:Stale (not *TK:RELOADED*) (TKL:Stale))
+     (setq *TK:RELOADED* T)
+     (TKL:Load T)
+     (c:TOPOKIT)
+     (setq *TK:RELOADED* nil))
+    ((setq exe (TK:LauncherExe))
+     (startapp exe)
+     (princ "\nTopoKit: fereastra modulelor a fost deschisa (setarile: TOPOKITSET)."))
+    (T (TK:MainMenu)))
+  (princ))
+
+;; C:TOPOKITSET - setările modulelor (toleranță, opțiuni KMZ, format și cadru);
+;; butoanele din dialog pornesc direct modulul
+(defun c:TOPOKITSET (/ r)
+  (setq *TK:DLGRUN* T)
+  (cond
+    ((= (setq r (TK:SetariDialog)) 1) (c:ADDVTX))
+    ((= r 2) (c:EXPKMZ))
+    ((= r 3) (TK:InsCadru nil))
+    ((= r 6) (setq *TK:DLGRUN* nil) (c:DWGKMZ)))
+  (setq *TK:DLGRUN* nil)
   (princ))
 
 ;; TK:MainMenu - dialogul meniului principal (carduri cu toate modulele)
@@ -2753,10 +2775,10 @@
      (setq *TK:DLGRUN* nil)))
   (princ))
 
-;; C:MYTOPO - alias pentru meniul principal
-(defun c:MYTOPO () (c:TOPOKIT))
+;; C:MYTOPO - meniul cu toate modulele în AutoCAD (dialog DCL)
+(defun c:MYTOPO () (TK:MainMenu) (princ))
 
-(princ (strcat "\nTopoKit " *TK:VERSION* " incarcat. Comenzi: TOPOKIT (MYTOPO), ADDVTX, EXPKMZ, DWGKMZ, INSCADRU."))
+(princ (strcat "\nTopoKit " *TK:VERSION* " incarcat. Comenzi: TOPOKIT, TOPOKITSET (setari), MYTOPO, ADDVTX, EXPKMZ, DWGKMZ, INSCADRU."))
 
 ;; Generatorul de anexe (Ordinul ANCPI 600/2023) se încarcă automat dacă
 ;; TopoKitAnexe.lsp se află în calea de suport (sau lângă TopoKit.lsp)

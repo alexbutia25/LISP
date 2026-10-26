@@ -3,7 +3,7 @@
 ;;; ==========================================================================
 ;;;
 ;;;  Comenzi:
-;;;    INCLINARE (PLANINCL) - planul de înclinare / verticalitate al unei
+;;;    INCLINARE - planul de înclinare / verticalitate al unei
 ;;;                construcții înalte (siloz, stâlp, coș, turn) din puncte
 ;;;                măsurate pe rânduri (ex. codurile "stanga" și "dreapta").
 ;;;
@@ -667,7 +667,53 @@
   (princ))
 
 (defun c:INCLINARE () (TKI:Run))
-(defun c:PLANINCL () (TKI:Run))
+
+;;; ==========================================================================
+;;;  PROGRAMUL PLAN INCLINARE (PlanInclinare.exe, instalat cu TopoKit)
+;;; ==========================================================================
+
+;; TKI:AppExe - calea programului Plan Inclinare (folderul de instalare TopoKit)
+(defun TKI:AppExe (/ d f)
+  (if (and (setq d (vl-registry-read "HKEY_CURRENT_USER\\Software\\TopoKit" "InstallDir"))
+           (findfile (setq f (strcat (vl-string-right-trim "\\" d) "\\PlanInclinare\\PlanInclinare.exe"))))
+    f))
+
+;; TKI:PointsFile - fișierul prin care punctele selectate ajung în program
+(defun TKI:PointsFile () (strcat (TK:TempDir) "TopoKit_PlanInclinare_puncte.csv"))
+
+;; C:PLANINCL - pornește programul Plan Inclinare (drag & drop CSV/TXT/DWG/DXF,
+;; previzualizare, export DXF/DWG); fără program, planul se desenează în AutoCAD
+(defun c:PLANINCL (/ exe)
+  (if (setq exe (TKI:AppExe))
+    (progn (startapp exe) (princ "\nPlan Inclinare a fost pornit."))
+    (progn (princ "\nPlanInclinare.exe nu a fost gasit (reinstalati TopoKit); se foloseste INCLINARE.")
+           (TKI:Run)))
+  (princ))
+
+;; C:PLANINCLSEL - selecția punctelor din desenul deschis pentru programul
+;; Plan Inclinare (butonul "Puncte din AutoCAD"): Nr;X;Y;Z;Cod în fișierul comun.
+;; Fără selecție se scrie un fișier gol (programul nu mai așteaptă).
+(defun c:PLANINCLSEL (/ *error* ss pts f tmp fh)
+  (defun *error* (msg) (TK:Error msg))
+  (TK:Start)
+  (setq f (TKI:PointsFile) tmp (strcat f ".tmp"))
+  (princ "\nPlan Inclinare - selectati punctele masurate (puncte COGO, puncte AutoCAD, blocuri): ")
+  (setq ss (ssget '((0 . "AECC_COGO_POINT,POINT,INSERT")))
+        pts (if ss (TKI:FromSel ss)))
+  (if (findfile tmp) (vl-file-delete tmp))
+  (if (setq fh (open tmp "w"))
+    (progn
+      (foreach p pts
+        (write-line (strcat (car p) ";" (TKI:Fmt (cadr p) 4) ";" (TKI:Fmt (caddr p) 4) ";" (TKI:Fmt (nth 3 p) 4)
+                            ";" (vl-string-translate ";" "," (TKI:Ascii (nth 4 p))))
+                    fh))
+      (close fh)
+      (if (findfile f) (vl-file-delete f))
+      (vl-file-rename tmp f)))
+  (princ (if pts (strcat "\n" (itoa (length pts)) " puncte trimise programului Plan Inclinare.")
+           "\nNiciun punct selectat."))
+  (TK:Stop)
+  (princ))
 
 ;;; ==========================================================================
 ;;;  DIALOGUL (COPIE PENTRU GENERAREA AUTOMATĂ)
@@ -750,5 +796,5 @@
 ;;@@DCL-END@@
 
 (setq *TKI:LOADING* nil)
-(princ "\nTopoKit Inclinare incarcat. Comenzi: INCLINARE (PLANINCL).")
+(princ "\nTopoKit Inclinare incarcat. Comenzi: PLANINCL (programul Plan Inclinare), INCLINARE (planul direct in desen), PLANINCLSEL.")
 (princ)

@@ -115,6 +115,9 @@ Section "${APP} pentru AutoCAD (obligatoriu)" SecMain
   File "${STAGE}\app\README.html"
   SetOutPath "$INSTDIR\docs"
   File /r "${STAGE}\app\docs\*.*"
+  ; programul Plan Inclinare (calcul inclinatie); setarile utilizatorului raman
+  SetOutPath "$INSTDIR\PlanInclinare"
+  File /r "${STAGE}\app\PlanInclinare\*.*"
   SetOutPath "$INSTDIR"
 
   WriteRegStr HKCU "${REGAPP}" "ContentsDir" "${BUNDLE}\Contents"
@@ -139,6 +142,8 @@ Section "${APP} pentru AutoCAD (obligatoriu)" SecMain
   CreateDirectory "$SMPROGRAMS\${APP}"
   CreateShortCut "$SMPROGRAMS\${APP}\${APP}.lnk" "$INSTDIR\TopoKit.exe" "" "$INSTDIR\topokit.ico" 0 \
     SW_SHOWNORMAL "" "Deschide TopoKit în AutoCAD"
+  CreateShortCut "$SMPROGRAMS\${APP}\Plan Inclinare.lnk" "$INSTDIR\PlanInclinare\PlanInclinare.exe" "" \
+    "$INSTDIR\PlanInclinare\PlanInclinare.exe" 0 SW_SHOWNORMAL "" "Calcul inclinatie (verticalitate)"
   CreateShortCut "$SMPROGRAMS\${APP}\Ghid ${APP}.lnk" "$INSTDIR\README.html"
   CreateShortCut "$SMPROGRAMS\${APP}\Dezinstalare ${APP}.lnk" "$INSTDIR\Uninstall.exe"
 
@@ -180,6 +185,7 @@ Section "Uninstall"
   Delete "$INSTDIR\topokit.ico"
   Delete "$INSTDIR\README.html"
   RMDir /r "$INSTDIR\docs"
+  RMDir /r "$INSTDIR\PlanInclinare"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
   RMDir /r "$LOCALAPPDATA\TopoKit"

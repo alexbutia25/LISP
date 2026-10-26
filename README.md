@@ -4,30 +4,34 @@ Suită modulară AutoLISP + DCL pentru AutoCAD (în stilul TopoLT):
 
 | Comandă | Modul |
 |---|---|
-| `TOPOKIT` / `MYTOPO` | Meniul grafic (DCL) cu cele 5 module și setările lor |
-| `ADDVTX` | Corecție topologică – vertex-uri la intersecțiile poliliniilor |
+| `TOPOKIT` / `MYTOPO` | Meniul grafic: toate modulele ca în fereastra TopoKit (carduri cu pictograme) și setările lor |
+| `ADDVTX` | Corecție topologică – vertexi la intersecțiile poliliniilor |
 | `EXPKMZ` | Export în KMZ/KML pentru Google Earth Pro: o parcelă sau mai multe obiecte pe straturi, cu transformarea oficială **TransDatRO** (Stereo 70 → ETRS89, ~1 mm) |
 | `INSCADRU` | Format A4…A0 (portrait/landscape), cadru și indicator la scară |
 | `ANEXE` | Generatorul de anexe pentru **Ordinul ANCPI nr. 600/2023**: PAD, dezlipire/alipire, releveu și documentele Word ([detalii](#4-generator-de-anexe--ordinul-ancpi-nr-6002023-anexe)) |
-| `INCLINARE` | Planul de înclinare / verticalitate (silozuri, stâlpi, coșuri, turnuri) din puncte măsurate pe rânduri, pe planșă A4…A0 cu cartuș ([detalii](#6-plan-de-înclinare--inclinare)) |
+| `DWGKMZ` | **Transformator DWG → KMZ**: tot desenul (straturile vizibile) sau obiectele selectate, pe categorii și straturi, cu TransDatRO |
+| `PLANINCL` | Programul **Plan Înclinare** (calcul înclinație), exact ca înainte: drag & drop CSV/TXT/DWG/DXF, previzualizare, export DXF/DWG, plus punctele din desenul deschis (`PLANINCLSEL`) |
+| `INCLINARE` | Planul de înclinare / verticalitate (silozuri, stâlpi, coșuri, turnuri) din puncte măsurate pe rânduri, pe planșă A4…A0 cu cartuș ([detalii](#6-calcul-înclinație--programul-plan-înclinare-planincl-și-inclinare)) |
 | `TOPOTEREN` | Modulul de teren: import puncte și desenare pe coduri, model TIN, curbe de nivel, volume, raster georeferențiat, KML/KMZ, tabele și legende ([detalii](#5-teren--puncte-model-3d-curbe-de-nivel-volume-topoteren)) |
 
 ## Interfața
 
 ![Meniul principal TopoKit](docs/macheta_topokit.png)
 
-*Machetă aproximativă a dialogului `TOPOKIT`, generată din `TopoKit.dcl` cu valorile și imaginile
-completate de codul LISP real (rulat în simulatorul din `tests/`). Fonturile și dimensiunile exacte diferă în AutoCAD.*
+*Machetă a meniului `TOPOKIT`, generată din `TopoKit.dcl` cu imaginile desenate de codul LISP real
+(rulat în simulatorul din `tests/`). Fonturile și dimensiunile exacte diferă puțin în AutoCAD.*
 
-- **Antet:** siglă (teodolit și rețea de triangulație) și o linie de separare colorată.
-- **Pictograme pentru fiecare modul.** Pictograma corecției topologice marchează cu verde punctele de
-  intersecție, calculate chiar cu funcțiile din `ADDVTX`.
-- **Previzualizarea planșei:** proporțiile formatului, orientarea, cadrul interior, indicatorul și caroiajul
-  se redesenează la orice modificare, atât în meniul principal, cât și în dialogul `INSCADRU`:
+- **Același aspect ca fereastra TopoKit:** antet albastru cu sigla și numele, apoi câte un card pentru
+  fiecare modul – pictograma colorată (aceleași culori și simboluri ca în fereastra TopoKit), titlul,
+  comanda AutoCAD și o descriere. **Clic pe pictogramă** deschide modulul.
+- Cele 10 module: Setări module, Anexe ANCPI, Teren și volume, Verificare, Planșe PDF, Export KMZ,
+  DWG → KMZ, Cadru planșă, Vertexi și Calcul înclinație.
+- **Setări module…** deschide opțiunile corecției topologice, ale exportului KMZ și ale formatului de
+  planșă, cu pictogramele lor și previzualizarea planșei (formatul, orientarea, cadrul, indicatorul și
+  caroiajul se redesenează la orice modificare, ca și în dialogul `INSCADRU`):
 
   ![Previzualizare A4 portrait, A3 landscape cu caroiaj, A0 landscape cu caroiaj](docs/previzualizare_plansa.png)
-- **Opțiuni grupate pe module**, taste rapide (Alt+C / E / I / A / D) și o bară de stare cu toleranța,
-  metoda de transformare (grilă sau Helmert) și planșa curentă.
+- **Bara de stare:** toleranța, metoda de transformare (TransDatRO, grilă NTv2 sau Helmert) și planșa curentă.
 
 ## Instalare
 
@@ -63,7 +67,7 @@ Ce face instalarea:
     reîncarcă TopoKit în desen;
   - **modulele**: un clic pe card deschide comanda în desenul activ. Dacă AutoCAD nu rulează, este pornit,
     iar comanda se deschide după ce AutoCAD s-a încărcat (dacă nu există niciun desen, se creează unul).
-    Din tastatură: `Enter` deschide meniul TOPOKIT, `1`–`8` deschid modulele, `Esc` ascunde fereastra;
+    Din tastatură: `Enter` deschide meniul TOPOKIT, `1`–`9` și `0` deschid modulele, `Esc` ascunde fereastra;
   - **subsolul**: comutatorul *Pornește TopoKit odată cu Windows*, folderul programului și ghidul;
   - închiderea ferestrei nu oprește TopoKit: programul rămâne în fundal, lângă ceas. Fereastra se
     adaptează la scalarea ecranului (100–200%), iar în Windows 11 bara de titlu preia culoarea antetului.
@@ -76,7 +80,7 @@ Ce face instalarea:
   - iconița e **verde** când AutoCAD rulează (tooltip: versiunea și desenul activ) și **gri** când nu rulează;
   - dublu clic pe iconiță deschide fereastra TopoKit; **Ctrl+Alt+Shift+T** deschide meniul `TOPOKIT` în AutoCAD;
   - din meniul iconiței (clic dreapta) se pornesc direct `TOPOKIT`, `ANEXE`, `TOPOTEREN`, `VERIFICARE`,
-    `PLANEPDF`, `EXPKMZ`, `INSCADRU` și `ADDVTX`;
+    `PLANEPDF`, `EXPKMZ`, `DWGKMZ`, `INSCADRU`, `ADDVTX` și programul Plan Înclinare;
   - tot din meniu: *Pornește AutoCAD*, *Reîncarcă TopoKit*, *Pornește odată cu Windows*, folderul
     programului și ghidul;
   - dacă TopoKit nu era încărcat în desen (de exemplu, AutoCAD era deschis în timpul instalării),
@@ -133,7 +137,7 @@ Y din AutoCAD = Nord (X Stereo 70). Pentru desenele cu axele inversate bifați *
   - lățimile de segment se interpolează.
 - Punctele aflate la o distanță mai mică decât toleranța (implicit 0.001 m) de un vertex existent sau
   de un alt punct nou sunt ignorate, ca să nu se creeze duplicate.
-- Mesaj final: `S-au procesat X polilinii si s-au adaugat Y vertex-uri noi.`
+- Mesaj final: `S-au procesat X polilinii si s-au adaugat Y vertexi noi.`
 
 Ce nu se procesează: plasele 3D, polifețele, poliliniile netezite (spline/curve-fit) și cele
 neparalele cu planul XY, precum și poliliniile de pe straturi blocate (sunt raportate separat).
@@ -453,7 +457,19 @@ Limitări:
 - Curbele de nivel sunt poligonale (fără netezire).
 - „Harta online” deschide harta în browser; nu inserează în desen imaginile hărților online.
 
-## 6. Plan de înclinare – `INCLINARE`
+## 6. Calcul înclinație – programul Plan Înclinare (`PLANINCL`) și `INCLINARE`
+
+**Programul Plan Înclinare** (cardul „Calcul înclinație” din fereastra TopoKit și din meniul `TOPOKIT`,
+comanda `PLANINCL`, meniul Start → TopoKit → Plan Inclinare) este programul vechi, cu toate funcțiile lui
+neschimbate: drag & drop de fișiere CSV/TXT/PNT/DAT și DWG/DXF (puncte COGO și puncte AutoCAD, citite prin
+AutoCAD Core Console), lipire din clipboard, rânduri pe coduri, previzualizare cu zoom, planșă A4…A0 cu
+cartuș, export DXF și DWG, setări salvate. Se instalează ca `PlanInclinare.exe` (nu are nevoie de Python).
+
+Nou: butonul **„Puncte din AutoCAD…”** – TopoKit trimite comanda `PLANINCLSEL` în desenul deschis,
+selectați punctele (puncte COGO, puncte AutoCAD sau blocuri) și apăsați Enter; programul le preia singur.
+Codul punctului este descrierea (COGO) sau stratul.
+
+Comanda `INCLINARE` desenează același plan direct în desenul curent, fără programul separat:
 
 Planul de verticalitate al unei construcții înalte (siloz, stâlp, coș, turn), portat din programul
 „Plan Inclinare”: același model de calcul și același desen (verificat element cu element).

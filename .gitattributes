@@ -5,3 +5,4 @@
 *.png binary
 *.docx binary
 *.GRD binary
+*.dll binary

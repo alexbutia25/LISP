@@ -13,6 +13,8 @@ IDR_ICON1 + 4 RCDATA "icons/m5.png"
 IDR_ICON1 + 5 RCDATA "icons/m6.png"
 IDR_ICON1 + 6 RCDATA "icons/m7.png"
 IDR_ICON1 + 7 RCDATA "icons/m8.png"
+IDR_ICON1 + 8 RCDATA "icons/m9.png"
+IDR_ICON1 + 9 RCDATA "icons/m10.png"
 CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "topokit.manifest"
 
 VS_VERSION_INFO VERSIONINFO

@@ -1,12 +1,13 @@
 // ===========================================================================
 //  TopoKit.dcl  -  Interfata grafica (DCL) pentru suita TopoKit (AutoLISP)
 //  Instrumente pentru topografie si cadastru:
-//    1. Corectie topologica (vertex-uri la intersectii de polilinii)
-//    2. Export parcela inchisa in KMZ/KML (Stereo 70 -> ETRS89/WGS84)
+//    1. Corectie topologica (vertexi la intersectii de polilinii)
+//    2. Export KMZ (parcela sau tot desenul, TransDatRO) - EXPKMZ, DWGKMZ
 //    3. Inserare format, cadru si indicator la scara (A4 - A0)
 //    4. Generatorul de anexe pentru Ordinul ANCPI nr. 600/2023
 //       (TopoKitAnexe.lsp: PAD, dezlipire/alipire, releveu, documente Word)
 //    5. Modulul de teren (TopoKitTeren.lsp: puncte, TIN, curbe, volume, raster, KML)
+//    6. Calcul inclinatie (TopoKitInclinare.lsp, comanda INCLINARE)
 //
 //  Imaginile (sigla, pictogramele si previzualizarea plansei) sunt desenate
 //  din TopoKit.lsp cu vector_image / fill_image.
@@ -39,29 +40,204 @@ tk_modul : boxed_column {
 }
 
 // ---------------------------------------------------------------------------
-//  Dialogul principal (comenzile TOPOKIT / MYTOPO)
+//  Dialogul principal (comenzile TOPOKIT / MYTOPO): modulele ca in fereastra
+//  TopoKit - carduri cu pictograma colorata, titlu, comanda si descriere.
+//  Clic pe pictograma = modulul. Pictogramele si antetul sunt desenate din
+//  TopoKit.lsp (TK:DrawCardIcon, TK:DrawHeader).
 // ---------------------------------------------------------------------------
+tk_card : boxed_column {
+  label = "";
+  width = 31;
+  fixed_width = true;
+}
+
+tk_ico : image_button {
+  width = 7.5;
+  height = 3.4;
+  fixed_width = true;
+  fixed_height = true;
+  color = -15;
+}
+
 topokit_main : dialog {
   label = "TopoKit - Topografie si Cadastru";
 
-  // ---------------- antet: sigla + titlu ----------------
+  // ---------------- antet: sigla, nume, versiune ----------------
+  : image { key = "img_head"; width = 128; height = 4.6; fixed_height = true; color = -15; }
   : row {
-    : image { key = "img_logo"; width = 9; height = 3.6; fixed_width = true; fixed_height = true; color = -15; }
-    : column {
-      fixed_height = true;
-      : text { label = "TopoKit  -  Instrumente pentru topografie si cadastru"; }
-      : text { label = "Stereo 70  >  ETRS89 / WGS84   |   Formate A4 - A0   |   Corectie topologica"; }
+    : text { key = "tx_titlu"; label = ""; width = 60; }
+    : text { key = "tx_conn"; label = ""; width = 60; alignment = right; }
+  }
+
+  // ---------------- modulele ----------------
+  : text { label = "MODULE  -  clic pe pictograma unui modul pentru a-l deschide"; }
+  : row {
+    fixed_width = true;
+    : tk_card {
+      : row {
+        : tk_ico { key = "bt_setari"; }
+        : column {
+          : text { label = "Setari module"; }
+          : text { label = "TOPOKIT"; }
+        }
+      }
+      : paragraph {
+        : text_part { label = "Optiuni: vertexi, KMZ,"; }
+        : text_part { label = "format si cadru"; }
+      }
+    }
+    : tk_card {
+      : row {
+        : tk_ico { key = "bt_anexe"; }
+        : column {
+          : text { label = "Anexe ANCPI"; }
+          : text { label = "ANEXE"; }
+        }
+      }
+      : paragraph {
+        : text_part { label = "Planuri si documente,"; }
+        : text_part { key = "tx_anexe"; label = ""; width = 30; }
+      }
+    }
+    : tk_card {
+      : row {
+        : tk_ico { key = "bt_teren"; }
+        : column {
+          : text { label = "Teren si volume"; }
+          : text { label = "TOPOTEREN"; }
+        }
+      }
+      : paragraph {
+        : text_part { label = "Puncte, TIN, curbe, volume"; }
+        : text_part { key = "tx_teren"; label = ""; width = 30; }
+      }
+    }
+    : tk_card {
+      : row {
+        : tk_ico { key = "bt_verif"; }
+        : column {
+          : text { label = "Verificare"; }
+          : text { label = "VERIFICARE"; }
+        }
+      }
+      : paragraph {
+        : text_part { label = "Controlul documentatiei"; }
+        : text_part { label = "inainte de predare"; }
+      }
     }
   }
-  : image { key = "img_sep"; height = 0.35; fixed_height = true; color = -15; }
+  : row {
+    fixed_width = true;
+    : tk_card {
+      : row {
+        : tk_ico { key = "bt_pdf"; }
+        : column {
+          : text { label = "Planse PDF"; }
+          : text { label = "PLANEPDF"; }
+        }
+      }
+      : paragraph {
+        : text_part { label = "Plotarea tuturor planselor"; }
+        : text_part { label = "intr-un singur pas"; }
+      }
+    }
+    : tk_card {
+      : row {
+        : tk_ico { key = "bt_kmz"; }
+        : column {
+          : text { label = "Export KMZ"; }
+          : text { label = "EXPKMZ"; }
+        }
+      }
+      : paragraph {
+        : text_part { label = "Parcela in Google Earth"; }
+        : text_part { label = "Stereo 70 > ETRS89"; }
+      }
+    }
+    : tk_card {
+      : row {
+        : tk_ico { key = "bt_dwgkmz"; }
+        : column {
+          : text { label = "DWG > KMZ"; }
+          : text { label = "DWGKMZ"; }
+        }
+      }
+      : paragraph {
+        : text_part { label = "Transformator: tot desenul"; }
+        : text_part { label = "pe straturi, TransDatRO"; }
+      }
+    }
+    : tk_card {
+      : row {
+        : tk_ico { key = "bt_cadru"; }
+        : column {
+          : text { label = "Cadru plansa"; }
+          : text { label = "INSCADRU"; }
+        }
+      }
+      : paragraph {
+        : text_part { label = "Format A4 - A0, cadru,"; }
+        : text_part { label = "caroiaj si indicator"; }
+      }
+    }
+  }
+  : row {
+    fixed_width = true;
+    : tk_card {
+      : row {
+        : tk_ico { key = "bt_addvtx"; }
+        : column {
+          : text { label = "Vertexi"; }
+          : text { label = "ADDVTX"; }
+        }
+      }
+      : paragraph {
+        : text_part { label = "Corectie topologica"; }
+        : text_part { label = "la intersectii"; }
+      }
+    }
+    : tk_card {
+      : row {
+        : tk_ico { key = "bt_incl"; }
+        : column {
+          : text { label = "Calcul inclinatie"; }
+          : text { label = "PLANINCL"; }
+        }
+      }
+      : paragraph {
+        : text_part { label = "Plan Inclinare: DWG/DXF, CSV,"; }
+        : text_part { key = "tx_incl"; label = ""; width = 30; }
+      }
+    }
+    : spacer { width = 64; }
+  }
 
+  : spacer { height = 0.3; }
+  : boxed_row {
+    label = "Stare";
+    : text { key = "tx_status"; label = ""; width = 100; }
+  }
+  : row {
+    : text { label = "Setarile sunt memorate pe durata sesiunii AutoCAD."; }
+    : button { key = "bt_setari2"; label = "Setari module..."; mnemonic = "S"; width = 18; fixed_width = true; }
+    : button { key = "bt_despre"; label = "Despre..."; mnemonic = "D"; width = 13; fixed_width = true; }
+    : button { key = "cancel"; label = "Inchide"; width = 13; fixed_width = true; is_cancel = true; }
+  }
+  errtile;
+}
+
+// ---------------------------------------------------------------------------
+//  Setarile modulelor 1-3 (butonul "Setari module..." din meniul principal)
+// ---------------------------------------------------------------------------
+topokit_setari : dialog {
+  label = "TopoKit - Setari module";
   : row {
     // ---------------- 1. Corectie topologica ----------------
     : tk_modul {
       label = " 1   Corectie Topologica ";
       : tk_icon { key = "img_topo"; }
       : paragraph {
-        : text_part { label = "Adauga vertex-uri la intersectiile si"; }
+        : text_part { label = "Adauga vertexi la intersectiile si"; }
         : text_part { label = "contactele poliliniilor selectate."; }
         : text_part { label = "Cotele Z si arcele raman neschimbate."; }
       }
@@ -99,8 +275,9 @@ topokit_main : dialog {
         : toggle { key = "tg_ge";     label = "Deschide in Google Earth Pro"; }
       }
       : spacer { height = 0.3; }
-      : tk_action { key = "bt_kmz"; label = "Export KMZ"; mnemonic = "E"; }
-      : text { label = "Comanda directa: EXPKMZ"; alignment = centered; }
+      : tk_action { key = "bt_kmz"; label = "Export KMZ parcela"; mnemonic = "E"; }
+      : tk_action { key = "bt_dwgkmz"; label = "Transformator DWG > KMZ"; mnemonic = "W"; }
+      : text { label = "Comenzi directe: EXPKMZ, DWGKMZ"; alignment = centered; }
     }
 
     // ---------------- 3. Format si cadru ----------------
@@ -129,46 +306,11 @@ topokit_main : dialog {
       : text { label = "Comanda directa: INSCADRU"; alignment = centered; }
     }
   }
-
-  // ---------------- 4. Anexe Ordinul ANCPI 600/2023 ----------------
   : spacer { height = 0.3; }
-  : boxed_row {
-    label = " 4   Anexe - Ordinul ANCPI nr. 600/2023 ";
-    : paragraph {
-      : text_part { label = "Planuri in layout-uri: PAD (anexa 16), dezlipire / alipire (anexa 17), releveu (anexa 18)."; }
-      : text_part { label = "Documente Word completate: cereri, declaratie, memoriu tehnic, PV de vecinatate, foaia colectiva."; }
-      : text_part { key = "tx_anexe"; label = ""; width = 90; }
-    }
-    : column {
-      : tk_action { key = "bt_anexe"; label = "Generator anexe..."; mnemonic = "A"; }
-      : text { label = "Comanda directa: ANEXE"; alignment = centered; }
-    }
-  }
-
-  // ---------------- 5. Teren: puncte, model 3D, curbe, volume ----------------
-  : spacer { height = 0.3; }
-  : boxed_row {
-    label = " 5   Teren - puncte masurate, model 3D, curbe de nivel, volume ";
-    : paragraph {
-      : text_part { label = "Import puncte cu desenare pe coduri, tabele de coordonate, legenda semnelor conventionale."; }
-      : text_part { label = "Model TIN, curbe de nivel, volume, raster georeferentiat, import KML/KMZ, harta online."; }
-      : text_part { key = "tx_teren"; label = ""; width = 90; }
-    }
-    : column {
-      : tk_action { key = "bt_teren"; label = "Modul teren..."; mnemonic = "T"; }
-      : text { label = "Comanda directa: TOPOTEREN"; alignment = centered; }
-    }
-  }
-
-  : spacer { height = 0.3; }
-  : boxed_row {
-    label = "Stare";
-    : text { key = "tx_status"; label = ""; width = 100; }
-  }
   : row {
     : text { label = "Setarile sunt memorate pe durata sesiunii AutoCAD."; }
-    : button { key = "bt_despre"; label = "Despre..."; mnemonic = "D"; width = 13; fixed_width = true; }
-    : button { key = "cancel"; label = "Inchide"; width = 13; fixed_width = true; is_cancel = true; }
+    : button { key = "accept"; label = "OK"; width = 13; fixed_width = true; is_default = true; }
+    : button { key = "cancel"; label = "Renunta"; width = 13; fixed_width = true; is_cancel = true; }
   }
   errtile;
 }

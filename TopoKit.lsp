@@ -615,7 +615,7 @@
       (if (> nlock 0)
         (princ (strcat "\n" (itoa nlock) " polilinii nu au putut fi modificate (strat blocat).")))
       (princ (strcat "\nS-au procesat " (itoa nsel) " polilinii si s-au adaugat "
-                     (itoa nadd) " vertex-uri noi."
+                     (itoa nadd) " vertexi noi."
                      (if (> nmod 0) (strcat " (" (itoa nmod) " polilinii modificate)") ""))))
     (princ "\nNu a fost selectata nicio polilinie."))
   (TK:Stop)
@@ -1578,7 +1578,7 @@
         area (vlax-curve-getArea e)
         per  (vlax-curve-getDistAtParam e (vlax-curve-getEndParam e)))
   (cond
-    ((< (length vtx) 3) (princ "\nPolilinia are mai putin de 3 vertex-uri distincte."))
+    ((< (length vtx) 3) (princ "\nPolilinia are mai putin de 3 vertexi distincti."))
     ((not (TK:CheckDomain vtx)) (princ "\nExport anulat."))
     (T
      (TK:TransStart)
@@ -1646,6 +1646,37 @@
                         "\nTransformare: " (TK:MethodText)))
          (if (= *TK:OPENGE* "1") (TK:OpenGE file))))
      (TK:TransClose))))
+
+;; TK:LayerOn - T dacă stratul LAY este pornit și nu este înghețat
+(defun TK:LayerOn (lay / ld)
+  (and (setq ld (tblsearch "LAYER" lay))
+       (> (cond ((cdr (assoc 62 ld))) (1)) 0)
+       (= 0 (logand 1 (cond ((cdr (assoc 70 ld))) (0))))))
+
+;; TK:DrawingSet - toate obiectele exportabile din spațiul model, de pe
+;; straturile vizibile (set de selecție sau nil)
+(defun TK:DrawingSet (/ ss out i e)
+  (if (setq ss (ssget "_X" '((0 . "LWPOLYLINE,POLYLINE,LINE,ARC,CIRCLE,ELLIPSE,SPLINE,POINT,INSERT,TEXT,MTEXT,AECC_COGO_POINT")
+                             (410 . "Model"))))
+    (progn
+      (setq out (ssadd) i 0)
+      (repeat (sslength ss)
+        (setq e (ssname ss i) i (1+ i))
+        (if (TK:LayerOn (cdr (assoc 8 (entget e)))) (ssadd e out)))
+      (if (> (sslength out) 0) out))))
+
+;; C:DWGKMZ - transformatorul DWG -> KMZ: tot desenul (Enter) sau obiectele
+;; selectate, cu TransDatRO, grupate pe categorii și straturi
+(defun c:DWGKMZ (/ *error* ss)
+  (defun *error* (msg) (TK:Error msg))
+  (TK:Start)
+  (princ "\nTransformator DWG -> KMZ (Stereo 70 -> ETRS89 TransDatRO).")
+  (princ "\nSelectati obiectele de transformat sau Enter pentru tot desenul (straturile vizibile): ")
+  (if (setq ss (cond ((ssget '((0 . "LWPOLYLINE,POLYLINE,LINE,ARC,CIRCLE,ELLIPSE,SPLINE,POINT,INSERT,TEXT,MTEXT,AECC_COGO_POINT")))) ((TK:DrawingSet))))
+    (TK:ExpMulti ss)
+    (princ "\nDesenul nu contine obiecte exportabile."))
+  (TK:Stop)
+  (princ))
 
 ;; C:EXPKMZ - exportă în KMZ/KML pentru Google Earth, cu transformarea
 ;; Stereo 70 -> ETRS89 TransDatRO: o parcelă (o polilinie închisă) sau
@@ -1830,12 +1861,13 @@
     "// ==========================================================================="
     "//  TopoKit.dcl  -  Interfata grafica (DCL) pentru suita TopoKit (AutoLISP)"
     "//  Instrumente pentru topografie si cadastru:"
-    "//    1. Corectie topologica (vertex-uri la intersectii de polilinii)"
-    "//    2. Export parcela inchisa in KMZ/KML (Stereo 70 -> ETRS89/WGS84)"
+    "//    1. Corectie topologica (vertexi la intersectii de polilinii)"
+    "//    2. Export KMZ (parcela sau tot desenul, TransDatRO) - EXPKMZ, DWGKMZ"
     "//    3. Inserare format, cadru si indicator la scara (A4 - A0)"
     "//    4. Generatorul de anexe pentru Ordinul ANCPI nr. 600/2023"
     "//       (TopoKitAnexe.lsp: PAD, dezlipire/alipire, releveu, documente Word)"
     "//    5. Modulul de teren (TopoKitTeren.lsp: puncte, TIN, curbe, volume, raster, KML)"
+    "//    6. Calcul inclinatie (TopoKitInclinare.lsp, comanda INCLINARE)"
     "//"
     "//  Imaginile (sigla, pictogramele si previzualizarea plansei) sunt desenate"
     "//  din TopoKit.lsp cu vector_image / fill_image."
@@ -1868,29 +1900,204 @@
     "}"
     ""
     "// ---------------------------------------------------------------------------"
-    "//  Dialogul principal (comenzile TOPOKIT / MYTOPO)"
+    "//  Dialogul principal (comenzile TOPOKIT / MYTOPO): modulele ca in fereastra"
+    "//  TopoKit - carduri cu pictograma colorata, titlu, comanda si descriere."
+    "//  Clic pe pictograma = modulul. Pictogramele si antetul sunt desenate din"
+    "//  TopoKit.lsp (TK:DrawCardIcon, TK:DrawHeader)."
     "// ---------------------------------------------------------------------------"
+    "tk_card : boxed_column {"
+    "  label = \"\";"
+    "  width = 31;"
+    "  fixed_width = true;"
+    "}"
+    ""
+    "tk_ico : image_button {"
+    "  width = 7.5;"
+    "  height = 3.4;"
+    "  fixed_width = true;"
+    "  fixed_height = true;"
+    "  color = -15;"
+    "}"
+    ""
     "topokit_main : dialog {"
     "  label = \"TopoKit - Topografie si Cadastru\";"
     ""
-    "  // ---------------- antet: sigla + titlu ----------------"
+    "  // ---------------- antet: sigla, nume, versiune ----------------"
+    "  : image { key = \"img_head\"; width = 128; height = 4.6; fixed_height = true; color = -15; }"
     "  : row {"
-    "    : image { key = \"img_logo\"; width = 9; height = 3.6; fixed_width = true; fixed_height = true; color = -15; }"
-    "    : column {"
-    "      fixed_height = true;"
-    "      : text { label = \"TopoKit  -  Instrumente pentru topografie si cadastru\"; }"
-    "      : text { label = \"Stereo 70  >  ETRS89 / WGS84   |   Formate A4 - A0   |   Corectie topologica\"; }"
+    "    : text { key = \"tx_titlu\"; label = \"\"; width = 60; }"
+    "    : text { key = \"tx_conn\"; label = \"\"; width = 60; alignment = right; }"
+    "  }"
+    ""
+    "  // ---------------- modulele ----------------"
+    "  : text { label = \"MODULE  -  clic pe pictograma unui modul pentru a-l deschide\"; }"
+    "  : row {"
+    "    fixed_width = true;"
+    "    : tk_card {"
+    "      : row {"
+    "        : tk_ico { key = \"bt_setari\"; }"
+    "        : column {"
+    "          : text { label = \"Setari module\"; }"
+    "          : text { label = \"TOPOKIT\"; }"
+    "        }"
+    "      }"
+    "      : paragraph {"
+    "        : text_part { label = \"Optiuni: vertexi, KMZ,\"; }"
+    "        : text_part { label = \"format si cadru\"; }"
+    "      }"
+    "    }"
+    "    : tk_card {"
+    "      : row {"
+    "        : tk_ico { key = \"bt_anexe\"; }"
+    "        : column {"
+    "          : text { label = \"Anexe ANCPI\"; }"
+    "          : text { label = \"ANEXE\"; }"
+    "        }"
+    "      }"
+    "      : paragraph {"
+    "        : text_part { label = \"Planuri si documente,\"; }"
+    "        : text_part { key = \"tx_anexe\"; label = \"\"; width = 30; }"
+    "      }"
+    "    }"
+    "    : tk_card {"
+    "      : row {"
+    "        : tk_ico { key = \"bt_teren\"; }"
+    "        : column {"
+    "          : text { label = \"Teren si volume\"; }"
+    "          : text { label = \"TOPOTEREN\"; }"
+    "        }"
+    "      }"
+    "      : paragraph {"
+    "        : text_part { label = \"Puncte, TIN, curbe, volume\"; }"
+    "        : text_part { key = \"tx_teren\"; label = \"\"; width = 30; }"
+    "      }"
+    "    }"
+    "    : tk_card {"
+    "      : row {"
+    "        : tk_ico { key = \"bt_verif\"; }"
+    "        : column {"
+    "          : text { label = \"Verificare\"; }"
+    "          : text { label = \"VERIFICARE\"; }"
+    "        }"
+    "      }"
+    "      : paragraph {"
+    "        : text_part { label = \"Controlul documentatiei\"; }"
+    "        : text_part { label = \"inainte de predare\"; }"
+    "      }"
     "    }"
     "  }"
-    "  : image { key = \"img_sep\"; height = 0.35; fixed_height = true; color = -15; }"
+    "  : row {"
+    "    fixed_width = true;"
+    "    : tk_card {"
+    "      : row {"
+    "        : tk_ico { key = \"bt_pdf\"; }"
+    "        : column {"
+    "          : text { label = \"Planse PDF\"; }"
+    "          : text { label = \"PLANEPDF\"; }"
+    "        }"
+    "      }"
+    "      : paragraph {"
+    "        : text_part { label = \"Plotarea tuturor planselor\"; }"
+    "        : text_part { label = \"intr-un singur pas\"; }"
+    "      }"
+    "    }"
+    "    : tk_card {"
+    "      : row {"
+    "        : tk_ico { key = \"bt_kmz\"; }"
+    "        : column {"
+    "          : text { label = \"Export KMZ\"; }"
+    "          : text { label = \"EXPKMZ\"; }"
+    "        }"
+    "      }"
+    "      : paragraph {"
+    "        : text_part { label = \"Parcela in Google Earth\"; }"
+    "        : text_part { label = \"Stereo 70 > ETRS89\"; }"
+    "      }"
+    "    }"
+    "    : tk_card {"
+    "      : row {"
+    "        : tk_ico { key = \"bt_dwgkmz\"; }"
+    "        : column {"
+    "          : text { label = \"DWG > KMZ\"; }"
+    "          : text { label = \"DWGKMZ\"; }"
+    "        }"
+    "      }"
+    "      : paragraph {"
+    "        : text_part { label = \"Transformator: tot desenul\"; }"
+    "        : text_part { label = \"pe straturi, TransDatRO\"; }"
+    "      }"
+    "    }"
+    "    : tk_card {"
+    "      : row {"
+    "        : tk_ico { key = \"bt_cadru\"; }"
+    "        : column {"
+    "          : text { label = \"Cadru plansa\"; }"
+    "          : text { label = \"INSCADRU\"; }"
+    "        }"
+    "      }"
+    "      : paragraph {"
+    "        : text_part { label = \"Format A4 - A0, cadru,\"; }"
+    "        : text_part { label = \"caroiaj si indicator\"; }"
+    "      }"
+    "    }"
+    "  }"
+    "  : row {"
+    "    fixed_width = true;"
+    "    : tk_card {"
+    "      : row {"
+    "        : tk_ico { key = \"bt_addvtx\"; }"
+    "        : column {"
+    "          : text { label = \"Vertexi\"; }"
+    "          : text { label = \"ADDVTX\"; }"
+    "        }"
+    "      }"
+    "      : paragraph {"
+    "        : text_part { label = \"Corectie topologica\"; }"
+    "        : text_part { label = \"la intersectii\"; }"
+    "      }"
+    "    }"
+    "    : tk_card {"
+    "      : row {"
+    "        : tk_ico { key = \"bt_incl\"; }"
+    "        : column {"
+    "          : text { label = \"Calcul inclinatie\"; }"
+    "          : text { label = \"PLANINCL\"; }"
+    "        }"
+    "      }"
+    "      : paragraph {"
+    "        : text_part { label = \"Plan Inclinare: DWG/DXF, CSV,\"; }"
+    "        : text_part { key = \"tx_incl\"; label = \"\"; width = 30; }"
+    "      }"
+    "    }"
+    "    : spacer { width = 64; }"
+    "  }"
     ""
+    "  : spacer { height = 0.3; }"
+    "  : boxed_row {"
+    "    label = \"Stare\";"
+    "    : text { key = \"tx_status\"; label = \"\"; width = 100; }"
+    "  }"
+    "  : row {"
+    "    : text { label = \"Setarile sunt memorate pe durata sesiunii AutoCAD.\"; }"
+    "    : button { key = \"bt_setari2\"; label = \"Setari module...\"; mnemonic = \"S\"; width = 18; fixed_width = true; }"
+    "    : button { key = \"bt_despre\"; label = \"Despre...\"; mnemonic = \"D\"; width = 13; fixed_width = true; }"
+    "    : button { key = \"cancel\"; label = \"Inchide\"; width = 13; fixed_width = true; is_cancel = true; }"
+    "  }"
+    "  errtile;"
+    "}"
+    ""
+    "// ---------------------------------------------------------------------------"
+    "//  Setarile modulelor 1-3 (butonul \"Setari module...\" din meniul principal)"
+    "// ---------------------------------------------------------------------------"
+    "topokit_setari : dialog {"
+    "  label = \"TopoKit - Setari module\";"
     "  : row {"
     "    // ---------------- 1. Corectie topologica ----------------"
     "    : tk_modul {"
     "      label = \" 1   Corectie Topologica \";"
     "      : tk_icon { key = \"img_topo\"; }"
     "      : paragraph {"
-    "        : text_part { label = \"Adauga vertex-uri la intersectiile si\"; }"
+    "        : text_part { label = \"Adauga vertexi la intersectiile si\"; }"
     "        : text_part { label = \"contactele poliliniilor selectate.\"; }"
     "        : text_part { label = \"Cotele Z si arcele raman neschimbate.\"; }"
     "      }"
@@ -1928,8 +2135,9 @@
     "        : toggle { key = \"tg_ge\";     label = \"Deschide in Google Earth Pro\"; }"
     "      }"
     "      : spacer { height = 0.3; }"
-    "      : tk_action { key = \"bt_kmz\"; label = \"Export KMZ\"; mnemonic = \"E\"; }"
-    "      : text { label = \"Comanda directa: EXPKMZ\"; alignment = centered; }"
+    "      : tk_action { key = \"bt_kmz\"; label = \"Export KMZ parcela\"; mnemonic = \"E\"; }"
+    "      : tk_action { key = \"bt_dwgkmz\"; label = \"Transformator DWG > KMZ\"; mnemonic = \"W\"; }"
+    "      : text { label = \"Comenzi directe: EXPKMZ, DWGKMZ\"; alignment = centered; }"
     "    }"
     ""
     "    // ---------------- 3. Format si cadru ----------------"
@@ -1958,46 +2166,11 @@
     "      : text { label = \"Comanda directa: INSCADRU\"; alignment = centered; }"
     "    }"
     "  }"
-    ""
-    "  // ---------------- 4. Anexe Ordinul ANCPI 600/2023 ----------------"
     "  : spacer { height = 0.3; }"
-    "  : boxed_row {"
-    "    label = \" 4   Anexe - Ordinul ANCPI nr. 600/2023 \";"
-    "    : paragraph {"
-    "      : text_part { label = \"Planuri in layout-uri: PAD (anexa 16), dezlipire / alipire (anexa 17), releveu (anexa 18).\"; }"
-    "      : text_part { label = \"Documente Word completate: cereri, declaratie, memoriu tehnic, PV de vecinatate, foaia colectiva.\"; }"
-    "      : text_part { key = \"tx_anexe\"; label = \"\"; width = 90; }"
-    "    }"
-    "    : column {"
-    "      : tk_action { key = \"bt_anexe\"; label = \"Generator anexe...\"; mnemonic = \"A\"; }"
-    "      : text { label = \"Comanda directa: ANEXE\"; alignment = centered; }"
-    "    }"
-    "  }"
-    ""
-    "  // ---------------- 5. Teren: puncte, model 3D, curbe, volume ----------------"
-    "  : spacer { height = 0.3; }"
-    "  : boxed_row {"
-    "    label = \" 5   Teren - puncte masurate, model 3D, curbe de nivel, volume \";"
-    "    : paragraph {"
-    "      : text_part { label = \"Import puncte cu desenare pe coduri, tabele de coordonate, legenda semnelor conventionale.\"; }"
-    "      : text_part { label = \"Model TIN, curbe de nivel, volume, raster georeferentiat, import KML/KMZ, harta online.\"; }"
-    "      : text_part { key = \"tx_teren\"; label = \"\"; width = 90; }"
-    "    }"
-    "    : column {"
-    "      : tk_action { key = \"bt_teren\"; label = \"Modul teren...\"; mnemonic = \"T\"; }"
-    "      : text { label = \"Comanda directa: TOPOTEREN\"; alignment = centered; }"
-    "    }"
-    "  }"
-    ""
-    "  : spacer { height = 0.3; }"
-    "  : boxed_row {"
-    "    label = \"Stare\";"
-    "    : text { key = \"tx_status\"; label = \"\"; width = 100; }"
-    "  }"
     "  : row {"
     "    : text { label = \"Setarile sunt memorate pe durata sesiunii AutoCAD.\"; }"
-    "    : button { key = \"bt_despre\"; label = \"Despre...\"; mnemonic = \"D\"; width = 13; fixed_width = true; }"
-    "    : button { key = \"cancel\"; label = \"Inchide\"; width = 13; fixed_width = true; is_cancel = true; }"
+    "    : button { key = \"accept\"; label = \"OK\"; width = 13; fixed_width = true; is_default = true; }"
+    "    : button { key = \"cancel\"; label = \"Renunta\"; width = 13; fixed_width = true; is_cancel = true; }"
     "  }"
     "  errtile;"
     "}"
@@ -2235,20 +2408,19 @@
   (TK:IBox (- x2 180.0) y1 x2 (+ y1 50.0) 250 1)
   (TK:ImgEnd))
 
-;; TK:UpdStatus - bara de stare a dialogului principal
-(defun TK:UpdStatus (/ fm sc)
+;; TK:UpdStatus - bara de stare a meniului principal (din setările memorate)
+(defun TK:UpdStatus (/ fm)
   (if *TK:DLGMAIN*
     (progn
-      (setq fm (nth (atoi (get_tile "pl_format")) *TK:FORMATE*)
-            sc (nth (atoi (get_tile "pl_scara")) *TK:SCARI*))
+      (setq fm (nth *TK:FORMAT* *TK:FORMATE*))
       (set_tile "tx_status"
-        (strcat "Toleranta: " (get_tile "eb_tol") " m     |     Transformare: "
-                (cond ((/= (get_tile "tg_grid") "1") "Helmert 7p (~0.3-1.5 m)")
+        (strcat "Toleranta: " (rtos *TK:TOL* 2 4) " m   |   Transformare: "
+                (cond ((/= *TK:USEGRID* "1") "Helmert 7p (~0.3-1.5 m)")
                       ((TK:TdFind) "TransDatRO ANCPI (~1 mm)")
                       ((TK:GridFind) "grila NTv2 ANCPI (~1 cm)")
                       (T "grila LIPSA -> Helmert 7p (~0.3-1.5 m)"))
-                "     |     Plansa: " (car fm) (if (= (get_tile "rr_orient") "rb_port") " Portrait" " Landscape")
-                " 1:" (itoa sc))))))
+                "   |   Plansa: " (car fm) (if (= *TK:ORIENT* "P") " Portrait" " Landscape")
+                " 1:" (itoa (nth *TK:SCARA* *TK:SCARI*)))))))
 
 ;; TK:UpdDim - actualizează dimensiunile formatului, previzualizarea
 ;; planșei și bara de stare după orice modificare a opțiunilor de format
@@ -2315,8 +2487,9 @@
 (defun TK:About ()
   (alert (strcat "TopoKit " *TK:VERSION* " - instrumente AutoLISP pentru topografie si cadastru\n\n"
                  "TOPOKIT / MYTOPO - meniul principal\n"
-                 "ADDVTX    - vertex-uri la intersectiile poliliniilor\n"
+                 "ADDVTX    - vertexi la intersectiile poliliniilor\n"
                  "EXPKMZ    - export KMZ: parcela sau obiecte pe straturi\n"
+                 "DWGKMZ    - transformator DWG -> KMZ (tot desenul)\n"
                  "INSCADRU  - format A4..A0, cadru si indicator la scara\n"
                  "ANEXE     - anexe Ordin ANCPI 600/2023\n"
                  "TOPOTEREN - puncte, TIN, curbe de nivel, volume\n"
@@ -2349,17 +2522,124 @@
      (unload_dialog id)
      (= res 1))))
 
-;; C:TOPOKIT - meniul principal (GUI) cu cele trei module
-(defun c:TOPOKIT (/ id res)
-  (setq id (load_dialog (TK:DclPath)))
+;;; --------------------------------------------------------------------------
+;;;  Meniul principal în stilul ferestrei TopoKit: antet albastru cu sigla și
+;;;  numele, carduri cu pictograme colorate (aceleași culori și simboluri)
+;;; --------------------------------------------------------------------------
+
+;; Cardurile: (cheie culoareACI simbol codRezultat)
+(setq *TK:CARDS* '(("bt_setari" 154 menu 10) ("bt_anexe" 194 doc 4) ("bt_teren" 104 tin 5)
+                   ("bt_verif" 42 check 8) ("bt_pdf" 12 pdf 9) ("bt_kmz" 142 globe 2)
+                   ("bt_dwgkmz" 124 dwgkmz 6) ("bt_cadru" 162 frame 3) ("bt_addvtx" 212 vertex 1)
+                   ("bt_incl" 30 incl 7)))
+
+;; TK:Glyph - liniile literelor (spațiu 6 x 10, Y în sus) pentru numele din antet
+(setq *TK:GLYPHS*
+       '(("T" ((0 10 6 10) (3 10 3 0)))
+         ("o" ((0 0 0 6 5 6 5 0 0 0)))
+         ("p" ((0 -3 0 6 5 6 5 0 0 0)))
+         ("K" ((0 0 0 10) (5 10 0 4) (1.5 5.5 5 0)))
+         ("i" ((2.5 0 2.5 6) (2.5 8 2.5 9)))
+         ("t" ((2.5 9 2.5 0 4.5 0) (0.5 6 4.5 6)))))
+
+;; TK:IText - textul S (litere din *TK:GLYPHS*) cu colțul (X,Y), înălțimea H
+(defun TK:IText (s x y h c / k g)
+  (setq k (/ h 10.0))
+  (foreach ch (vl-string->list s)
+    (if (setq g (cadr (assoc (chr ch) *TK:GLYPHS*)))
+      (foreach l g
+        (TK:IPoly (TK:Pairs l x y k) c nil 2)))
+    (setq x (+ x (* 7.5 k)))))
+
+;; TK:Pairs - lista (x1 y1 x2 y2 ...) -> puncte, scalate cu K și mutate în (X,Y)
+(defun TK:Pairs (l x y k / out)
+  (while l
+    (setq out (cons (list (+ x (* k (car l))) (+ y (* k (cadr l)))) out) l (cddr l)))
+  (reverse out))
+
+;; TK:IArc - elipsă decupată la dreptunghiul 0..W x 0..H (doar segmentele interioare)
+(defun TK:IArc (cx cy rx ry c w h / k a b in)
+  (defun TK:In_ (p) (and (<= 0 (car p) w) (<= 0 (cadr p) h)))
+  (setq k 0)
+  (repeat 72
+    (setq a (list (+ cx (* rx (cos (* k (/ pi 36.0))))) (+ cy (* ry (sin (* k (/ pi 36.0))))))
+          b (list (+ cx (* rx (cos (* (1+ k) (/ pi 36.0))))) (+ cy (* ry (sin (* (1+ k) (/ pi 36.0)))))))
+    (if (and (TK:In_ a) (TK:In_ b)) (TK:ILine (car a) (cadr a) (car b) (cadr b) c 1))
+    (setq k (1+ k))))
+
+;; TK:DrawHeader - antetul: bandă albastră cu curbe de nivel, sigla și "TopoKit"
+(defun TK:DrawHeader (key / w)
+  ;; lățimea logică după proporția dalei: banda umple toată lățimea dialogului
+  (setq w (max 120.0 (* 36.0 (/ (float (dimx_tile key)) (max 1 (dimy_tile key))))))
+  (TK:ImgBegin key w 36)
+  (TK:IRect 0 0 w 36 154)
+  ;; curbe de nivel decorative (dreapta)
+  (foreach r '(10 18 26 34 42)
+    (TK:IArc (- w 44) 6 (* 1.6 r) r 152 w 36))
+  (TK:IArc (- w 130) 40 40 14 152 w 36)
+  ;; sigla: pătrat albastru închis, curbe de nivel albe, triunghi roșu
+  (TK:IRect 6 4 34 32 156)
+  (TK:IEllipse 20 18 10 7 255 1)
+  (TK:IEllipse 20 18 5 3.5 255 1)
+  (TK:IRect 17 15 23 21 1)
+  ;; numele
+  (TK:IText "TopoKit" 44 11 15 255)
+  (TK:ImgEnd))
+
+;; TK:DrawCardIcon - pictograma cardului: pătrat colorat C cu simbolul alb SYM
+(defun TK:DrawCardIcon (key c sym / w k)
+  (setq w 255)
+  (TK:ImgBegin key 40 40)
+  (TK:IRect 2 2 38 38 c)
   (cond
-    ((< id 0) (alert "Nu s-a putut incarca fisierul TopoKit.dcl."))
-    ((not (new_dialog "topokit_main" id)) (unload_dialog id) (alert "Dialogul topokit_main lipseste."))
+    ((= sym 'menu)
+     (TK:IEllipse 20 19 11 8 w 2) (TK:IEllipse 20 19 5 3.5 w 1)
+     (TK:IPoly '((20 23) (24 16) (16 16)) w T 2))
+    ((= sym 'doc)
+     (TK:IBox 12 8 27 32 w 2)
+     (foreach y '(26 21 16) (TK:ILine 15 y 24 y w 1))
+     (TK:IEllipse 27 10 4 4 w 2))
+    ((= sym 'tin)
+     (setq k '((9 9) (17 30) (28 24) (32 10) (20 16)))
+     (foreach s '((0 1) (1 2) (2 3) (3 0) (0 4) (1 4) (2 4) (3 4))
+       (TK:ILine (car (nth (car s) k)) (cadr (nth (car s) k)) (car (nth (cadr s) k)) (cadr (nth (cadr s) k)) w 1))
+     (foreach p k (TK:IDot (car p) (cadr p) 1 w)))
+    ((= sym 'check)
+     (TK:IPoly '((20 33) (31 28) (30 16) (20 7) (10 16) (9 28)) w T 2)
+     (TK:IPoly '((14 20) (18 15) (26 25)) w nil 2))
+    ((= sym 'pdf)
+     (TK:IPoly '((12 7) (28 7) (28 27) (23 33) (12 33)) w T 2)
+     (TK:IPoly '((23 33) (23 27) (28 27)) w nil 1)
+     (foreach y '(21 16 11) (TK:ILine 15 y 25 y w 1)))
+    ((= sym 'globe)
+     (TK:IEllipse 18 18 10 10 w 2) (TK:IEllipse 18 18 4 10 w 1) (TK:ILine 8 18 28 18 w 1)
+     (TK:IEllipse 29 30 4 4 w 2) (TK:ILine 29 26 29 22 w 2))
+    ((= sym 'dwgkmz)
+     (TK:IBox 6 10 17 30 w 2) (TK:IPoly '((8 14) (11 24) (15 18)) w nil 1)
+     (TK:ILine 19 20 24 20 w 2) (TK:IPoly '((22 23) (25 20) (22 17)) w nil 1)
+     (TK:IEllipse 30 20 6 6 w 2) (TK:IEllipse 30 20 2.5 6 w 1) (TK:ILine 24 20 36 20 w 1))
+    ((= sym 'frame)
+     (TK:IBox 8 10 32 30 w 2) (TK:IBox 11 13 29 27 w 1) (TK:IRect 21 13 29 18 w))
+    ((= sym 'vertex)
+     (TK:IPoly '((7 11) (15 27) (24 15) (33 29)) w nil 2)
+     (foreach p '((7 11) (15 27) (24 15) (33 29)) (TK:IDot (car p) (cadr p) 2 w)))
+    ((= sym 'incl)
+     (TK:ILine 13 6 13 34 w 1) (TK:ILine 9 7 33 7 w 2)
+     (TK:IPoly '((15 8) (22 8) (28 31) (21 31)) w T 2)
+     (TK:IPoly '((21 31) (24.5 35) (28 31)) w nil 1)
+     (TK:ILine 13 16 17 16 w 1) (TK:ILine 13 24 19 24 w 1)))
+  (TK:ImgEnd))
+
+;; TK:SetariDialog - setările modulelor 1-3 (dialog peste meniul principal).
+;; Returnează codul modulului ales din dialog (1 2 3 6) sau nil.
+(defun TK:SetariDialog (/ id res main)
+  (setq id (load_dialog (TK:DclPath)) main *TK:DLGMAIN* *TK:DLGMAIN* nil)
+  (cond
+    ((< id 0) (alert "Nu s-a putut incarca fisierul TopoKit.dcl.") nil)
+    ((not (new_dialog "topokit_setari" id)) (unload_dialog id) (alert "Dialogul topokit_setari lipseste.") nil)
     (T
-     ;; modulul 1
      (set_tile "tg_contact" *TK:CONTACT*)
      (set_tile "eb_tol" (rtos *TK:TOL* 2 4))
-     ;; modulul 2
      (set_tile "eb_nume" *TK:NUME*)
      (set_tile "rr_kmz" (if (= *TK:KMZ* "1") "rb_kmz" "rb_kml"))
      (set_tile "tg_puncte" *TK:PUNCTE*)
@@ -2369,25 +2649,44 @@
      (set_tile "tx_grid" (cond ((TK:TdFind) "Grila TransDatRO gasita: precizie ~1 mm")
                                ((TK:GridFind) "Grila NTv2 gasita: precizie ~1 cm")
                                ("Grila TransDatRO lipsa: precizie ~1 m")))
-     ;; imagini
-     (TK:DrawLogo "img_logo")
-     (TK:DrawSep "img_sep")
      (TK:DrawTopoIcon "img_topo")
      (TK:DrawKmzIcon "img_kmz")
-     ;; modulul 3 (inclusiv previzualizarea planșei) și bara de stare
-     (setq *TK:DLGMAIN* T)
      (TK:InitCadruTiles)
-     (foreach k '("eb_tol" "tg_grid") (action_tile k "(TK:UpdStatus)"))
-     ;; butoane
-     (action_tile "bt_addvtx" "(if (TK:MainSave) (done_dialog 1))")
-     (action_tile "bt_kmz"    "(if (TK:MainSave) (done_dialog 2))")
-     (action_tile "bt_cadru"  "(if (TK:MainSave) (done_dialog 3))")
-     (action_tile "bt_anexe"  "(if (TK:MainSave) (done_dialog 4))")
-     (action_tile "bt_teren"  "(if (TK:MainSave) (done_dialog 5))")
-     (set_tile "tx_teren" (if TKT:Menu "Modulul de teren este incarcat (TopoKitTeren.lsp)."
-                            "TopoKitTeren.lsp nu este incarcat (APPLOAD sau calea de suport)."))
-     (set_tile "tx_anexe" (if TKA:Generate "Generatorul de anexe este incarcat (TopoKitAnexe.lsp)."
-                            "TopoKitAnexe.lsp nu este incarcat (APPLOAD sau calea de suport)."))
+     (action_tile "bt_addvtx" "(if (TK:MainSave) (done_dialog 11))")
+     (action_tile "bt_kmz"    "(if (TK:MainSave) (done_dialog 12))")
+     (action_tile "bt_cadru"  "(if (TK:MainSave) (done_dialog 13))")
+     (action_tile "bt_dwgkmz" "(if (TK:MainSave) (done_dialog 16))")
+     (action_tile "accept"    "(if (TK:MainSave) (done_dialog 1))")
+     (action_tile "cancel"    "(done_dialog 0)")
+     (setq res (start_dialog))
+     (unload_dialog id)
+     (setq *TK:DLGMAIN* main)
+     (if (> res 10) (- res 10)))))
+
+;; TK:MainSetari - butonul "Setari module..." din meniul principal
+(defun TK:MainSetari (/ r)
+  (if (setq r (TK:SetariDialog)) (done_dialog r) (TK:UpdStatus)))
+
+;; C:TOPOKIT - meniul principal (carduri cu toate modulele)
+(defun c:TOPOKIT (/ id res)
+  (setq id (load_dialog (TK:DclPath)))
+  (cond
+    ((< id 0) (alert "Nu s-a putut incarca fisierul TopoKit.dcl."))
+    ((not (new_dialog "topokit_main" id)) (unload_dialog id) (alert "Dialogul topokit_main lipseste."))
+    (T
+     (setq *TK:DLGMAIN* T)
+     (TK:DrawHeader "img_head")
+     (set_tile "tx_titlu" (strcat "TopoKit " *TK:VERSION* "  -  Topografie si cadastru pentru AutoCAD"))
+     (set_tile "tx_conn" (strcat "Desen activ: " (getvar "DWGNAME")))
+     (foreach c *TK:CARDS*
+       (TK:DrawCardIcon (car c) (cadr c) (caddr c))
+       (action_tile (car c) (strcat "(done_dialog " (itoa (cadddr c)) ")")))
+     (action_tile "bt_setari"  "(TK:MainSetari)")
+     (action_tile "bt_setari2" "(TK:MainSetari)")
+     (set_tile "tx_anexe" (if TKA:Generate "Ordinul 600/2023 (incarcat)" "Ordinul 600/2023 - NU e incarcat"))
+     (set_tile "tx_teren" (if TKT:Menu "raster, KML (incarcat)" "raster, KML - NU e incarcat"))
+     (set_tile "tx_incl" (cond ((not TKI:Run) "modulul NU e incarcat") ((TKI:AppExe) "puncte din AutoCAD (incarcat)") ("lipseste programul: INCLINARE")))
+     (TK:UpdStatus)
      (action_tile "bt_despre" "(TK:About)")
      (action_tile "cancel"    "(done_dialog 0)")
      (setq res (start_dialog) *TK:DLGMAIN* nil)
@@ -2405,14 +2704,22 @@
                                    "in calea de suport AutoCAD, sau incarcati-l cu APPLOAD."))))
        ((= res 5) (if TKT:Menu
                     (c:TOPOTEREN)
-                    (alert "Modulul de teren (TopoKitTeren.lsp si TopoKitTeren.dcl) nu este incarcat."))))
+                    (alert "Modulul de teren (TopoKitTeren.lsp si TopoKitTeren.dcl) nu este incarcat.")))
+       ;; transformatorul cere numele exportului (implicit numele desenului)
+       ((= res 6) (setq *TK:DLGRUN* nil) (c:DWGKMZ))
+       ;; programul Plan Inclinare (sau, fără el, planul desenat direct cu INCLINARE)
+       ((= res 7) (if c:PLANINCL
+                    (c:PLANINCL)
+                    (alert "Modulul de inclinare (TopoKitInclinare.lsp si .dcl) nu este incarcat.")))
+       ((= res 8) (if c:VERIFICARE (c:VERIFICARE) (alert "Verificarea face parte din TopoKitAnexe.lsp, care nu este incarcat.")))
+       ((= res 9) (if c:PLANEPDF (c:PLANEPDF) (alert "Plansele PDF fac parte din TopoKitAnexe.lsp, care nu este incarcat."))))
      (setq *TK:DLGRUN* nil)))
   (princ))
 
 ;; C:MYTOPO - alias pentru meniul principal
 (defun c:MYTOPO () (c:TOPOKIT))
 
-(princ (strcat "\nTopoKit " *TK:VERSION* " incarcat. Comenzi: TOPOKIT (MYTOPO), ADDVTX, EXPKMZ, INSCADRU."))
+(princ (strcat "\nTopoKit " *TK:VERSION* " incarcat. Comenzi: TOPOKIT (MYTOPO), ADDVTX, EXPKMZ, DWGKMZ, INSCADRU."))
 
 ;; Generatorul de anexe (Ordinul ANCPI 600/2023) se încarcă automat dacă
 ;; TopoKitAnexe.lsp se află în calea de suport (sau lângă TopoKit.lsp)

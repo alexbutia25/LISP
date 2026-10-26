@@ -7,7 +7,7 @@
  *   antet      sigla, numele, descrierea, versiunea; curbe de nivel decorative
  *   stare      conexiunea cu AutoCAD (punct colorat, versiune, desen activ) si
  *              butonul principal: Porneste AutoCAD / Reincarca TopoKit
- *   module     8 carduri (iconita, titlu, descriere, comanda AutoCAD); clic =
+ *   module     10 carduri (iconita, titlu, descriere, comanda AutoCAD); clic =
  *              comanda in desenul activ (AutoCAD porneste daca e nevoie)
  *   subsol     comutatorul "Porneste odata cu Windows", Folder, Ghid
  *
@@ -31,7 +31,7 @@
 #endif
 #define UI_CLASS L"TopoKitMainWnd"
 #define W_DIP 840
-#define H_DIP 600
+#define H_DIP 748
 
 /* Cardurile modulelor - aceeasi ordine ca tabelul CMDS din topokit.c */
 static const struct { const wchar_t *title, *desc, *cmd; ARGB accent; } TILES[] = {
@@ -41,10 +41,12 @@ static const struct { const wchar_t *title, *desc, *cmd; ARGB accent; } TILES[] 
     { L"Verificare", L"Controlul documentației înainte de predare", L"VERIFICARE", 0xFFD08A12 },
     { L"Planșe PDF", L"Plotarea tuturor planșelor într-un singur pas", L"PLANEPDF", 0xFFC8443A },
     { L"Export KMZ", L"Parcela în Google Earth (Stereo 70 → WGS84)", L"EXPKMZ", 0xFF1F8FBF },
+    { L"DWG → KMZ", L"Transformator: tot desenul pe straturi, cu TransDatRO", L"DWGKMZ", 0xFF0E8C7F },
     { L"Cadru planșă", L"Format A4–A0, cadru, caroiaj și indicator", L"INSCADRU", 0xFF3B5B92 },
-    { L"Vertexuri", L"Corecție topologică la intersecții (ADDVTX)", L"ADDVTX", 0xFFA3478F },
+    { L"Vertexi", L"Corecție topologică la intersecții (ADDVTX)", L"ADDVTX", 0xFFA3478F },
+    { L"Calcul înclinație", L"Drag & drop DWG/DXF/CSV și puncte din AutoCAD", L"PLANINCL", 0xFFE0662A },
 };
-#define NTILES 8
+#define NTILES 10
 
 /* Paleta */
 #define C_BG        0xFFF4F7FA
@@ -232,16 +234,16 @@ static void Layout(void)
     g_r[HT_PRIMARY] = (R){ W_DIP - 24 - 16 - 178, 120 + 18, 178, 36 };
     for (i = 0; i < NTILES; i++)
         g_r[HT_TILE0 + i] = (R){ 24 + (i % 4) * (tw + 16), 240 + (i / 4) * (th + 16), tw, th };
-    g_r[HT_TOGGLE] = (R){ 24, 556, 250, 28 };
-    g_r[HT_HELP] = (R){ W_DIP - 24 - 128, 556, 128, 28 };
-    g_r[HT_FOLDER] = (R){ W_DIP - 24 - 128 - 12 - 116, 556, 116, 28 };
-    g_r[HT_DIAG] = (R){ W_DIP - 24 - 128 - 12 - 116 - 12 - 84, 556, 84, 28 };
+    g_r[HT_TOGGLE] = (R){ 24, H_DIP - 44, 250, 28 };
+    g_r[HT_HELP] = (R){ W_DIP - 24 - 128, H_DIP - 44, 128, 28 };
+    g_r[HT_FOLDER] = (R){ W_DIP - 24 - 128 - 12 - 116, H_DIP - 44, 116, 28 };
+    g_r[HT_DIAG] = (R){ W_DIP - 24 - 128 - 12 - 116 - 12 - 84, H_DIP - 44, 84, 28 };
 }
 
 static int HitTest(int px, int py)
 {
     float x = px / g_s, y = py / g_s;
-    int ids[] = { HT_PRIMARY, HT_TOGGLE, HT_FOLDER, HT_HELP, HT_DIAG, 0, 1, 2, 3, 4, 5, 6, 7 };
+    int ids[] = { HT_PRIMARY, HT_TOGGLE, HT_FOLDER, HT_HELP, HT_DIAG, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
     unsigned i;
     UiState st;
     for (i = 0; i < sizeof ids / sizeof ids[0]; i++) {
@@ -376,7 +378,7 @@ static void Paint(GpGraphics *g, int hover, int pressed)
         R tg = g_r[HT_TOGGLE];
         float kx;
         GdipCreatePen1(0xFFE1E8EE, 1 * s, UnitPixel, &pen);
-        GdipDrawLine(g, pen, 0, 540 * s, W_DIP * s, 540 * s);
+        GdipDrawLine(g, pen, 0, (H_DIP - 60) * s, W_DIP * s, (H_DIP - 60) * s);
         GdipDeletePen(pen);
         FillRound(g, tg.x * s, (tg.y + 4) * s, 40 * s, 20 * s, 10 * s,
                   st.autorun ? (hover == HT_TOGGLE ? C_TEAL : C_NAVY) : (hover == HT_TOGGLE ? 0xFFB3BFCA : 0xFFC5CFD8));
@@ -523,7 +525,8 @@ static LRESULT CALLBACK UiProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
     case WM_KEYDOWN:
         if (wp == VK_ESCAPE) { SendMessageW(h, WM_CLOSE, 0, 0); return 0; }
         if (wp == VK_RETURN) { App_Action(ACT_CMD, 0); return 0; }
-        if (wp >= '1' && wp <= '8') { App_Action(ACT_CMD, (int)(wp - '1')); return 0; }
+        if (wp >= '1' && wp <= '9') { App_Action(ACT_CMD, (int)(wp - '1')); return 0; }
+        if (wp == '0') { App_Action(ACT_CMD, 9); return 0; }
         break;
     case WM_DPICHANGED:
         g_s = HIWORD(wp) / 96.0f;

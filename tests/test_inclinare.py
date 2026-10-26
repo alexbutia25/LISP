@@ -108,4 +108,53 @@ if RENDER:
     Mockup(open(os.path.join(ROOT, "TopoKitInclinare.dcl"), encoding="utf-8").read(), "tki_main",
            snap).render(os.path.join(RENDER, "macheta_inclinare.png"))
     print("Imagini:", RENDER)
+# ---------------------------------------------------------------- meniul TOPOKIT (carduri)
+acad.dcl.scripts = {"topokit_main": [[("click", "bt_incl")]], "tki_main": [[("click", "cancel")]]}
+acad.inputs = [("ssget", None), ("file", CSV)]
+n0 = len(acad.dcl.log)
+fn("c:TOPOKIT")
+assert acad.dcl.log[n0:] == ["topokit_main", "tki_main"], acad.dcl.log[n0:]
+snap = acad.dcl.snapshots["topokit_main"]
+assert snap["tiles"]["tx_titlu"].startswith("TopoKit 1.1.0") and "INCLINARE" in snap["tiles"]["tx_incl"]
+assert "TransDatRO" in snap["tiles"]["tx_status"] or "Helmert" in snap["tiles"]["tx_status"], snap["tiles"]["tx_status"]
+icons = snap["images"]
+assert len(icons) == 11 and all(icons[k] for k in icons), sorted(icons)          # antet + 10 pictograme
+# setarile: dialogul de peste meniu memoreaza optiunile, apoi meniul ramane deschis
+acad.dcl.scripts = {"topokit_main": [[("click", "bt_setari"), ("click", "cancel")]],
+                    "topokit_setari": [[("set", "eb_tol", "0.005"), ("click", "accept")]]}
+fn("c:TOPOKIT")
+assert env[Sym("*TK:TOL*")] == 0.005 and acad.dcl.snapshots["topokit_main"]["tiles"]["tx_status"].startswith("Toleranta: 0.0050")
+# transformatorul DWG -> KMZ din meniu
+calls = []
+env[Sym("C:DWGKMZ")] = lambda: calls.append("DWGKMZ")
+acad.dcl.scripts = {"topokit_main": [[("click", "bt_dwgkmz")]]}
+fn("c:TOPOKIT")
+assert calls == ["DWGKMZ"]
+lines = fn("TK:DclLines")
+assert lines == open(os.path.join(ROOT, "TopoKit.dcl"), encoding="utf-8").read().splitlines()
+print("Meniul TOPOKIT: carduri cu pictograme, setari module, DWG > KMZ si Calcul inclinatie")
+
+# ---------------------------------------------------------------- PLANINCLSEL: punctele din desen -> programul Plan Inclinare
+sys.path.insert(0, os.path.join(ROOT, "inclinare"))
+import plan_inclinare as PI
+for p in pts[:6]:
+    fn("TK:MakeLayer", p[4], 7)
+    acad.entmake_list = None
+    call(Sym("ENTMAKE"), [[DP(0, "POINT"), DP(8, p[4]), DP(10, [p[1], p[2], p[3]])]])
+sel = [e for e in acad.entities("Model", "POINT")][-6:]
+acad.inputs = [("ssget", sel)]
+fn("c:PLANINCLSEL")
+out = fn("TKI:PointsFile")
+got = PI.parse_points(PI.read_text_file(acad.path(out)), {}, cols="N,X,Y,Z,COD", sep=";")
+assert [(round(q["x"], 4), round(q["y"], 4), round(q["z"], 4), q["cod"]) for q in got] == \
+       [(p[1], p[2], p[3], p[4]) for p in pts[:6]], got
+acad.inputs = [("ssget", None)]
+fn("c:PLANINCLSEL")
+assert PI.parse_points(PI.read_text_file(acad.path(out)), {}, cols="N,X,Y,Z,COD", sep=";") == []
+print("PLANINCLSEL: punctele selectate ajung in programul Plan Inclinare (Nr;X;Y;Z;Cod)")
+if RENDER:
+    acad.dcl.scripts = {"topokit_main": [[("click", "cancel")]]}
+    fn("c:TOPOKIT")
+    Mockup(open(os.path.join(ROOT, "TopoKit.dcl"), encoding="utf-8").read(), "topokit_main",
+           acad.dcl.snapshots["topokit_main"]).render(os.path.join(RENDER, "macheta_topokit.png"))
 print("\nToate testele TopoKitInclinare au trecut.")

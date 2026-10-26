@@ -12,7 +12,8 @@ Pasi:
   2. pregateste build/stage:
        bundle/TopoKit.bundle/PackageContents.xml   (versiunea completata)
        bundle/TopoKit.bundle/Contents/             *.lsp, *.dcl, grila .gsb, anexe/, README
-       app/                                        TopoKit.exe, README.html, docs/
+       app/                                        TopoKit.exe, README.html, docs/,
+                                                   PlanInclinare/ (PlanInclinare.exe, PyInstaller)
   3. ruleaza makensis installer/TopoKit.nsi -> dist/TopoKitSetup-<versiune>.exe
 """
 import argparse, html, pathlib, re, shutil, subprocess, sys
@@ -98,6 +99,20 @@ def main():
     shutil.copytree(ROOT / "docs", app / "docs")
     shutil.copy2(INST / "launcher" / "topokit.ico", app / "topokit.ico")
     shutil.copytree(INST / "art", stage / "art")
+
+    # 2b. programul Plan Inclinare (calcul inclinatie) ca executabil, fara Python pe calculatorul tinta
+    try:
+        import PyInstaller  # noqa: F401
+    except ImportError:
+        sys.exit("Lipseste PyInstaller (pip install pyinstaller) - necesar pentru PlanInclinare.exe")
+    pi = app / "PlanInclinare"
+    pi.mkdir()
+    run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--onefile", "--windowed", "--name", "PlanInclinare",
+         "--icon", INST / "launcher" / "topokit.ico", "--distpath", build / "pi_dist", "--workpath", build / "pi_work",
+         "--specpath", build, ROOT / "inclinare" / "plan_inclinare.py"])
+    shutil.copy2(build / "pi_dist" / "PlanInclinare.exe", pi / "PlanInclinare.exe")
+    for f in ("PlanInclinareCogo.dll", "exemplu_siloz.csv"):
+        shutil.copy2(ROOT / "inclinare" / f, pi / f)
 
     # 3. instalatorul
     out = pathlib.Path(a.out)

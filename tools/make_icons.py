@@ -6,7 +6,7 @@
 installer/launcher/:
     topokit.ico, tray_on.ico, tray_off.ico   iconitele programului / barei de sistem
     logo.png                                 sigla din antetul ferestrei TopoKit
-    icons/m1.png ... m8.png                  iconitele modulelor (cardurile ferestrei)
+    icons/m1.png ... m10.png                 iconitele modulelor (cardurile ferestrei)
 installer/art/:
     welcome.bmp (164x314), header.bmp (150x57)   paginile instalatorului NSIS
 docs/topokit_icon.png
@@ -21,6 +21,8 @@ ART = ROOT / "installer" / "art"
 ART.mkdir(parents=True, exist_ok=True)
 FONT = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
 FONT_R = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
+if not pathlib.Path(FONT).exists():         # Windows: Arial in locul Liberation Sans
+    FONT, FONT_R = "arialbd.ttf", "arial.ttf"
 
 NAVY, TEAL, RED = (15, 61, 94), (27, 106, 143), (228, 72, 58)
 S = 256
@@ -108,6 +110,30 @@ def g_frame(d):         # cadru plansa cu indicator
     d.rectangle((132, 146, 190, 178), fill=W)
 
 
+def g_dwgkmz(d):        # transformator DWG -> KMZ: foaie de desen, sageata, glob
+    d.rectangle((30, 58, 112, 168), outline=W, width=10)
+    d.line((48, 140, 70, 96, 94, 128), fill=W, width=8, joint="curve")
+    f = ImageFont.truetype(FONT, 26)
+    d.text((71, 196), "DWG", font=f, fill=W, anchor="mm")
+    d.line((122, 112, 150, 112), fill=W, width=10)
+    d.polygon([(146, 96), (166, 112), (146, 128)], fill=W)
+    d.ellipse((168, 76, 238, 146), outline=W, width=9)
+    d.ellipse((190, 76, 216, 146), outline=W, width=6)
+    d.line((168, 111, 238, 111), fill=W, width=6)
+    d.text((203, 196), "KMZ", font=f, fill=W, anchor="mm")
+
+
+def g_incl(d):          # calcul inclinatie: siloz aplecat fata de verticala
+    d.line((96, 36, 96, 214), fill=W, width=8)                     # verticala de referinta
+    d.line((70, 214, 200, 214), fill=W, width=10)                  # baza
+    d.polygon([(104, 206), (160, 206), (194, 60), (138, 60)], outline=W, width=11)   # corpul aplecat
+    d.line((138, 60, 166, 34, 194, 60), fill=W, width=10, joint="curve")             # acoperisul
+    for y in (110, 160):
+        x = 104 + (206 - y) * (138 - 104) / (206 - 60)
+        d.line((96, y, x, y), fill=W, width=6)                     # abaterile
+    d.ellipse((88, 198, 104, 214), fill=W)
+
+
 def g_vertex(d):        # vertexuri pe polilinie
     p = [(44, 176), (98, 92), (152, 156), (212, 72)]
     d.line(p, fill=W, width=12, joint="curve")
@@ -116,8 +142,10 @@ def g_vertex(d):        # vertexuri pe polilinie
         d.rectangle((x - r, y - r, x + r, y + r), fill=W)
 
 
+# aceeasi ordine ca TILES din installer/launcher/ui.c
 MODULES = [("#1B6A8F", g_menu), ("#6A4FB6", g_doc), ("#2E8B57", g_tin), ("#D08A12", g_check),
-           ("#C8443A", g_pdf), ("#1F8FBF", g_globe), ("#3B5B92", g_frame), ("#A3478F", g_vertex)]
+           ("#C8443A", g_pdf), ("#1F8FBF", g_globe), ("#0E8C7F", g_dwgkmz), ("#3B5B92", g_frame),
+           ("#A3478F", g_vertex), ("#E0662A", g_incl)]
 
 
 def module_icon(color, glyph):

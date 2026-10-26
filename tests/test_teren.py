@@ -219,7 +219,7 @@ acad.dcl.scripts = {"topokit_main": [[("click", "bt_teren")]], "tkt_main": [[("c
 n0 = len(acad.dcl.log)
 fn("c:TOPOKIT")
 assert acad.dcl.log[n0:] == ["topokit_main", "tkt_main"], acad.dcl.log[n0:]
-assert acad.dcl.files and "Modulul de teren este incarcat" in acad.dcl.snapshots["topokit_main"]["tiles"]["tx_teren"]
+assert acad.dcl.files and "(incarcat)" in acad.dcl.snapshots["topokit_main"]["tiles"]["tx_teren"]
 lines = fn("TKT:DclLines")
 assert lines == open(os.path.join(ROOT, "TopoKitTeren.dcl"), encoding="utf-8").read().splitlines()
 print("TOPOTEREN: validarea optiunilor, butoanele, sectiunea 5 din TOPOKIT, copia DCL")

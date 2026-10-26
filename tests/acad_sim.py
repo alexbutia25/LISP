@@ -586,6 +586,8 @@ class Acad:
             "VL-FILE-DIRECTORY-P": lambda f: T if os.path.isdir(s.path(f)) else None,
             "VL-MKDIR": lambda f: os.makedirs(s.path(f), exist_ok=True) or T,
             "VL-FILE-DELETE": lambda f: (os.remove(s.path(f)) or T) if os.path.exists(s.path(f)) else None,
+            "VL-FILE-RENAME": lambda a, b: (os.rename(s.path(a), s.path(b)) or T) if os.path.exists(s.path(a)) and not os.path.exists(s.path(b)) else None,
+            "VL-REGISTRY-READ": lambda *a: None, "VL-REGISTRY-WRITE": lambda *a: a[-1] if a else None,
             "VL-FILENAME-MKTEMP": lambda p=None, d=None, ext="": os.path.join(s.outdir, f"{p or 'tmp'}_{len(s.order)}{ext or ''}"),
             "OPEN": s.open, "CLOSE": lambda fh: fh.close(), "WRITE-LINE": lambda t, fh: fh.write(t + "\n") and t,
             "READ-LINE": s.read_line, "ALERT": lambda m: s.alerts.append(m),

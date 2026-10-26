@@ -23,6 +23,9 @@
 
 (vl-load-com)
 
+;; Versiunea TopoKit (aceeași cu installer/VERSION; verificată de teste)
+(setq *TK:VERSION* "1.1.0")
+
 ;;; --------------------------------------------------------------------------
 ;;;  Setări globale implicite (păstrate pe durata sesiunii AutoCAD).
 ;;;  Comutatoarele sunt memorate ca "1"/"0" pentru compatibilitate cu DCL.
@@ -2310,15 +2313,17 @@
 
 ;; TK:About - fereastra "Despre"
 (defun TK:About ()
-  (alert (strcat "TopoKit - instrumente AutoLISP pentru topografie si cadastru\n\n"
+  (alert (strcat "TopoKit " *TK:VERSION* " - instrumente AutoLISP pentru topografie si cadastru\n\n"
                  "TOPOKIT / MYTOPO - meniul principal\n"
-                 "ADDVTX   - vertex-uri la intersectiile poliliniilor\n"
-                 "EXPKMZ   - export parcela in KMZ (Stereo 70 -> WGS84)\n"
-                 "INSCADRU - format A4..A0, cadru si indicator la scara\n\n"
+                 "ADDVTX    - vertex-uri la intersectiile poliliniilor\n"
+                 "EXPKMZ    - export KMZ: parcela sau obiecte pe straturi\n"
+                 "INSCADRU  - format A4..A0, cadru si indicator la scara\n"
+                 "ANEXE     - anexe Ordin ANCPI 600/2023\n"
+                 "TOPOTEREN - puncte, TIN, curbe de nivel, volume\n"
+                 "INCLINARE - plan de inclinare (verticalitate)\n\n"
                  "Unitati desen: metri. X desen = Est, Y desen = Nord (implicit).\n"
-                 "Transformare: stereografica oblica Krasovsky + grila NTv2\n"
-                 "ANCPI stereo70_etrs89A.gsb (precizie centimetrica);\n"
-                 "fara grila: Helmert 7 parametri (~0.3-1.5 m).")))
+                 "Transformare: TransDatRO ANCPI (grila ETRS89_KRASOVSCHI42_2DJ,\n"
+                 "precizie ~1 mm); rezerva: grila NTv2, apoi Helmert 7 parametri.")))
 
 ;; Corespondența dintre controalele dialogului și câmpurile indicatorului
 (setq *TK:CARTUSKEYS* '(("eb_benef" . *TK:BENEF*) ("eb_lucrare" . *TK:LUCRARE*)
@@ -2407,7 +2412,7 @@
 ;; C:MYTOPO - alias pentru meniul principal
 (defun c:MYTOPO () (c:TOPOKIT))
 
-(princ "\nTopoKit incarcat. Comenzi: TOPOKIT (MYTOPO), ADDVTX, EXPKMZ, INSCADRU.")
+(princ (strcat "\nTopoKit " *TK:VERSION* " incarcat. Comenzi: TOPOKIT (MYTOPO), ADDVTX, EXPKMZ, INSCADRU."))
 
 ;; Generatorul de anexe (Ordinul ANCPI 600/2023) se încarcă automat dacă
 ;; TopoKitAnexe.lsp se află în calea de suport (sau lângă TopoKit.lsp)

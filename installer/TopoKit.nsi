@@ -18,13 +18,13 @@ ManifestDPIAware true
 !include "FileFunc.nsh"
 
 !ifndef VERSION
-  !define VERSION "1.0.0"
+  !define VERSION "1.1.0"
 !endif
 !ifndef STAGE
   !error "Compilati cu tools/build_installer.py (definește STAGE)"
 !endif
 !ifndef OUTFILE
-  !define OUTFILE "TopoKitSetup.exe"
+  !define OUTFILE "TopoKitSetup-${VERSION}.exe"
 !endif
 
 !define APP       "TopoKit"

@@ -81,7 +81,8 @@
 (defun TKL:Mark ()
   (vl-catch-all-apply 'vl-registry-write
     (list *TKL:REGKEY* "LoadedIn"
-          (strcat (vl-princ-to-string (getvar "PRODUCT")) " " (vl-princ-to-string (getvar "ACADVER"))
+          (strcat "TopoKit " (if *TK:VERSION* *TK:VERSION* "?") " / "
+                  (vl-princ-to-string (getvar "PRODUCT")) " " (vl-princ-to-string (getvar "ACADVER"))
                   " - " (vl-princ-to-string (getvar "DWGNAME")))))
   (vl-catch-all-apply 'vl-registry-write
     (list *TKL:REGKEY* "LoadedAt" (rtos (getvar "CDATE") 2 6))))
@@ -91,5 +92,6 @@
   (princ))
 
 (if (TKL:Load nil)
-  (princ "\nTopoKit pregatit: TOPOKIT (meniu), ANEXE (Ordin 600/2023), TOPOTEREN (teren, TIN, volume), INCLINARE."))
+  (princ (strcat "\nTopoKit " *TK:VERSION* " pregatit: TOPOKIT (meniu), ANEXE (Ordin 600/2023), "
+                 "TOPOTEREN (teren, TIN, volume), INCLINARE.")))
 (princ)

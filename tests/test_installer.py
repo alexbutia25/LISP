@@ -11,7 +11,7 @@ Necesita: wine (64 + 32 bit), Xvfb, makensis, mingw-w64
     apt install nsis mingw-w64 xvfb wine64 wine32:i386
 
 Pasi:
-  1. construieste dist/TopoKitSetup.exe (tools/build_installer.py), daca nu e --no-build;
+  1. construieste dist/TopoKitSetup-<versiune>.exe (tools/build_installer.py), daca nu e --no-build;
   2. instaleaza silentios (/S) intr-un prefix Wine nou si verifica fisierele,
      pachetul AutoCAD, registrul (ContentsDir, Run, Uninstall) si scurtaturile;
   3. compileaza tests/fake_acad.c ("AutoCAD" COM simulat) si verifica lansatorul:
@@ -27,7 +27,7 @@ Pasi:
 import os, shutil, subprocess, sys, tempfile, time
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-SETUP = os.path.join(ROOT, "dist", "TopoKitSetup.exe")
+SETUP = os.path.join(ROOT, "dist", "TopoKitSetup-%s.exe" % open(os.path.join(ROOT, "installer", "VERSION")).read().strip())
 
 
 def need(*tools):

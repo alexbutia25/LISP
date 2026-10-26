@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Construieste instalatorul Windows TopoKitSetup.exe.
 
-    python3 tools/build_installer.py [--version 1.0.0] [--out dist]
+    python3 tools/build_installer.py [--version 1.1.0] [--out dist]
 
 Necesita (Linux: apt install nsis mingw-w64; Windows: NSIS 3 + MinGW-w64 in PATH):
     makensis, x86_64-w64-mingw32-gcc, x86_64-w64-mingw32-windres
@@ -13,7 +13,7 @@ Pasi:
        bundle/TopoKit.bundle/PackageContents.xml   (versiunea completata)
        bundle/TopoKit.bundle/Contents/             *.lsp, *.dcl, grila .gsb, anexe/, README
        app/                                        TopoKit.exe, README.html, docs/
-  3. ruleaza makensis installer/TopoKit.nsi -> dist/TopoKitSetup.exe
+  3. ruleaza makensis installer/TopoKit.nsi -> dist/TopoKitSetup-<versiune>.exe
 """
 import argparse, html, pathlib, re, shutil, subprocess, sys
 
@@ -102,7 +102,7 @@ def main():
     # 3. instalatorul
     out = pathlib.Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    setup = out / "TopoKitSetup.exe"
+    setup = out / f"TopoKitSetup-{a.version}.exe"
     makensis = tool("makensis")
     run([makensis, "-V2", "-INPUTCHARSET", "UTF8", f"-DVERSION={a.version}", f"-DSTAGE={stage}",
          f"-DOUTFILE={setup}", INST / "TopoKit.nsi"])

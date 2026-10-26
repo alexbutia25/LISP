@@ -1237,7 +1237,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show)
     if (!wcscmp(arg, L"/quit")) return 0;
 
     InitLog();
-    Log(L"Lansator pornit (%ls)", arg[0] ? arg : L"interactiv");
+    Log(L"Lansator TopoKit %hs pornit (%ls)", TK_VERSION, arg[0] ? arg : L"interactiv");
     CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
     {
         IMessageFilter *old = NULL;

@@ -241,4 +241,13 @@ assert "TransDatRO" in doc.getElementsByTagName("description")[0].firstChild.dat
 assert fn("TK:KmlColor", [1, 2, 255], 255) == "ffff0201"
 print("KML cu mai multe obiecte: categorii, straturi, stiluri si coordonate corecte")
 fn("TK:TdClose")
+
+# ---------------------------------------------------------------- versiunea
+ver = open(os.path.join(os.path.dirname(__file__), "..", "installer", "VERSION")).read().strip()
+assert env[Sym("*TK:VERSION*")] == ver, (env[Sym("*TK:VERSION*")], ver)
+ui = open(os.path.join(os.path.dirname(__file__), "..", "installer", "launcher", "ui.c"), encoding="utf-8").read()
+man = open(os.path.join(os.path.dirname(__file__), "..", "installer", "launcher", "topokit.manifest"), encoding="utf-8").read()
+nsi = open(os.path.join(os.path.dirname(__file__), "..", "installer", "TopoKit.nsi"), encoding="utf-8").read()
+assert f'#define TK_VERSION "{ver}"' in ui and f'version="{ver}.0"' in man and f'!define VERSION "{ver}"' in nsi
+print(f"Versiunea {ver}: aceeasi in TopoKit.lsp, installer/VERSION, lansator, manifest si NSIS")
 print("\nToate testele au trecut.")

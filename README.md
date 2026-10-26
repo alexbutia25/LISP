@@ -33,7 +33,7 @@ completate de codul LISP real (rulat în simulatorul din `tests/`). Fonturile ș
 
 ### Cu instalatorul (recomandat)
 
-1. Descărcați și rulați **[`dist/TopoKitSetup.exe`](dist/TopoKitSetup.exe)**. Nu sunt necesare drepturi
+1. Descărcați și rulați **[`dist/TopoKitSetup-1.1.0.exe`](dist/TopoKitSetup-1.1.0.exe)** (TopoKit 1.1.0). Nu sunt necesare drepturi
    de administrator; instalarea se face pentru utilizatorul curent.
 2. Alegeți opțiunile: scurtătură pe desktop și pornirea în fundal odată cu Windows (ambele bifate implicit).
 3. Deschideți **TopoKit** din meniul Start sau de pe desktop. Atât.
@@ -97,7 +97,7 @@ Ce face instalarea:
     o anulează prin fereastra AutoCAD (WM_COPYDATA) înainte de a trimite modulul.
 - **Dezinstalare:** *Setări → Aplicații → TopoKit* sau meniul Start → *Dezinstalare TopoKit*. Se șterg
   pachetul AutoCAD, lansatorul și setările din registru.
-- **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup.exe /S`; dezinstalare:
+- **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup-1.1.0.exe /S`; dezinstalare:
   `"%LOCALAPPDATA%\Programs\TopoKit\Uninstall.exe" /S`.
 
 Windows SmartScreen poate afișa *„Windows a protejat computerul”*, pentru că instalatorul nu este
@@ -523,7 +523,7 @@ Setările se păstrează între sesiuni (registru `HKCU\Software\TopoKit\Inclina
   HTML-ul ordinului în `tools/ordin600_anexe.json`, apoi `tools/build_anexe.py` scrie
   `anexe/Anexa_NN.docx` și `anexe/catalog.json` (câmpurile fiecărei anexe).
 - **Instalatorul** se construiește cu `python3 tools/build_installer.py [--version X.Y.Z]`, care produce
-  `dist/TopoKitSetup.exe`. Sunt necesare NSIS 3 și MinGW-w64 (Linux: `apt install nsis mingw-w64`).
+  `dist/TopoKitSetup-<versiune>.exe`. Sunt necesare NSIS 3 și MinGW-w64 (Linux: `apt install nsis mingw-w64`).
   Scriptul compilează lansatorul (`installer/launcher/topokit.c` și fereastra `ui.c`, C/Win32 + GDI+,
   fără dependențe externe), pregătește
   pachetul AutoCAD (`installer/bundle/PackageContents.xml`) și rulează `installer/TopoKit.nsi`. Versiunea

@@ -9,7 +9,7 @@ Suită modulară AutoLISP + DCL pentru AutoCAD (în stilul TopoLT):
 | `EXPKMZ` | Export în KMZ/KML pentru Google Earth Pro: o parcelă sau mai multe obiecte pe straturi, cu transformarea oficială **TransDatRO** (Stereo 70 → ETRS89, ~1 mm) |
 | `INSCADRU` | Format A4…A0 (portrait/landscape), cadru și indicator la scară |
 | `ANEXE` | Generatorul de anexe pentru **Ordinul ANCPI nr. 600/2023**: PAD, dezlipire/alipire, releveu și documentele Word ([detalii](#4-generator-de-anexe--ordinul-ancpi-nr-6002023-anexe)) |
-| `DWGKMZ` | **Transformator DWG → KMZ**: deschide convertorul original **Bogdanel** (DXF/DWG → KMZ, TransDatRO) cu desenul curent; fără program, exportă desenul pe straturi direct din AutoCAD |
+| `DWGKMZ` | **DWG to KMZ**: convertorul DXF/DWG → KMZ pentru Google Earth (TransDatRO), deschis direct cu desenul curent; parte din TopoKit (`DWGtoKMZ.exe`) |
 | `PLANINCL` | Programul **Plan Înclinare** (calcul înclinație), exact ca înainte: drag & drop CSV/TXT/DWG/DXF, previzualizare, export DXF/DWG, plus punctele din desenul deschis (`PLANINCLSEL`) |
 | `INCLINARE` | Planul de înclinare / verticalitate (silozuri, stâlpi, coșuri, turnuri) din puncte măsurate pe rânduri, pe planșă A4…A0 cu cartuș ([detalii](#6-calcul-înclinație--programul-plan-înclinare-planincl-și-inclinare)) |
 | `TOPOTEREN` | Modulul de teren: import puncte și desenare pe coduri, model TIN, curbe de nivel, volume, raster georeferențiat, KML/KMZ, tabele și legende ([detalii](#5-teren--puncte-model-3d-curbe-de-nivel-volume-topoteren)) |
@@ -26,7 +26,7 @@ Suită modulară AutoLISP + DCL pentru AutoCAD (în stilul TopoLT):
   comanda AutoCAD și o descriere. **Clic pe pictogramă** deschide modulul.
 - Cele 10 module: Setări module, Anexe ANCPI, Teren și volume, Verificare, Planșe PDF, Export KMZ,
   DWG → KMZ, Cadru planșă, Vertexi și Calcul înclinație. „DWG → KMZ” și „Calcul înclinație” pornesc
-  programele originale Bogdanel și Plan Înclinare.
+  programele DWG to KMZ și Plan Înclinare.
 - **Setări module…** deschide opțiunile corecției topologice, ale exportului KMZ și ale formatului de
   planșă, cu pictogramele lor și previzualizarea planșei (formatul, orientarea, cadrul, indicatorul și
   caroiajul se redesenează la orice modificare, ca și în dialogul `INSCADRU`):
@@ -38,7 +38,7 @@ Suită modulară AutoLISP + DCL pentru AutoCAD (în stilul TopoLT):
 
 ### Cu instalatorul (recomandat)
 
-1. Descărcați și rulați **[`dist/TopoKitSetup-1.1.0.exe`](dist/TopoKitSetup-1.1.0.exe)** (TopoKit 1.1.0). Nu sunt necesare drepturi
+1. Descărcați și rulați **[`dist/TopoKitSetup-1.2.0.exe`](dist/TopoKitSetup-1.2.0.exe)** (TopoKit 1.2.0). Nu sunt necesare drepturi
    de administrator; instalarea se face pentru utilizatorul curent.
 2. Alegeți opțiunile: scurtătură pe desktop și pornirea în fundal odată cu Windows (ambele bifate implicit).
 3. Deschideți **TopoKit** din meniul Start sau de pe desktop. Atât.
@@ -102,7 +102,7 @@ Ce face instalarea:
     o anulează prin fereastra AutoCAD (WM_COPYDATA) înainte de a trimite modulul.
 - **Dezinstalare:** *Setări → Aplicații → TopoKit* sau meniul Start → *Dezinstalare TopoKit*. Se șterg
   pachetul AutoCAD, lansatorul și setările din registru.
-- **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup-1.1.0.exe /S`; dezinstalare:
+- **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup-1.2.0.exe /S`; dezinstalare:
   `"%LOCALAPPDATA%\Programs\TopoKit\Uninstall.exe" /S`.
 
 Windows SmartScreen poate afișa *„Windows a protejat computerul”*, pentru că instalatorul nu este
@@ -150,7 +150,7 @@ datele extinse sunt copiate), deci primesc un handle nou.
 1. Selectați **o polilinie închisă** (exportul unei parcele, ca până acum) sau **mai multe obiecte**:
    polilinii (închise → poligoane, deschise → polilinii), linii, arce, cercuri, elipse, spline, puncte
    AutoCAD, **puncte COGO Civil 3D**, blocuri (cu atributele lor) și texte / MTEXT.
-2. Exportul mai multor obiecte (ca în convertorul DXF → KMZ „Bogdanel”):
+2. Exportul mai multor obiecte (ca în convertorul DWG to KMZ):
    - obiectele sunt grupate în foldere pe **categorii** (Poligoane, Polilinii, Linii, Puncte, Texte) și
      apoi pe **straturi**, cu **culoarea din desen** (true color, index sau a stratului);
    - poligoanele au suprafața (mp și ha), perimetrul și, opțional, inventarul de coordonate Stereo 70;
@@ -161,7 +161,7 @@ datele extinse sunt copiate), deci primesc un handle nou.
    - axele inversate sunt **detectate automat** (dacă punctele intră în Stereo 70 doar cu X = Nord).
 3. Transformarea Stereo 70 → ETRS89 se face direct în LISP, în această ordine:
    - **TransDatRO** – portarea algoritmului oficial ANCPI (TransDatRO_code_source 1.06) din sursa
-     convertorului Bogdanel: corecția din grila `ETRS89_KRASOVSCHI42_2DJ.GRD` (61 KB, inclusă) cu
+     convertorului DWG to KMZ: corecția din grila `ETRS89_KRASOVSCHI42_2DJ.GRD` (61 KB, inclusă) cu
      interpolare bicubică B-spline pe 4 × 4 noduri, Helmert 2D, apoi stereografic invers pe GRS80.
      Punctele din afara granițelor României (noduri 999 ale grilei) trec la metoda următoare;
    - **grila NTv2** `stereo70_etrs89A.gsb` (biliniar, ca PROJ `hgridshift`), pentru puncte pe care
@@ -173,7 +173,7 @@ datele extinse sunt copiate), deci primesc un handle nou.
    | Metodă | Precizie |
    |---|---|
    | TransDatRO din LISP – față de cele 7 puncte oficiale ANCPI (Help TransDatRO) | ≤ 0.52 mm |
-   | TransDatRO din LISP – față de portarea Python Bogdanel (363 de puncte aleatoare) | < 0.0001 mm |
+   | TransDatRO din LISP – față de portarea Python din DWG to KMZ (363 de puncte aleatoare) | < 0.0001 mm |
    | Grila NTv2 – față de cele 7 puncte oficiale ANCPI | 3–18 mm |
    | Helmert – față de grilă, pe teritoriul României | 0.3 m median, ~1.5 m (p99) |
 
@@ -470,10 +470,12 @@ Nou: butonul **„Puncte din AutoCAD…”** – TopoKit trimite comanda `PLANIN
 selectați punctele (puncte COGO, puncte AutoCAD sau blocuri) și apăsați Enter; programul le preia singur.
 Codul punctului este descrierea (COGO) sau stratul.
 
-**Convertorul DXF/DWG → KMZ „Bogdanel”** (cardul „DWG → KMZ”, comanda `DWGKMZ`, meniul Start → TopoKit →
-Convertor DXF-DWG - KMZ) este programul original, inclus neschimbat (`Bogdanel\Bogdanel.exe`): din AutoCAD
-se deschide direct cu desenul curent (ultima versiune salvată). La compilarea instalatorului se ia din
-folderul dat cu `--bogdanel` (implicit `E:\Munca\Bogdanel\Program`).
+**DWG to KMZ** este un modul TopoKit (cardul „DWG to KMZ” din fereastra TopoKit și din meniul `TOPOKIT`,
+comanda `DWGKMZ`; fereastra „TopoKit — DWG to KMZ”, cu iconița și designul TopoKit). Este
+convertorul DXF/DWG → KMZ pentru Google Earth, cu transformarea TransDatRO: drag & drop, previzualizare pe
+hartă, alegerea obiectelor și a straturilor, DWG prin LibreDWG (inclus) sau ODA File Converter. Sursa este în
+`dwg2kmz/`; instalatorul îl compilează în `modules\DWGtoKMZ.exe` (nu are nevoie de Python). Din AutoCAD se
+deschide direct cu desenul curent (ultima versiune salvată).
 
 Comanda `INCLINARE` desenează același plan direct în desenul curent, fără programul separat:
 

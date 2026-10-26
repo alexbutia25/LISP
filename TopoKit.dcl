@@ -158,13 +158,13 @@ topokit_main : dialog {
       : row {
         : tk_ico { key = "bt_dwgkmz"; }
         : column {
-          : text { label = "DWG > KMZ"; }
+          : text { label = "DWG to KMZ"; }
           : text { label = "DWGKMZ"; }
         }
       }
       : paragraph {
-        : text_part { label = "Convertorul Bogdanel:"; }
-        : text_part { label = "DXF/DWG in Google Earth"; }
+        : text_part { label = "Convertor DXF/DWG in"; }
+        : text_part { label = "Google Earth, TransDatRO"; }
       }
     }
     : tk_card {

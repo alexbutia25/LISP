@@ -1,6 +1,5 @@
 """
 DWG to KMZ - convertor DXF/DWG (Stereo 70) -> KMZ (Google Earth), parte din TopoKit
-Facut de Mihaita
 """
 import html
 import json
@@ -19,7 +18,7 @@ from dataclasses import dataclass, field
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
-from PIL import Image, ImageTk
+from PIL import Image, ImageDraw, ImageTk
 
 import customtkinter as ctk
 import ezdxf
@@ -38,39 +37,42 @@ except Exception:
     HAS_DND = False
 
 APP_NAME = "DWG to KMZ"
-AUTHOR = "Mihăiță"
+TOPOKIT = "TopoKit 1.2.0"   # programul face parte din TopoKit
 HELP_FILE = "Instructiuni DWG to KMZ.html"
 FLAT_DIST = 0.05  # metri - precizia aproximarii arcelor / curbelor
 
 # (cheie, eticheta, culoare accent)
 CATEGORIES = [
-    ("polygon", "Poligoane", "#7bd389"),      # muschi
-    ("polyline", "Polilinii", "#5ab4e5"),     # rau
-    ("line", "Linii", "#e8dcc0"),             # nisip
-    ("point", "Puncte", "#f2a541"),           # chihlimbar de toamna
-    ("text", "Texte / Tabele", "#d9a5f0"),    # iarba-neagra (erica)
+    ("polygon", "Poligoane", "#2E8B57"),
+    ("polyline", "Polilinii", "#1F8FBF"),
+    ("line", "Linii", "#8A6D3B"),
+    ("point", "Puncte", "#D08A12"),
+    ("text", "Texte / Tabele", "#6A4FB6"),
 ]
 CAT_LABEL = {k: l for k, l, _ in CATEGORIES}
 LINEAR = ("polyline", "line")   # categorii desenate ca linie
 
-ACCENT = "#2f8a52"
-EXCLUDED_COL = "#e5533d"
+ACCENT = "#1B6A8F"          # teal TopoKit
+EXCLUDED_COL = "#D64541"
 TOOL_CLICK, TOOL_RECT, TOOL_POLY = "🖐 Click", "▭ Dreptunghi", "⬠ Poligon"
 SEL_OUT, SEL_IN = "➖ Scoate", "➕ Pune înapoi"
 MODE_FULL, MODE_TOUCH = "Complet în zonă", "Atinge zona"
 PREVIEW_HINT = ("🖱  Click pe obiect = scoate / pune la export   ·   Shift + trage = scoate o zonă   ·   "
                 "Ctrl + trage = pune zona înapoi   ·   Rotiță = zoom   ·   Trage = mută")
-ACCENT_HOVER = "#256f42"
-BG = "#0b1d14"            # padure noaptea
-CARD = "#132a1d"
-CARD_2 = "#1a3626"
-MUTED = "#a3b8a8"
-TEXT = "#efe9d8"          # crem
-AMBER = "#e2a448"
-DIM = "#3b5446"           # obiecte neexportate
-BTN_2 = "#29473a"         # butoane secundare
-BTN_2_HOVER = "#335a48"
-CANVAS_BG = "#09180f"
+ACCENT_HOVER = "#0F3D5E"    # bleumarin TopoKit
+NAVY = "#0F3D5E"
+BG = "#F4F7FA"              # fundalul ferestrei TopoKit
+CARD = "#FFFFFF"
+CARD_2 = "#EEF2F6"
+BORDER = "#DDE5EC"
+MUTED = "#5B6B7A"
+TEXT = "#1A2733"
+AMBER = "#1B6A8F"           # insignele numerotate (teal)
+OK_COL = "#2EAD5B"
+DIM = "#C5CED6"             # obiecte neexportate
+BTN_2 = "#E6EDF3"           # butoane secundare
+BTN_2_HOVER = "#D5E1EB"
+CANVAS_BG = "#F8FAFC"
 
 
 def asset(name):
@@ -87,6 +89,29 @@ def _round_rect(c, x0, y0, x1, y1, r, **kw):
     pts = [x0 + r, y0, x1 - r, y0, x1, y0, x1, y0 + r, x1, y1 - r, x1, y1, x1 - r, y1, x0 + r, y1,
            x0, y1, x0, y1 - r, x0, y0 + r, x0, y0]
     return c.create_polygon(pts, smooth=True, **kw)
+
+
+def _topokit_band(w, h):
+    """Banda antetului TopoKit: degrade bleumarin -> teal, cu curbe de nivel discrete."""
+    im = Image.new("RGB", (w, h))
+    px = im.load()
+    c1, c2 = (15, 61, 94), (30, 111, 147)
+    for x in range(w):
+        t = x / max(w - 1, 1)
+        col = tuple(int(c1[i] + (c2[i] - c1[i]) * t) for i in range(3))
+        for y in range(h):
+            px[x, y] = col
+    ov = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    dr = ImageDraw.Draw(ov)
+    for cx, cy, radii, k0 in ((w - 150, h + 10, (40, 75, 110, 145, 180), 0), (w * 0.45, -20, (50, 90, 130), 2)):
+        for k, r in enumerate(radii):
+            pts = []
+            for i in range(97):
+                a = 2 * math.pi * i / 96
+                rr = r * (1 + 0.12 * math.sin(3 * a + k + k0))
+                pts.append((cx + rr * math.cos(a), cy + 0.6 * rr * math.sin(a)))
+            dr.line(pts, fill=(255, 255, 255, 34), width=2)
+    return Image.alpha_composite(im.convert("RGBA"), ov)
 
 
 def _mini_pine(c, x, base, h, color, tags=()):
@@ -473,7 +498,7 @@ def _desc(f, swap, coord_table):
                          + body + "</table>")
         else:
             parts.append(esc(f.text).replace("\n", "<br/>"))
-    parts.append(f"<br/><i style='color:gray'>Generat cu {APP_NAME} – făcut de {AUTHOR}</i>")
+    parts.append(f"<br/><i style='color:gray'>Generat cu {APP_NAME} ({TOPOKIT})</i>")
     return "<![CDATA[" + "".join(parts).replace("]]>", "]] >") + "]]>"
 
 
@@ -536,7 +561,7 @@ def build_kml(feats, doc_name, swap, opts):
     return ('<?xml version="1.0" encoding="UTF-8"?>\n'
             '<kml xmlns="http://www.opengis.net/kml/2.2"><Document>'
             f"<name>{esc(doc_name)}</name>"
-            f"<description>Convertit din Stereo 70 cu {APP_NAME} – făcut de {AUTHOR}</description>"
+            f"<description>Convertit din Stereo 70 cu {APP_NAME} ({TOPOKIT})</description>"
             f"{style_xml}{''.join(folders)}</Document></kml>")
 
 
@@ -557,7 +582,7 @@ MAP_HTML = """<!doctype html><html><head><meta charset="utf-8">
 .badge{position:absolute;z-index:999;bottom:18px;left:12px;background:#0f172acc;color:#fff;
 padding:6px 12px;border-radius:8px;font-size:13px}
 .lbl{background:none;border:none;box-shadow:none;color:#fff;font-weight:600;text-shadow:0 0 3px #000}</style>
-</head><body><div id="m"></div><div class="badge">__TITLE__ · Convertor DXF/DWG - KMZ · făcut de Mihăiță</div>
+</head><body><div id="m"></div><div class="badge">__TITLE__ · DWG to KMZ · TopoKit</div>
 <script>
 const data = __DATA__;
 const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -613,8 +638,8 @@ class App(BaseTk):
                 self.TkdndVersion = TkinterDnD._require(self)
             except Exception:
                 pass
-        ctk.set_appearance_mode("dark")
-        self.title(f"{APP_NAME}  ·  Stereo 70  ·  făcut de {AUTHOR}")
+        ctk.set_appearance_mode("light")
+        self.title(f"TopoKit — {APP_NAME}")
         self.geometry("1320x820")
         self.minsize(1080, 680)
         self.configure(fg_color=BG)
@@ -657,29 +682,25 @@ class App(BaseTk):
     def _set_icon(self):
         base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
         try:
-            self.iconbitmap(asset("dwg2kmz.ico") or os.path.join(base, "dwg2kmz.ico"))
+            self.iconbitmap(asset("topokit.ico") or os.path.join(base, "topokit.ico"))
         except Exception:
             pass
 
     def _card(self, parent, title, step, icon=""):
-        card = ctk.CTkFrame(parent, fg_color=CARD, corner_radius=14, border_width=1, border_color="#24452f")
+        card = ctk.CTkFrame(parent, fg_color=CARD, corner_radius=14, border_width=1, border_color=BORDER)
         card.pack(fill="x", pady=(0, 10))
         head = ctk.CTkFrame(card, fg_color="transparent")
         head.pack(fill="x", padx=14, pady=(12, 6))
         ctk.CTkLabel(head, text=str(step), width=26, height=26, corner_radius=13, fg_color=AMBER,
-                     text_color="#16271c", font=ctk.CTkFont("Segoe UI", 13, "bold")).pack(side="left")
+                     text_color="#FFFFFF", font=ctk.CTkFont("Segoe UI", 13, "bold")).pack(side="left")
         ctk.CTkLabel(head, text=f"{icon}  {title}" if icon else title, text_color=TEXT,
                      font=ctk.CTkFont("Segoe UI", 15, "bold")).pack(side="left", padx=8)
         return card
 
     def _build_ui(self):
-        # Antet: banner cu padure, munti si curbe de nivel (desenat pe canvas)
+        # Antet: banda TopoKit (bleumarin, curbe de nivel), desenata pe canvas
         self.header = tk.Canvas(self, height=88, highlightthickness=0, bg=BG)
         self.header.pack(fill="x")
-        try:
-            self._banner_src = Image.open(asset("banner.png"))
-        except Exception:
-            self._banner_src = None
         self.header.bind("<Configure>", self._draw_header)
 
         body = ctk.CTkFrame(self, fg_color="transparent")
@@ -688,32 +709,32 @@ class App(BaseTk):
         left_col = ctk.CTkFrame(body, fg_color="transparent")
         left_col.pack(side="left", fill="y")
         # bara fixa de export - mereu vizibila, jos in stanga
-        dock = ctk.CTkFrame(left_col, fg_color=CARD, corner_radius=14, border_width=2, border_color="#3f7a55")
+        dock = ctk.CTkFrame(left_col, fg_color=CARD, corner_radius=14, border_width=2, border_color=ACCENT)
         dock.pack(side="bottom", fill="x", pady=(10, 0))
         left = ctk.CTkScrollableFrame(left_col, fg_color="transparent", width=380)
         left.pack(side="top", fill="both", expand=True)
         self.left_scroll = left
-        right = ctk.CTkFrame(body, fg_color=CARD, corner_radius=14, border_width=1, border_color="#24452f")
+        right = ctk.CTkFrame(body, fg_color=CARD, corner_radius=14, border_width=1, border_color=BORDER)
         right.pack(side="left", fill="both", expand=True, padx=(12, 0))
 
         # 1. Fisier
         c1 = self._card(left, "Fișier DXF / DWG", 1, "📂")
         self.drop = ctk.CTkFrame(c1, fg_color=CARD_2, corner_radius=12, border_width=2,
-                                 border_color="#3f6b4f", height=120)
+                                 border_color="#B9C8D6", height=120)
         self.drop.pack(fill="x", padx=14, pady=(0, 8))
         self.drop.pack_propagate(False)
         try:
-            self._drop_img = ctk.CTkImage(Image.open(asset("icon_256.png")), size=(40, 40))
+            self._drop_img = ctk.CTkImage(Image.open(asset("dwg2kmz_icon.png")), size=(40, 40))
         except Exception:
             self._drop_img = None
         self.drop_lbl = ctk.CTkLabel(
             self.drop, text="Trage fișierul DXF sau DWG aici\nsau apasă pentru a-l alege", image=self._drop_img,
-            compound="top", font=ctk.CTkFont("Segoe UI", 14), text_color="#e3dcc7", justify="center")
+            compound="top", font=ctk.CTkFont("Segoe UI", 14), text_color="#3B4A58", justify="center")
         self.drop_lbl.pack(expand=True)
         for w in (self.drop, self.drop_lbl):
             w.bind("<Button-1>", lambda e: self._browse_dxf())
             w.bind("<Enter>", lambda e: self.drop.configure(border_color=AMBER))
-            w.bind("<Leave>", lambda e: self.drop.configure(border_color="#3f6b4f"))
+            w.bind("<Leave>", lambda e: self.drop.configure(border_color="#B9C8D6"))
         self.file_info = ctk.CTkLabel(c1, text="Niciun fișier încărcat", text_color=MUTED,
                                       font=ctk.CTkFont("Segoe UI", 12), wraplength=330, justify="left")
         self.file_info.pack(anchor="w", padx=16, pady=(0, 6))
@@ -726,7 +747,7 @@ class App(BaseTk):
         btns.pack(fill="x", padx=14, pady=(0, 6))
         ctk.CTkButton(btns, text="✔ Selectează tot", height=30, fg_color=ACCENT, hover_color=ACCENT_HOVER,
                       command=lambda: self._select_all(True)).pack(side="left", expand=True, fill="x", padx=(0, 4))
-        ctk.CTkButton(btns, text="✖ Deselectează", height=30, fg_color=BTN_2, hover_color=BTN_2_HOVER,
+        ctk.CTkButton(btns, text="✖ Deselectează", height=30, fg_color=BTN_2, text_color=NAVY, hover_color=BTN_2_HOVER,
                       command=lambda: self._select_all(False)).pack(side="left", expand=True, fill="x", padx=(4, 0))
         self.cat_checks = {}
         for key, label, col in CATEGORIES:
@@ -778,15 +799,15 @@ class App(BaseTk):
                                         hover_color=ACCENT_HOVER, command=self._export, state="disabled")
         self.export_btn.pack(side="left", fill="x", expand=True)
         ctk.CTkButton(erow, text="📁", width=52, height=52, corner_radius=12,
-                      font=ctk.CTkFont("Segoe UI", 20), fg_color=BTN_2, hover_color=BTN_2_HOVER,
+                      font=ctk.CTkFont("Segoe UI", 20), fg_color=BTN_2, text_color=NAVY, hover_color=BTN_2_HOVER,
                       command=self._browse_out).pack(side="left", padx=(8, 0))
-        self.dest_lbl = ctk.CTkLabel(dock, text="", text_color="#e3dcc7", anchor="w", justify="left",
+        self.dest_lbl = ctk.CTkLabel(dock, text="", text_color="#3B4A58", anchor="w", justify="left",
                                      font=ctk.CTkFont("Segoe UI", 12), cursor="hand2")
         self.dest_lbl.pack(fill="x", padx=12, pady=(0, 6))
         self.dest_lbl.bind("<Button-1>", lambda e: self._browse_out())
         self.out_dir.trace_add("write", lambda *a: self._update_dest())
         self._update_dest()
-        self.progress = ctk.CTkProgressBar(dock, height=6, progress_color="#7bd389", fg_color="#1d3a29")
+        self.progress = ctk.CTkProgressBar(dock, height=6, progress_color=OK_COL, fg_color="#E3EAF0")
         self.progress.set(0)
         self.progress.pack(fill="x", padx=12, pady=(0, 6))
         self.status = ctk.CTkLabel(dock, text="Gata de lucru.", text_color=MUTED, wraplength=360,
@@ -799,11 +820,11 @@ class App(BaseTk):
         ctk.CTkLabel(bar, text="🗺  Previzualizare export", text_color=TEXT,
                      font=ctk.CTkFont("Segoe UI", 15, "bold")).pack(
             side="left")
-        ctk.CTkButton(bar, text="🌍 Vezi pe hartă (satelit)", height=34, fg_color="#2a7f8c",
-                      hover_color="#226b76", command=self._map_preview).pack(side="right")
-        ctk.CTkButton(bar, text="⤢ Potrivește", height=30, width=100, fg_color=BTN_2,
+        ctk.CTkButton(bar, text="🌍 Vezi pe hartă (satelit)", height=34, fg_color="#0E8C7F",
+                      hover_color="#0B6F65", command=self._map_preview).pack(side="right")
+        ctk.CTkButton(bar, text="⤢ Potrivește", height=30, width=100, fg_color=BTN_2, text_color=NAVY,
                       hover_color=BTN_2_HOVER, command=self._fit).pack(side="right", padx=6)
-        ctk.CTkButton(bar, text="↺ Include tot", height=30, width=110, fg_color=BTN_2,
+        ctk.CTkButton(bar, text="↺ Include tot", height=30, width=110, fg_color=BTN_2, text_color=NAVY,
                       hover_color=BTN_2_HOVER, command=self._include_all).pack(side="right")
 
         tools = ctk.CTkFrame(right, fg_color="transparent")
@@ -812,7 +833,7 @@ class App(BaseTk):
         ctk.CTkSegmentedButton(tools, values=[TOOL_CLICK, TOOL_RECT, TOOL_POLY], variable=self.tool,
                                command=self._on_tool, font=ctk.CTkFont("Segoe UI", 12)).pack(side="left", padx=(6, 14))
         ctk.CTkSegmentedButton(tools, values=[SEL_OUT, SEL_IN], variable=self.sel_action,
-                               selected_color="#b5432f", selected_hover_color="#963624",
+                               selected_color="#F8D7D3", selected_hover_color="#F1C0BA",
                                command=lambda v: self._draw_sel_shape(), font=ctk.CTkFont("Segoe UI", 12)).pack(
             side="left", padx=(0, 14))
         ctk.CTkSegmentedButton(tools, values=[MODE_FULL, MODE_TOUCH], variable=self.sel_mode,
@@ -859,36 +880,39 @@ class App(BaseTk):
         c.bind("<ButtonRelease-2>", lambda e: self._schedule_redraw(60))
 
         # Footer
-        ft = ctk.CTkFrame(self, fg_color="#08160f", corner_radius=0, height=28)
+        ft = ctk.CTkFrame(self, fg_color="#EAF0F5", corner_radius=0, height=28)
         ft.pack(fill="x", side="bottom")
-        ctk.CTkLabel(ft, text=f"{APP_NAME} v1.0  ·  Stereo 70 → ETRS89 · TransDatRO (ANCPI) cu grilă  ·  "
-                              f"făcut cu ❤ de {AUTHOR}", text_color=MUTED, font=ctk.CTkFont("Segoe UI", 11)).pack()
+        ctk.CTkLabel(ft, text=f"{APP_NAME}  ·  parte din {TOPOKIT}  ·  Stereo 70 → ETRS89 · TransDatRO (ANCPI) cu grilă",
+                     text_color=MUTED, font=ctk.CTkFont("Segoe UI", 11)).pack()
 
     def _draw_header(self, e=None):
+        """Antetul in stilul ferestrei TopoKit: banda bleumarin cu curbe de nivel, sigla,
+        numele programului, versiunea TopoKit si butonul Ajutor."""
         c = self.header
         w, h = max(c.winfo_width(), 400), 88
         c.delete("all")
-        if self._banner_src is not None:
-            iw, ih = self._banner_src.size
-            k = max(w / iw, h / ih)
-            img = self._banner_src.resize((max(int(iw * k), w), max(int(ih * k), h)), Image.LANCZOS)
-            self._banner_tk = ImageTk.PhotoImage(img.crop((0, 0, w, h)))
-            c.create_image(0, 0, anchor="nw", image=self._banner_tk)
-        _mini_pine(c, 34, 62, 40, AMBER)
-        for dx, col in ((2, "#06120b"), (0, TEXT)):                    # titlu cu umbra
-            c.create_text(62 + dx, 36 + dx, anchor="w", text=APP_NAME, fill=col, font=("Segoe UI", 24, "bold"))
-        c.create_text(64, 64, anchor="w", fill="#cfe3d2", font=("Segoe UI", 12),
-                      text="Stereo 70  →  KMZ pentru Google Earth  ·  transformare TransDatRO (ANCPI)")
-        # insigna "Facut de Mihaita" + buton Ajutor, desenate pe banner
+        if getattr(self, "_head_w", None) != w:
+            self._head_w = w
+            self._head_tk = ImageTk.PhotoImage(_topokit_band(w, h))
+        c.create_image(0, 0, anchor="nw", image=self._head_tk)
+        if not hasattr(self, "_logo_tk"):
+            try:
+                self._logo_tk = ImageTk.PhotoImage(Image.open(asset("topokit_logo.png")).resize((52, 52), Image.LANCZOS))
+            except Exception:
+                self._logo_tk = None
+        if self._logo_tk:
+            c.create_image(18, 18, anchor="nw", image=self._logo_tk)
+        c.create_text(84, 36, anchor="w", text=APP_NAME, fill="#FFFFFF", font=("Segoe UI", 22, "bold"))
+        c.create_text(85, 63, anchor="w", fill="#CFE3EF", font=("Segoe UI", 11),
+                      text="Modul TopoKit  ·  Stereo 70  →  KMZ pentru Google Earth  ·  transformare TransDatRO (ANCPI)")
         x1 = w - 20
-        _round_rect(c, x1 - 190, 26, x1, 62, 18, fill=AMBER, outline="")
-        c.create_text(x1 - 95, 44, text=f"✨ Făcut de {AUTHOR}", fill="#16271c", font=("Segoe UI", 13, "bold"))
-        hb = _round_rect(c, x1 - 300, 26, x1 - 202, 62, 18, fill="#16301f", outline="#4c7a5c", width=1,
-                         tags="help")
-        c.create_text(x1 - 251, 44, text="❓ Ajutor", fill=TEXT, font=("Segoe UI", 12, "bold"), tags="help")
+        _round_rect(c, x1 - 118, 30, x1, 58, 14, fill="#2C5A78", outline="")
+        c.create_text(x1 - 59, 44, text=TOPOKIT, fill="#FFFFFF", font=("Segoe UI", 11, "bold"))
+        hb = _round_rect(c, x1 - 226, 28, x1 - 130, 60, 10, fill="#FFFFFF", outline="", tags="help")
+        c.create_text(x1 - 178, 44, text="❓ Ajutor", fill=NAVY, font=("Segoe UI", 11, "bold"), tags="help")
         c.tag_bind("help", "<Button-1>", lambda e: self._open_help())
-        c.tag_bind("help", "<Enter>", lambda e: (c.itemconfigure(hb, fill="#24492f"), c.configure(cursor="hand2")))
-        c.tag_bind("help", "<Leave>", lambda e: (c.itemconfigure(hb, fill="#16301f"), c.configure(cursor="")))
+        c.tag_bind("help", "<Enter>", lambda e: (c.itemconfigure(hb, fill="#E3EEF6"), c.configure(cursor="hand2")))
+        c.tag_bind("help", "<Leave>", lambda e: (c.itemconfigure(hb, fill="#FFFFFF"), c.configure(cursor="")))
 
     def _draw_bg(self):
         """Fundal cu curbe de nivel (fix, nu se misca la zoom / mutare)."""
@@ -916,9 +940,9 @@ class App(BaseTk):
         W, H = max(c.winfo_width(), 100), max(c.winfo_height(), 100)
         # nordul (axa Nord a proiectiei Stereo 70)
         nx, ny = W - 34, 26
-        _round_rect(c, nx - 20, ny - 18, nx + 20, ny + 46, 10, fill="#0d2217", outline="#2f5a40", tags="overlay")
+        _round_rect(c, nx - 20, ny - 18, nx + 20, ny + 46, 10, fill="#FFFFFF", outline="#C9D6E2", tags="overlay")
         c.create_polygon(nx, ny - 8, nx - 9, ny + 22, nx, ny + 16, fill=TEXT, outline="", tags="overlay")
-        c.create_polygon(nx, ny - 8, nx + 9, ny + 22, nx, ny + 16, fill="#5d7a66", outline="", tags="overlay")
+        c.create_polygon(nx, ny - 8, nx + 9, ny + 22, nx, ny + 16, fill="#9AA5B1", outline="", tags="overlay")
         c.create_text(nx, ny + 34, text="N", fill=AMBER, font=("Segoe UI", 11, "bold"), tags="overlay")
         # scara grafica: 1-2-5 x 10^k, intre ~70 si ~170 px
         S = self.view[0]
@@ -927,10 +951,10 @@ class App(BaseTk):
         L = min((m * k for m in (1, 2, 5, 10)), key=lambda v: abs(v - target))
         px = L * S
         x0, y0 = 18, H - 22
-        _round_rect(c, x0 - 8, y0 - 26, x0 + px + 52, y0 + 12, 8, fill="#0d2217", outline="#2f5a40", tags="overlay")
+        _round_rect(c, x0 - 8, y0 - 26, x0 + px + 52, y0 + 12, 8, fill="#FFFFFF", outline="#C9D6E2", tags="overlay")
         for j in range(4):
             c.create_rectangle(x0 + px * j / 4, y0 - 4, x0 + px * (j + 1) / 4, y0 + 2,
-                               fill=TEXT if j % 2 == 0 else "#1b3526", outline=TEXT, tags="overlay")
+                               fill=TEXT if j % 2 == 0 else "#FFFFFF", outline=TEXT, tags="overlay")
         txt = f"{L / 1000:g} km" if L >= 1000 else f"{L:g} m"
         c.create_text(x0 + px + 8, y0 - 1, anchor="w", text=txt, fill=TEXT, font=("Segoe UI", 10, "bold"),
                       tags="overlay")
@@ -942,7 +966,13 @@ class App(BaseTk):
         self._draw_bg()
         w = max(self.canvas.winfo_width(), 600)
         h = max(self.canvas.winfo_height(), 400)
-        _mini_pine(self.canvas, w / 2, h / 2 - 22, 46, "#3f7a55")
+        if not hasattr(self, "_hint_tk"):
+            try:
+                self._hint_tk = ImageTk.PhotoImage(Image.open(asset("dwg2kmz_icon.png")).resize((60, 60), Image.LANCZOS))
+            except Exception:
+                self._hint_tk = None
+        if self._hint_tk:
+            self.canvas.create_image(w / 2, h / 2 - 46, image=self._hint_tk)
         self.canvas.create_text(w / 2, h / 2 + 4, text="Încarcă un desen DXF sau DWG", fill=TEXT,
                                 font=("Segoe UI", 17, "bold"))
         self.canvas.create_text(w / 2, h / 2 + 32, text="trage fișierul în fereastră sau apasă pe zona din stânga",
@@ -1028,7 +1058,7 @@ class App(BaseTk):
             self.out_dir.set(desktop_dir())
 
         self.drop_lbl.configure(text=f"✅  {os.path.basename(path)}\n\napasă sau trage alt fișier",
-                                text_color="#ffffff")
+                                text_color=TEXT)
         counts = {k: sum(1 for f in feats if f.kind == k) for k, _, _ in CATEGORIES}
         for k, lbl in self.cat_checks.items():
             lbl.configure(text=str(counts[k]))
@@ -1235,7 +1265,7 @@ class App(BaseTk):
                 if f.kind == "point":
                     item_feat[c.create_oval(sx - 3, sy - 3, sx + 3, sy + 3, fill=col, outline="", tags=tag)] = i
                     if on and not excl and labels:
-                        item_feat[c.create_text(sx + 6, sy - 6, text=f.name[:20], fill="#f6d58e", anchor="w",
+                        item_feat[c.create_text(sx + 6, sy - 6, text=f.name[:20], fill="#5B3A00", anchor="w",
                                                 font=("Segoe UI", 8), tags=tag)] = i
                 elif texts_as_marks or not on:
                     item_feat[c.create_rectangle(sx - 2, sy - 2, sx + 2, sy + 2, outline=col, tags=tag)] = i
@@ -1338,7 +1368,7 @@ class App(BaseTk):
             return
         if tool == TOOL_RECT or e.state & 0x0005:            # dreptunghi (sau Shift/Ctrl + trage)
             self._box_mode = "out" if self._action_out(e) else "in"
-            col = EXCLUDED_COL if self._box_mode == "out" else "#22c55e"
+            col = EXCLUDED_COL if self._box_mode == "out" else OK_COL
             self.canvas.create_rectangle(e.x, e.y, e.x, e.y, outline=col, dash=(4, 3), width=2, tags="sel")
 
     def _pan_move(self, e):
@@ -1415,7 +1445,7 @@ class App(BaseTk):
         self.canvas.delete("sel")
         if not self._poly_world or not self.view:
             return
-        col = EXCLUDED_COL if self._action_out() else "#22c55e"
+        col = EXCLUDED_COL if self._action_out() else OK_COL
         flat = []
         for p in self._poly_world:
             flat.extend(self._w2s(*p))
@@ -1458,7 +1488,7 @@ class App(BaseTk):
             self.excluded -= hit
         self._redraw()
         verb = "scoase din" if out else "puse înapoi la"
-        self.hint_lbl.configure(text=f"✔ {len(hit)} obiecte {verb} export.", text_color="#22c55e")
+        self.hint_lbl.configure(text=f"✔ {len(hit)} obiecte {verb} export.", text_color=OK_COL)
 
     def _touches(self, i, pts, shape):
         if any(_point_in_poly(p, shape) for p in pts):
@@ -1513,7 +1543,7 @@ class App(BaseTk):
             if i in self.excluded:
                 hint, col = "❌ EXCLUS – click pentru a-l pune înapoi la export", EXCLUDED_COL
             else:
-                hint, col = "✔ se exportă – click pentru a-l scoate", "#22c55e"
+                hint, col = "✔ se exportă – click pentru a-l scoate", OK_COL
             self.hint_lbl.configure(text=f"▸ {CAT_LABEL[f.kind]}: {f.name[:40]}   [layer: {f.layer[:30]}]   ·   {hint}",
                                     text_color=col)
             self.canvas.configure(cursor="hand2")
@@ -1629,7 +1659,7 @@ def open_help():
 
 
 def main():
-    theme = asset("padure.json")
+    theme = asset("topokit.json")
     if theme:
         ctk.set_default_color_theme(theme)
     if "--ajutor" in sys.argv:          # ghidul programului

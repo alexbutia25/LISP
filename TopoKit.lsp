@@ -24,7 +24,7 @@
 (vl-load-com)
 
 ;; Versiunea TopoKit (aceeași cu installer/VERSION; verificată de teste)
-(setq *TK:VERSION* "1.1.0")
+(setq *TK:VERSION* "1.2.0")
 
 ;;; --------------------------------------------------------------------------
 ;;;  Setări globale implicite (păstrate pe durata sesiunii AutoCAD).
@@ -1232,7 +1232,7 @@
       T)))
 
 ;;; --------------------------------------------------------------------------
-;;;  Export KMZ cu mai multe obiecte (ca în convertorul DXF -> KMZ Bogdanel):
+;;;  Export KMZ cu mai multe obiecte (ca în convertorul DWG to KMZ):
 ;;;  poligoane, polilinii, linii, puncte și texte, grupate pe categorii și
 ;;;  straturi, cu culoarea din desen. Un obiect = (tip strat rgb nume puncte info)
 ;;;  tip: "polygon" | "polyline" | "line" | "point" | "text"; info: listă (eticheta . valoare)
@@ -1665,27 +1665,27 @@
         (if (TK:LayerOn (cdr (assoc 8 (entget e)))) (ssadd e out)))
       (if (> (sslength out) 0) out))))
 
-;; TK:BogdanelExe - convertorul DXF/DWG -> KMZ "Bogdanel" instalat cu TopoKit
-(defun TK:BogdanelExe (/ d f)
+;; TK:Dwg2KmzExe - convertorul DXF/DWG -> KMZ "DWG to KMZ" instalat cu TopoKit
+(defun TK:Dwg2KmzExe (/ d f)
   (if (and (setq d (vl-registry-read "HKEY_CURRENT_USER\\Software\\TopoKit" "InstallDir"))
-           (findfile (setq f (strcat (vl-string-right-trim "\\" d) "\\Bogdanel\\Bogdanel.exe"))))
+           (findfile (setq f (strcat (vl-string-right-trim "\\" d) "\\modules\\DWGtoKMZ.exe"))))
     f))
 
-;; C:DWGKMZ - transformatorul DWG -> KMZ: deschide programul Bogdanel (convertorul
+;; C:DWGKMZ - transformatorul DWG -> KMZ: deschide programul DWG to KMZ (convertorul
 ;; DXF/DWG -> KMZ) cu desenul curent; fără program, exportul pe straturi din LISP
 (defun c:DWGKMZ (/ exe dwg)
   (cond
-    ((setq exe (TK:BogdanelExe))
+    ((setq exe (TK:Dwg2KmzExe))
      (if (= 1 (getvar "DWGTITLED"))
        (progn
          (setq dwg (strcat (getvar "DWGPREFIX") (getvar "DWGNAME")))
          (if (/= 0 (getvar "DBMOD"))
            (princ "\nATENTIE: desenul are modificari nesalvate; convertorul citeste ultima versiune salvata (QSAVE)."))
          (startapp exe (strcat "\"" dwg "\""))
-         (princ (strcat "\nConvertorul DXF/DWG - KMZ (Bogdanel) a fost pornit cu " (getvar "DWGNAME") ".")))
+         (princ (strcat "\nDWG to KMZ a fost pornit cu " (getvar "DWGNAME") ".")))
        (progn
          (startapp exe)
-         (princ "\nConvertorul DXF/DWG - KMZ (Bogdanel) a fost pornit; desenul nu e salvat - alegeti fisierul in program."))))
+         (princ "\nDWG to KMZ a fost pornit; desenul nu e salvat - alegeti fisierul in program."))))
     (T (TK:DwgKmzLisp)))
   (princ))
 
@@ -2042,13 +2042,13 @@
     "      : row {"
     "        : tk_ico { key = \"bt_dwgkmz\"; }"
     "        : column {"
-    "          : text { label = \"DWG > KMZ\"; }"
+    "          : text { label = \"DWG to KMZ\"; }"
     "          : text { label = \"DWGKMZ\"; }"
     "        }"
     "      }"
     "      : paragraph {"
-    "        : text_part { label = \"Convertorul Bogdanel:\"; }"
-    "        : text_part { label = \"DXF/DWG in Google Earth\"; }"
+    "        : text_part { label = \"Convertor DXF/DWG in\"; }"
+    "        : text_part { label = \"Google Earth, TransDatRO\"; }"
     "      }"
     "    }"
     "    : tk_card {"
@@ -2513,7 +2513,7 @@
                  "TOPOKIT / MYTOPO - meniul principal\n"
                  "ADDVTX    - vertexi la intersectiile poliliniilor\n"
                  "EXPKMZ    - export KMZ: parcela sau obiecte pe straturi\n"
-                 "DWGKMZ    - convertorul DXF/DWG -> KMZ Bogdanel (desenul curent)\n"
+                 "DWGKMZ    - DWG to KMZ: convertor DXF/DWG -> KMZ (desenul curent)\n"
                  "INSCADRU  - format A4..A0, cadru si indicator la scara\n"
                  "ANEXE     - anexe Ordin ANCPI 600/2023\n"
                  "TOPOTEREN - puncte, TIN, curbe de nivel, volume\n"

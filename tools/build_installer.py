@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Construieste instalatorul Windows TopoKitSetup.exe.
 
-    python3 tools/build_installer.py [--version 1.1.0] [--out dist]
+    python3 tools/build_installer.py [--version 1.2.0] [--out dist]
 
 Necesita (Linux: apt install nsis mingw-w64; Windows: NSIS 3 + MinGW-w64 in PATH):
     makensis, x86_64-w64-mingw32-gcc, x86_64-w64-mingw32-windres
@@ -14,7 +14,7 @@ Pasi:
        bundle/TopoKit.bundle/Contents/             *.lsp, *.dcl, grila .gsb, anexe/, README
        app/                                        TopoKit.exe, README.html, docs/,
                                                    PlanInclinare/ (PlanInclinare.exe, PyInstaller),
-                                                   Bogdanel/ (convertorul DXF/DWG -> KMZ, --bogdanel)
+                                                   modules/ (DWG to KMZ, modulul TopoKit, PyInstaller)
   3. ruleaza makensis installer/TopoKit.nsi -> dist/TopoKitSetup-<versiune>.exe
 """
 import argparse, html, os, pathlib, re, shutil, subprocess, sys
@@ -63,8 +63,6 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--version", default=(INST / "VERSION").read_text().strip())
     ap.add_argument("--out", default=str(ROOT / "dist"))
-    ap.add_argument("--bogdanel", default=os.environ.get("TOPOKIT_BOGDANEL", r"E:\Munca\Bogdanel\Program"),
-                    help="folderul cu Bogdanel.exe (convertorul DXF/DWG -> KMZ), inclus in instalator")
     a = ap.parse_args()
     if not re.fullmatch(r"\d+\.\d+\.\d+", a.version):
         sys.exit("Versiunea trebuie sa fie de forma X.Y.Z")
@@ -117,16 +115,20 @@ def main():
     for f in ("PlanInclinareCogo.dll", "exemplu_siloz.csv"):
         shutil.copy2(ROOT / "inclinare" / f, pi / f)
 
-    # 2c. convertorul DXF/DWG -> KMZ "Bogdanel" (programul original, compilat separat)
-    bog = pathlib.Path(a.bogdanel)
-    if (bog / "Bogdanel.exe").is_file():
-        (app / "Bogdanel").mkdir()
-        for f in ("Bogdanel.exe", "Instructiuni Bogdanel.html"):
-            if (bog / f).is_file():
-                shutil.copy2(bog / f, app / "Bogdanel" / f)
-    else:
-        print(f"ATENTIE: {bog / 'Bogdanel.exe'} lipseste - instalatorul nu contine convertorul Bogdanel "
-              "(cardul DWG -> KMZ foloseste exportul din AutoCAD)")
+    # 2c. convertorul DXF/DWG -> KMZ "DWG to KMZ" (dwg2kmz/), compilat cu PyInstaller
+    d2k = ROOT / "dwg2kmz"
+    sep = ";" if os.name == "nt" else ":"
+    run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--onefile", "--windowed", "--name", "DWGtoKMZ",
+         "--icon", INST / "launcher" / "topokit.ico",
+         "--add-data", f"{d2k / 'assets'}{sep}assets", "--add-data", f"{d2k / 'grids'}{sep}grids",
+         "--add-data", f"{d2k / 'tools'}{sep}tools",
+         "--collect-all", "customtkinter", "--collect-all", "tkinterdnd2",
+         "--collect-data", "pyproj", "--collect-data", "ezdxf",
+         "--distpath", build / "d2k_dist", "--workpath", build / "d2k_work", "--specpath", build,
+         d2k / "dwg2kmz.py"])
+    (app / "modules").mkdir()
+    shutil.copy2(build / "d2k_dist" / "DWGtoKMZ.exe", app / "modules" / "DWGtoKMZ.exe")
+    shutil.copy2(d2k / "Instructiuni DWG to KMZ.html", app / "modules" / "Instructiuni DWG to KMZ.html")
 
     # 3. instalatorul
     out = pathlib.Path(a.out)

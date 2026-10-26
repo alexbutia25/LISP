@@ -63,7 +63,7 @@ static const struct { const wchar_t *label, *cmd; } CMDS[] = {
     { L"Verificare documentație", L"VERIFICARE" },
     { L"Planșe PDF", L"PLANEPDF" },
     { L"Export KMZ (Google Earth)", L"EXPKMZ" },
-    { L"Convertor DXF/DWG → KMZ (Bogdanel)", L"DWGKMZ" },
+    { L"DWG to KMZ (convertor DXF/DWG → KMZ)", L"DWGKMZ" },
     { L"Inserare cadru planșă", L"INSCADRU" },
     { L"Adăugare vertexi (ADDVTX)", L"ADDVTX" },
     { L"Calcul înclinație (Plan Înclinare)", L"PLANINCL" },
@@ -1047,11 +1047,11 @@ void App_Action(int act, int arg)
         if (arg >= 0 && arg < NCMDS &&
             (!wcscmp(CMDS[arg].cmd, L"PLANINCL") || !wcscmp(CMDS[arg].cmd, L"DWGKMZ"))) {
             /* programele separate (nu au nevoie de AutoCAD): Plan Inclinare si
-             * convertorul DXF/DWG -> KMZ Bogdanel, instalate langa TopoKit.exe */
+             * convertorul DWG to KMZ, instalate langa TopoKit.exe */
             BOOL pi = !wcscmp(CMDS[arg].cmd, L"PLANINCL");
-            const wchar_t *name = pi ? L"Plan Înclinare" : L"Convertorul DXF/DWG - KMZ";
+            const wchar_t *name = pi ? L"Plan Înclinare" : L"DWG to KMZ";
             GetModuleFileNameW(NULL, f, MAX_PATH);
-            lstrcpyW(wcsrchr(f, L'\\') + 1, pi ? L"PlanInclinare\\PlanInclinare.exe" : L"Bogdanel\\Bogdanel.exe");
+            lstrcpyW(wcsrchr(f, L'\\') + 1, pi ? L"PlanInclinare\\PlanInclinare.exe" : L"modules\\DWGtoKMZ.exe");
             if (PathFileExistsW(f) && (INT_PTR)ShellExecuteW(NULL, L"open", f, NULL, NULL, SW_SHOWNORMAL) > 32) {
                 Log(L"Pornit: %ls", f);
                 Note(UI_NOTE_OK, L"%ls a fost pornit", name);

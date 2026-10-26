@@ -27,7 +27,7 @@
 #include "ui.h"
 
 #ifndef TK_VERSION
-#define TK_VERSION "1.1.0"
+#define TK_VERSION "1.2.0"
 #endif
 #define UI_CLASS L"TopoKitMainWnd"
 #define W_DIP 840
@@ -41,7 +41,7 @@ static const struct { const wchar_t *title, *desc, *cmd; ARGB accent; } TILES[] 
     { L"Verificare", L"Controlul documentației înainte de predare", L"VERIFICARE", 0xFFD08A12 },
     { L"Planșe PDF", L"Plotarea tuturor planșelor într-un singur pas", L"PLANEPDF", 0xFFC8443A },
     { L"Export KMZ", L"Parcela în Google Earth (Stereo 70 → WGS84)", L"EXPKMZ", 0xFF1F8FBF },
-    { L"DWG → KMZ", L"Convertorul Bogdanel: DXF/DWG → Google Earth", L"DWGKMZ", 0xFF0E8C7F },
+    { L"DWG to KMZ", L"Convertor DXF/DWG → Google Earth", L"DWGKMZ", 0xFF0E8C7F },
     { L"Cadru planșă", L"Format A4–A0, cadru, caroiaj și indicator", L"INSCADRU", 0xFF3B5B92 },
     { L"Vertexi", L"Corecție topologică la intersecții (ADDVTX)", L"ADDVTX", 0xFFA3478F },
     { L"Calcul înclinație", L"Plan Înclinare: fișiere sau puncte din AutoCAD", L"PLANINCL", 0xFFE0662A },

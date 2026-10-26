@@ -1,0 +1,11 @@
+LibreDWG 0.14 (dwg2dxf.exe și bibliotecile .dll din acest folder)
+
+Sursa: https://github.com/LibreDWG/libredwg/releases/tag/0.14
+Fișier original: libredwg-0.14-win64.zip
+SHA-256: 1ad7e15344d20b3426c3435b078d82fb84b35062815946b2cca9c5fc9810fea8
+
+LibreDWG este software liber, distribuit sub licența GNU General Public License v3
+(sau ulterioară): https://www.gnu.org/licenses/gpl-3.0.html
+Codul sursă complet: https://github.com/LibreDWG/libredwg
+
+DWG to KMZ (TopoKit) folosește dwg2dxf.exe doar ca program separat, pentru conversia DWG -> DXF.

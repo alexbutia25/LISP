@@ -41,10 +41,10 @@ static const struct { const wchar_t *title, *desc, *cmd; ARGB accent; } TILES[] 
     { L"Verificare", L"Controlul documentației înainte de predare", L"VERIFICARE", 0xFFD08A12 },
     { L"Planșe PDF", L"Plotarea tuturor planșelor într-un singur pas", L"PLANEPDF", 0xFFC8443A },
     { L"Export KMZ", L"Parcela în Google Earth (Stereo 70 → WGS84)", L"EXPKMZ", 0xFF1F8FBF },
-    { L"DWG → KMZ", L"Transformator: tot desenul pe straturi, cu TransDatRO", L"DWGKMZ", 0xFF0E8C7F },
+    { L"DWG → KMZ", L"Convertorul Bogdanel: DXF/DWG → Google Earth", L"DWGKMZ", 0xFF0E8C7F },
     { L"Cadru planșă", L"Format A4–A0, cadru, caroiaj și indicator", L"INSCADRU", 0xFF3B5B92 },
     { L"Vertexi", L"Corecție topologică la intersecții (ADDVTX)", L"ADDVTX", 0xFFA3478F },
-    { L"Calcul înclinație", L"Drag & drop DWG/DXF/CSV și puncte din AutoCAD", L"PLANINCL", 0xFFE0662A },
+    { L"Calcul înclinație", L"Plan Înclinare: fișiere sau puncte din AutoCAD", L"PLANINCL", 0xFFE0662A },
 };
 #define NTILES 10
 

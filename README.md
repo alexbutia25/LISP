@@ -9,7 +9,7 @@ Suită modulară AutoLISP + DCL pentru AutoCAD (în stilul TopoLT):
 | `EXPKMZ` | Export în KMZ/KML pentru Google Earth Pro: o parcelă sau mai multe obiecte pe straturi, cu transformarea oficială **TransDatRO** (Stereo 70 → ETRS89, ~1 mm) |
 | `INSCADRU` | Format A4…A0 (portrait/landscape), cadru și indicator la scară |
 | `ANEXE` | Generatorul de anexe pentru **Ordinul ANCPI nr. 600/2023**: PAD, dezlipire/alipire, releveu și documentele Word ([detalii](#4-generator-de-anexe--ordinul-ancpi-nr-6002023-anexe)) |
-| `DWGKMZ` | **Transformator DWG → KMZ**: tot desenul (straturile vizibile) sau obiectele selectate, pe categorii și straturi, cu TransDatRO |
+| `DWGKMZ` | **Transformator DWG → KMZ**: deschide convertorul original **Bogdanel** (DXF/DWG → KMZ, TransDatRO) cu desenul curent; fără program, exportă desenul pe straturi direct din AutoCAD |
 | `PLANINCL` | Programul **Plan Înclinare** (calcul înclinație), exact ca înainte: drag & drop CSV/TXT/DWG/DXF, previzualizare, export DXF/DWG, plus punctele din desenul deschis (`PLANINCLSEL`) |
 | `INCLINARE` | Planul de înclinare / verticalitate (silozuri, stâlpi, coșuri, turnuri) din puncte măsurate pe rânduri, pe planșă A4…A0 cu cartuș ([detalii](#6-calcul-înclinație--programul-plan-înclinare-planincl-și-inclinare)) |
 | `TOPOTEREN` | Modulul de teren: import puncte și desenare pe coduri, model TIN, curbe de nivel, volume, raster georeferențiat, KML/KMZ, tabele și legende ([detalii](#5-teren--puncte-model-3d-curbe-de-nivel-volume-topoteren)) |
@@ -25,7 +25,8 @@ Suită modulară AutoLISP + DCL pentru AutoCAD (în stilul TopoLT):
   fiecare modul – pictograma colorată (aceleași culori și simboluri ca în fereastra TopoKit), titlul,
   comanda AutoCAD și o descriere. **Clic pe pictogramă** deschide modulul.
 - Cele 10 module: Setări module, Anexe ANCPI, Teren și volume, Verificare, Planșe PDF, Export KMZ,
-  DWG → KMZ, Cadru planșă, Vertexi și Calcul înclinație.
+  DWG → KMZ, Cadru planșă, Vertexi și Calcul înclinație. „DWG → KMZ” și „Calcul înclinație” pornesc
+  programele originale Bogdanel și Plan Înclinare.
 - **Setări module…** deschide opțiunile corecției topologice, ale exportului KMZ și ale formatului de
   planșă, cu pictogramele lor și previzualizarea planșei (formatul, orientarea, cadrul, indicatorul și
   caroiajul se redesenează la orice modificare, ca și în dialogul `INSCADRU`):
@@ -468,6 +469,11 @@ cartuș, export DXF și DWG, setări salvate. Se instalează ca `PlanInclinare.e
 Nou: butonul **„Puncte din AutoCAD…”** – TopoKit trimite comanda `PLANINCLSEL` în desenul deschis,
 selectați punctele (puncte COGO, puncte AutoCAD sau blocuri) și apăsați Enter; programul le preia singur.
 Codul punctului este descrierea (COGO) sau stratul.
+
+**Convertorul DXF/DWG → KMZ „Bogdanel”** (cardul „DWG → KMZ”, comanda `DWGKMZ`, meniul Start → TopoKit →
+Convertor DXF-DWG - KMZ) este programul original, inclus neschimbat (`Bogdanel\Bogdanel.exe`): din AutoCAD
+se deschide direct cu desenul curent (ultima versiune salvată). La compilarea instalatorului se ia din
+folderul dat cu `--bogdanel` (implicit `E:\Munca\Bogdanel\Program`).
 
 Comanda `INCLINARE` desenează același plan direct în desenul curent, fără programul separat:
 

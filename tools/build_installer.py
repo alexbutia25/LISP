@@ -13,10 +13,11 @@ Pasi:
        bundle/TopoKit.bundle/PackageContents.xml   (versiunea completata)
        bundle/TopoKit.bundle/Contents/             *.lsp, *.dcl, grila .gsb, anexe/, README
        app/                                        TopoKit.exe, README.html, docs/,
-                                                   PlanInclinare/ (PlanInclinare.exe, PyInstaller)
+                                                   PlanInclinare/ (PlanInclinare.exe, PyInstaller),
+                                                   Bogdanel/ (convertorul DXF/DWG -> KMZ, --bogdanel)
   3. ruleaza makensis installer/TopoKit.nsi -> dist/TopoKitSetup-<versiune>.exe
 """
-import argparse, html, pathlib, re, shutil, subprocess, sys
+import argparse, html, os, pathlib, re, shutil, subprocess, sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 INST = ROOT / "installer"
@@ -62,6 +63,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--version", default=(INST / "VERSION").read_text().strip())
     ap.add_argument("--out", default=str(ROOT / "dist"))
+    ap.add_argument("--bogdanel", default=os.environ.get("TOPOKIT_BOGDANEL", r"E:\Munca\Bogdanel\Program"),
+                    help="folderul cu Bogdanel.exe (convertorul DXF/DWG -> KMZ), inclus in instalator")
     a = ap.parse_args()
     if not re.fullmatch(r"\d+\.\d+\.\d+", a.version):
         sys.exit("Versiunea trebuie sa fie de forma X.Y.Z")
@@ -113,6 +116,17 @@ def main():
     shutil.copy2(build / "pi_dist" / "PlanInclinare.exe", pi / "PlanInclinare.exe")
     for f in ("PlanInclinareCogo.dll", "exemplu_siloz.csv"):
         shutil.copy2(ROOT / "inclinare" / f, pi / f)
+
+    # 2c. convertorul DXF/DWG -> KMZ "Bogdanel" (programul original, compilat separat)
+    bog = pathlib.Path(a.bogdanel)
+    if (bog / "Bogdanel.exe").is_file():
+        (app / "Bogdanel").mkdir()
+        for f in ("Bogdanel.exe", "Instructiuni Bogdanel.html"):
+            if (bog / f).is_file():
+                shutil.copy2(bog / f, app / "Bogdanel" / f)
+    else:
+        print(f"ATENTIE: {bog / 'Bogdanel.exe'} lipseste - instalatorul nu contine convertorul Bogdanel "
+              "(cardul DWG -> KMZ foloseste exportul din AutoCAD)")
 
     # 3. instalatorul
     out = pathlib.Path(a.out)

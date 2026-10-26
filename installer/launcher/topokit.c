@@ -63,7 +63,7 @@ static const struct { const wchar_t *label, *cmd; } CMDS[] = {
     { L"Verificare documentație", L"VERIFICARE" },
     { L"Planșe PDF", L"PLANEPDF" },
     { L"Export KMZ (Google Earth)", L"EXPKMZ" },
-    { L"Transformator DWG → KMZ (tot desenul)", L"DWGKMZ" },
+    { L"Convertor DXF/DWG → KMZ (Bogdanel)", L"DWGKMZ" },
     { L"Inserare cadru planșă", L"INSCADRU" },
     { L"Adăugare vertexi (ADDVTX)", L"ADDVTX" },
     { L"Calcul înclinație (Plan Înclinare)", L"PLANINCL" },
@@ -1044,16 +1044,23 @@ void App_Action(int act, int arg)
     wchar_t f[MAX_PATH];
     switch (act) {
     case ACT_CMD:
-        if (arg >= 0 && arg < NCMDS && !wcscmp(CMDS[arg].cmd, L"PLANINCL")) {
-            /* programul Plan Inclinare ruleaza separat (nu are nevoie de AutoCAD) */
+        if (arg >= 0 && arg < NCMDS &&
+            (!wcscmp(CMDS[arg].cmd, L"PLANINCL") || !wcscmp(CMDS[arg].cmd, L"DWGKMZ"))) {
+            /* programele separate (nu au nevoie de AutoCAD): Plan Inclinare si
+             * convertorul DXF/DWG -> KMZ Bogdanel, instalate langa TopoKit.exe */
+            BOOL pi = !wcscmp(CMDS[arg].cmd, L"PLANINCL");
+            const wchar_t *name = pi ? L"Plan Înclinare" : L"Convertorul DXF/DWG - KMZ";
             GetModuleFileNameW(NULL, f, MAX_PATH);
-            lstrcpyW(wcsrchr(f, L'\\') + 1, L"PlanInclinare\\PlanInclinare.exe");
+            lstrcpyW(wcsrchr(f, L'\\') + 1, pi ? L"PlanInclinare\\PlanInclinare.exe" : L"Bogdanel\\Bogdanel.exe");
             if (PathFileExistsW(f) && (INT_PTR)ShellExecuteW(NULL, L"open", f, NULL, NULL, SW_SHOWNORMAL) > 32) {
-                Log(L"Pornit Plan Inclinare: %ls", f);
-                Note(UI_NOTE_OK, L"Plan Înclinare a fost pornit");
-            } else {
-                Log(L"Plan Inclinare lipseste: %ls", f);
+                Log(L"Pornit: %ls", f);
+                Note(UI_NOTE_OK, L"%ls a fost pornit", name);
+            } else if (pi) {
+                Log(L"Lipseste: %ls", f);
                 Note(UI_NOTE_ERR, L"Nu găsesc PlanInclinare.exe – reinstalați TopoKit");
+            } else {
+                Log(L"Lipseste: %ls - exportul DWGKMZ din AutoCAD", f);
+                RunCommand(CMDS[arg].cmd, FALSE);
             }
         } else if (arg >= 0 && arg < NCMDS) {
             RunCommand(CMDS[arg].cmd, FALSE);

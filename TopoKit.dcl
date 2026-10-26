@@ -163,8 +163,8 @@ topokit_main : dialog {
         }
       }
       : paragraph {
-        : text_part { label = "Transformator: tot desenul"; }
-        : text_part { label = "pe straturi, TransDatRO"; }
+        : text_part { label = "Convertorul Bogdanel:"; }
+        : text_part { label = "DXF/DWG in Google Earth"; }
       }
     }
     : tk_card {

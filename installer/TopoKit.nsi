@@ -118,6 +118,9 @@ Section "${APP} pentru AutoCAD (obligatoriu)" SecMain
   ; programul Plan Inclinare (calcul inclinatie); setarile utilizatorului raman
   SetOutPath "$INSTDIR\PlanInclinare"
   File /r "${STAGE}\app\PlanInclinare\*.*"
+  ; convertorul DXF/DWG -> KMZ Bogdanel (daca a fost inclus la compilare)
+  SetOutPath "$INSTDIR\Bogdanel"
+  File /nonfatal /r "${STAGE}\app\Bogdanel\*.*"
   SetOutPath "$INSTDIR"
 
   WriteRegStr HKCU "${REGAPP}" "ContentsDir" "${BUNDLE}\Contents"
@@ -144,6 +147,10 @@ Section "${APP} pentru AutoCAD (obligatoriu)" SecMain
     SW_SHOWNORMAL "" "Deschide TopoKit în AutoCAD"
   CreateShortCut "$SMPROGRAMS\${APP}\Plan Inclinare.lnk" "$INSTDIR\PlanInclinare\PlanInclinare.exe" "" \
     "$INSTDIR\PlanInclinare\PlanInclinare.exe" 0 SW_SHOWNORMAL "" "Calcul inclinatie (verticalitate)"
+  ${If} ${FileExists} "$INSTDIR\Bogdanel\Bogdanel.exe"
+    CreateShortCut "$SMPROGRAMS\${APP}\Convertor DXF-DWG - KMZ.lnk" "$INSTDIR\Bogdanel\Bogdanel.exe" "" \
+      "$INSTDIR\Bogdanel\Bogdanel.exe" 0 SW_SHOWNORMAL "" "Convertorul DXF/DWG - KMZ (Bogdanel)"
+  ${EndIf}
   CreateShortCut "$SMPROGRAMS\${APP}\Ghid ${APP}.lnk" "$INSTDIR\README.html"
   CreateShortCut "$SMPROGRAMS\${APP}\Dezinstalare ${APP}.lnk" "$INSTDIR\Uninstall.exe"
 
@@ -186,6 +193,7 @@ Section "Uninstall"
   Delete "$INSTDIR\README.html"
   RMDir /r "$INSTDIR\docs"
   RMDir /r "$INSTDIR\PlanInclinare"
+  RMDir /r "$INSTDIR\Bogdanel"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
   RMDir /r "$LOCALAPPDATA\TopoKit"

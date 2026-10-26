@@ -555,8 +555,12 @@ static void CommandText(const wchar_t *cmd, BOOL reload, BOOL cancel, wchar_t *t
         swprintf(text, cch, L"%ls(progn (if (not TKL:Load) (load \"%ls\")) (TKL:Load T) (princ))\n", pre, lsp);
     else
         swprintf(text, cch,
-                 L"%ls(progn (if (not TKL:Load) (load \"%ls\")) (if (not c:TOPOKIT) (TKL:Load nil)) (princ))\n%ls%ls",
-                 pre, lsp, cmd ? cmd : L"", cmd ? L"\n" : L"");
+                 /* TopoKit lipseste, nu e incarcat sau e alta versiune decat lansatorul
+                  * (actualizat cu AutoCAD deschis): incarcatorul se reincarca si,
+                  * prin TKL:Stale, reincarca modulele */
+                 L"%ls(progn (if (or (not TKL:Load) (not TKL:Stale) (/= *TK:VERSION* \"%hs\")) (load \"%ls\")) "
+                 L"(if (not c:TOPOKIT) (TKL:Load nil)) (princ))\n%ls%ls",
+                 pre, TK_VERSION, lsp, cmd ? cmd : L"", cmd ? L"\n" : L"");
 }
 
 /* Trimiterea prin COM (Document.SendCommand), in desenul activ */

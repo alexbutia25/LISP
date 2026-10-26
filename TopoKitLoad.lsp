@@ -58,6 +58,14 @@
            (vl-catch-all-apply 'setvar
              (list "TRUSTEDPATHS" (if (= tp "") (strcat dir "\\...") (strcat tp ";" dir "\\..."))))))))
 
+;; TKL:Stale - T daca in desen e incarcata alta versiune decat cea instalata
+;; (TopoKit actualizat cu AutoCAD deschis): codul vechi din memorie nu se
+;; potriveste cu dialogurile noi de pe disc, deci trebuie reincarcat
+(defun TKL:Stale (/ v)
+  (and TK:Start
+       (setq v (vl-registry-read *TKL:REGKEY* "Version"))
+       (/= v (if *TK:VERSION* *TK:VERSION* "1.0.0"))))
+
 (defun TKL:Load (force / dir r)
   (cond
     ((not (setq dir (TKL:Dir)))
@@ -66,6 +74,11 @@
     (T
      (vl-catch-all-apply 'TKL:AddSupport (list dir))
      (vl-catch-all-apply 'TKL:AddTrusted (list dir))
+     (if (and (not force) (TKL:Stale))
+       (progn
+         (princ (strcat "\nTopoKit a fost actualizat la " (vl-registry-read *TKL:REGKEY* "Version")
+                        ": se reincarca modulele."))
+         (setq force T)))
      (if force (setq TK:Start nil TKA:Generate nil TKT:Menu nil TKI:Run nil))
      (setq *TKL:DIR* dir)
      (if (or force (not TK:Start))

@@ -2691,8 +2691,21 @@
 (defun TK:MainSetari (/ r)
   (if (setq r (TK:SetariDialog)) (done_dialog r) (TK:UpdStatus)))
 
-;; C:TOPOKIT - meniul principal (carduri cu toate modulele)
-(defun c:TOPOKIT (/ id res)
+;; C:TOPOKIT - meniul principal. Dacă între timp s-a instalat altă versiune
+;; TopoKit (AutoCAD era deschis), întâi se reîncarcă modulele, ca dialogul de
+;; pe disc să fie folosit de codul aceleiași versiuni.
+(defun c:TOPOKIT ()
+  (if (and TKL:Stale (not *TK:RELOADED*) (TKL:Stale))
+    (progn
+      (setq *TK:RELOADED* T)
+      (TKL:Load T)
+      (c:TOPOKIT)
+      (setq *TK:RELOADED* nil))
+    (TK:MainMenu))
+  (princ))
+
+;; TK:MainMenu - dialogul meniului principal (carduri cu toate modulele)
+(defun TK:MainMenu (/ id res)
   (setq id (load_dialog (TK:DclPath)))
   (cond
     ((< id 0) (alert "Nu s-a putut incarca fisierul TopoKit.dcl."))

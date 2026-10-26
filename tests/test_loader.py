@@ -83,9 +83,11 @@ print("Folder gasit si fara registru; comparatii fara diferente de litere / sepa
 
 # ---------------------------------------------------------------- expresia trimisa de TopoKit.exe
 src = open(os.path.join(ROOT, "installer", "launcher", "topokit.c"), encoding="utf-8").read()
-m = re.search(r'L"%ls(\(progn \(if \(not TKL:Load\) \(load \\"%ls\\"\)\) \(if \(not c:TOPOKIT\).*?)\\n%ls%ls"', src)
+m = re.search(r'L"%ls(\(progn \(if \(or \(not TKL:Load\).*?) "\s*L"(\(if \(not c:TOPOKIT\).*?)\\n%ls%ls"', src, re.S)
 assert m, "expresia de incarcare din topokit.c"
-expr = m.group(1).replace('\\"', '"').replace("%ls", ROOT.replace("\\", "/") + "/TopoKitLoad.lsp")  # ca LispPath()
+VER = open(os.path.join(ROOT, "installer", "VERSION")).read().strip()
+expr = (m.group(1) + " " + m.group(2)).replace('\\"', '"').replace("%hs", VER) \
+    .replace("%ls", ROOT.replace("\\", "/") + "/TopoKitLoad.lsp")  # ca LispPath() si TK_VERSION
 # SendCommand (AutoCAD 2025/2026) respinge caracterele de control: Ctrl+C doar pentru WM_COPYDATA
 assert re.search(r'CommandText\(cmd, reload, FALSE,[^)]*\);\s*BringToFront', src), "SendCommand fara Ctrl+C"
 assert "CommandText(cmd, reload, TRUE," in src, "WM_COPYDATA cu Ctrl+C"
@@ -97,7 +99,18 @@ assert loads == ["TopoKitLoad.lsp", "TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitT
 loads.clear()
 run(expr)                                             # deja incarcat: nimic
 assert loads == [], loads
-print("Expresia lansatorului incarca TopoKit doar daca lipseste")
+# TopoKit actualizat cu AutoCAD deschis: in memorie e alta versiune -> totul se reincarca
+reg[("HKEY_CURRENT_USER\\Software\\TopoKit", "Version")] = VER
+env[Sym("*TK:VERSION*")] = "1.1.0"
+loads.clear()
+run(expr)
+assert loads == ["TopoKitLoad.lsp", "TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitTeren.lsp", "TopoKitInclinare.lsp"], loads
+assert env[Sym("*TK:VERSION*")] == VER
+loads.clear()
+run(expr)                                             # aceeasi versiune: nimic
+assert loads == [], loads
+reg.pop(("HKEY_CURRENT_USER\\Software\\TopoKit", "Version"))
+print("Expresia lansatorului incarca TopoKit daca lipseste sau daca s-a instalat alta versiune")
 
 # ---------------------------------------------------------------- PackageContents.xml
 doc = xml.dom.minidom.parse(os.path.join(ROOT, "installer", "bundle", "PackageContents.xml"))

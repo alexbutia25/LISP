@@ -162,10 +162,56 @@ def g_vertex(d):        # vertexuri pe polilinie
         d.rectangle((x - r, y - r, x + r, y + r), fill=W)
 
 
+def g_detmult(d):       # detasare multipla: parcela taiata in fasii, fasiile alternative hasurate
+    d.polygon([(36, 200), (50, 58), (214, 46), (222, 204)], outline=W, width=11)
+    for x0 in (58, 160):                                 # hasura pe fasiile 1 si 3
+        for k in range(3):
+            x = x0 + 8 + k * 14
+            d.line((x, 190, x + 22, 66), fill=W, width=5)
+    for xc in (104, 152):                                # liniile de detasare, punctate
+        for k in range(6):
+            y0 = 40 + k * 30
+            d.line((xc, y0, xc + 1, y0 + 18), fill=W, width=10)
+
+
+def g_points(d):        # raportare puncte: fisier cu randuri si puncte raportate
+    d.rounded_rectangle((34, 44, 120, 176), radius=10, outline=W, width=11)
+    for y in (82, 110, 138):
+        d.line((56, y, 98, y), fill=W, width=10)
+    d.line((132, 112, 168, 112), fill=W, width=10)
+    d.polygon([(166, 96), (190, 112), (166, 128)], fill=W)
+    for x, y in ((206, 62), (186, 168), (226, 132), (206, 210)):
+        d.ellipse((x - 15, y - 15, x + 15, y + 15), outline=W, width=8)
+        d.ellipse((x - 5, y - 5, x + 5, y + 5), fill=W)
+
+
+def g_cote(d):          # cote laturi: poligon cu linie de cota si capete
+    d.polygon([(46, 150), (66, 52), (206, 64), (214, 150)], outline=W, width=11)
+    d.line((46, 200, 214, 200), fill=W, width=8)
+    for x in (46, 214):
+        d.line((x, 178, x, 222), fill=W, width=8)
+    d.polygon([(50, 200), (80, 188), (80, 212)], fill=W)
+    d.polygon([(210, 200), (180, 188), (180, 212)], fill=W)
+    d.text((130, 108), "12.5", font=ImageFont.truetype(FONT, 44), fill=W, anchor="mm")
+
+
+def g_gear(d):          # setari cadastru: roata dintata peste o parcela
+    cx, cy, r = 128, 128, 92
+    pts = []
+    for i in range(48):
+        a = 2 * math.pi * i / 48 + math.pi / 48
+        rr = r if (i % 4) in (0, 1) else r * 0.76
+        pts.append((cx + rr * math.cos(a), cy + rr * math.sin(a)))
+    d.polygon(pts, fill=W)
+    d.ellipse((cx - 44, cy - 44, cx + 44, cy + 44), fill=(0, 0, 0, 0))
+    d.polygon([(cx - 22, cy + 18), (cx - 14, cy - 22), (cx + 22, cy - 18), (cx + 18, cy + 20)], fill=W)
+
+
 # aceeasi ordine ca TILES din installer/launcher/ui.c
 MODULES = [("#1B6A8F", g_menu), ("#6A4FB6", g_doc), ("#2E8B57", g_tin), ("#D08A12", g_check),
            ("#C8443A", g_pdf), ("#1F8FBF", g_globe), ("#0E8C7F", g_dwgkmz), ("#3B5B92", g_frame),
-           ("#A3478F", g_vertex), ("#E0662A", g_incl), ("#B5562E", g_det), ("#4F7A2A", g_sup)]
+           ("#A3478F", g_vertex), ("#E0662A", g_incl), ("#B5562E", g_det), ("#4F7A2A", g_sup),
+           ("#C0392B", g_detmult), ("#2F6FB5", g_points), ("#8A6A2E", g_cote), ("#55657A", g_gear)]
 
 
 def module_icon(color, glyph):
@@ -217,6 +263,13 @@ def installer_art(lg):
     im.alpha_composite(lg.resize((76, 76), Image.LANCZOS), (206, 19))
     im.convert("RGB").resize((150, 57), Image.LANCZOS).save(ART / "header.bmp")
 
+
+import sys
+if "--modules" in sys.argv:          # doar iconitele modulelor (m1..m16), restul graficii ramane
+    for i, (c, g) in enumerate(MODULES, 1):
+        module_icon(c, g).save(OUT / "icons" / f"m{i}.png")
+    print("Iconitele modulelor generate in", OUT / "icons")
+    sys.exit(0)
 
 sizes = [(16, 16), (20, 20), (24, 24), (32, 32), (40, 40), (48, 48), (64, 64), (128, 128), (256, 256)]
 b = logo()

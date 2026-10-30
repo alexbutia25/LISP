@@ -1237,6 +1237,22 @@
 ;; TKA:Viewport - creează viewport-ul VP (x1 y1 x2 y2, mm) centrat pe
 ;; punctul CM (model) la scara 1:SCALE și calculează transformarea
 ;; model -> hârtie din parametrii reali ai viewport-ului
+;; Straturile cu etichete din model ascunse in viewport-ul planurilor (TopoKit cadastru:
+;; S=, eticheta parcelelor, cote, hasuri). Planul le scrie pe ale lui, la scara planului.
+;; Straturile se creeaza daca lipsesc (aceleasi culori ca in TopoKitCad.lsp), ca etichetele
+;; puse ulterior in model sa fie ascunse si ele in planurile deja generate.
+(setq *TKA:VPHIDE* '(("Suprafete" . 3) ("Dimensions" . 4) ("Hasuri" . 8)))
+
+;; TKA:VpHide - straturile de ascuns, separate prin virgula (pentru VPLAYER)
+(defun TKA:VpHide ()
+  (foreach l *TKA:VPHIDE* (TK:MakeLayer (car l) (cdr l)))
+  (substr (apply 'strcat (mapcar '(lambda (l) (strcat "," (car l))) *TKA:VPHIDE*)) 2))
+
+;; TKA:VpHideAll - ascunde straturile in toate viewport-urile layout-ului curent
+;; (planurile generate inainte ca etichetele sa existe sau cu o versiune mai veche)
+(defun TKA:VpHideAll ()
+  (vl-catch-all-apply '(lambda () (command "_.PSPACE") (command "_.VPLAYER" "_F" (TKA:VpHide) "_A" "")) nil))
+
 (defun TKA:Viewport (vp cm scale / ss i e vpe last0 ed k c12 c17 c10)
   ;; viewport-urile create automat la activarea layout-ului se șterg
   (if (setq ss (ssget "_X" (list '(0 . "VIEWPORT") (cons 410 *TKA:LAY*))))
@@ -1262,6 +1278,9 @@
            (setvar "CVPORT" (cdr (assoc 69 (entget vpe))))
            (command "_.PLAN" "_W")
            (command "_.ZOOM" "_C" (trans (list (car cm) (cadr cm) 0.0) 0 1) (strcat (rtos (/ 1000.0 scale) 2 8) "XP"))
+           ;; etichetele din model (S=, cote, hasuri TopoKit cadastru) nu apar in plan:
+           ;; planul isi scrie singur suprafetele si lungimile, la scara lui
+           (command "_.VPLAYER" "_F" (TKA:VpHide) "_C" "")
            (command "_.PSPACE"))
         nil)
       (vl-catch-all-apply 'vla-put-DisplayLocked (list (vlax-ename->vla-object vpe) :vlax-true))
@@ -2410,6 +2429,7 @@
   (setvar "BACKGROUNDPLOT" 0)          ; plotare sincronă: fișierul există la revenire
   (foreach l lays
     (setvar "CTAB" l)
+    (TKA:VpHideAll)
     (setq f (strcat dir (TK:SafeName l) ".pdf"))
     (if (findfile f) (vl-file-delete f))
     (setq res (vl-catch-all-apply 'vla-PlotToFile (list plot f "DWG To PDF.pc3")))

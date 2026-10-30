@@ -50,6 +50,84 @@
   (if (not (TKL:InList dir sp))
     (progn (vla-put-SupportPath files (strcat dir ";" sp)) T)))
 
+;; Scoate dir din calea de suport (folderul "en" la trecerea inapoi pe romana)
+(defun TKL:DelSupport (dir / files sp u)
+  (setq files (vla-get-Files (vla-get-Preferences (vlax-get-acad-object)))
+        sp (vla-get-SupportPath files)
+        u (strcase (TKL:Slash dir)))
+  (if (TKL:InList dir sp)
+    (vla-put-SupportPath files
+      (substr (apply 'strcat
+                     (mapcar '(lambda (p) (strcat ";" p))
+                             (vl-remove-if '(lambda (p) (= (strcase (TKL:Slash (vl-string-right-trim "." p))) u))
+                                           (TKL:Split sp ";"))))
+              2))))
+
+;;; --------------------------------------------------------------------------
+;;;  Limba interfetei: "RO" (implicit) sau "EN", in HKCU\Software\TopoKit\Language
+;;;  (scrisa de comanda TOPOKITLANG si de fereastra TopoKit.exe).
+;;;  Varianta in engleza a modulelor (.lsp, .dcl) se afla in Contents\en; folderul
+;;;  e pus in calea de suport INAINTEA folderului Contents, deci findfile gaseste
+;;;  intai fisierele traduse. Anexele si planurile raman in romana (Ordinul ANCPI).
+;;; --------------------------------------------------------------------------
+(defun TKL:Lang (/ l)
+  (setq l (vl-registry-read *TKL:REGKEY* "Language"))
+  (if (and (= (type l) 'STR) (= (strcase l) "EN")) "EN" "RO"))
+
+;; Folderul din care se incarca modulele pentru limba curenta
+(defun TKL:LangDir (dir)
+  (if (and (= (TKL:Lang) "EN") (findfile (strcat dir "\\en\\TopoKit.lsp")))
+    (strcat dir "\\en")
+    dir))
+
+;; Calea de suport pentru limba curenta: "Contents\en;Contents;..." sau "Contents;..."
+(defun TKL:LangSupport (dir / ld)
+  (setq ld (TKL:LangDir dir))
+  (if (= ld dir)
+    (TKL:DelSupport (strcat dir "\\en"))
+    (if (not (TKL:InList ld (vla-get-SupportPath (vla-get-Files (vla-get-Preferences (vlax-get-acad-object))))))
+      (TKL:AddSupport ld))))
+
+;; Tabul "TopoKit" din ribbon: meniul partial TopoKit.cuix (romana) sau
+;; TopoKit_EN.cuix (engleza). Ambele au grupul de meniu "TOPOKIT"; la schimbarea
+;; limbii grupul se descarca si se incarca celalalt fisier.
+(defun TKL:Ribbon (dir / want mgs g cur r)
+  (setq want (strcat dir "\\" (if (= (TKL:Lang) "EN") "TopoKit_EN.cuix" "TopoKit.cuix")))
+  (cond
+    ((not (findfile want)) nil)
+    (T
+     (setq mgs (vla-get-MenuGroups (vlax-get-acad-object))
+           g (vl-catch-all-apply 'vla-item (list mgs "TOPOKIT")))
+     (if (vl-catch-all-error-p g) (setq g nil))
+     (if g (setq cur (vl-catch-all-apply 'vla-get-MenuFileName (list g))))
+     (cond
+       ((and g (= (type cur) 'STR)
+             (= (strcase (strcat (vl-filename-directory cur) "\\" (vl-filename-base cur)))
+                (strcase (strcat dir "\\" (vl-filename-base want)))))
+        T)                                                   ; deja incarcat
+       (T
+        (if g (vl-catch-all-apply 'vla-Unload (list g)))
+        (setq r (vl-catch-all-apply 'vlax-invoke (list mgs 'Load want)))
+        (not (vl-catch-all-error-p r)))))))
+
+;; TKL:SetLang - schimba limba si reincarca TopoKit in desenul curent
+(defun TKL:SetLang (l)
+  (vl-registry-write *TKL:REGKEY* "Language" l)
+  (TKL:Load T)
+  (princ (if (= l "EN")
+           "\nTopoKit: English interface. Other open drawings switch when TopoKit is used there."
+           "\nTopoKit: interfata in limba romana. Celelalte desene deschise trec la folosirea TopoKit.")))
+
+;; TOPOKITLANG - alegerea limbii (romana / engleza)
+(defun c:TOPOKITLANG (/ l k)
+  (setq l (TKL:Lang))
+  (initget "Romana English")
+  (setq k (getkword (strcat "\nTopoKit - limba / language [Romana/English] <"
+                            (if (= l "EN") "Romana" "English") ">: ")))
+  (if (null k) (setq k (if (= l "EN") "Romana" "English")))
+  (TKL:SetLang (if (= k "English") "EN" "RO"))
+  (princ))
+
 ;; Adauga dir in locatiile de incredere (AutoCAD 2014 si ulterior)
 (defun TKL:AddTrusted (dir / tp)
   (setq tp (getvar "TRUSTEDPATHS"))
@@ -61,12 +139,14 @@
 ;; TKL:Stale - T daca in desen e incarcata alta versiune decat cea instalata
 ;; (TopoKit actualizat cu AutoCAD deschis): codul vechi din memorie nu se
 ;; potriveste cu dialogurile noi de pe disc, deci trebuie reincarcat
+;; (sau in alta limba decat cea aleasa intre timp cu TOPOKITLANG)
 (defun TKL:Stale (/ v)
   (and TK:Start
-       (setq v (vl-registry-read *TKL:REGKEY* "Version"))
-       (/= v (if *TK:VERSION* *TK:VERSION* "1.0.0"))))
+       (or (and (setq v (vl-registry-read *TKL:REGKEY* "Version"))
+                (/= v (if *TK:VERSION* *TK:VERSION* "1.0.0")))
+           (and *TKL:LANGLOADED* (/= *TKL:LANGLOADED* (TKL:Lang))))))
 
-(defun TKL:Load (force / dir r)
+(defun TKL:Load (force / dir ldir r)
   (cond
     ((not (setq dir (TKL:Dir)))
      (princ "\nTopoKit: nu gasesc TopoKit.lsp. Reinstalati TopoKit (TopoKitSetup.exe).")
@@ -74,15 +154,17 @@
     (T
      (vl-catch-all-apply 'TKL:AddSupport (list dir))
      (vl-catch-all-apply 'TKL:AddTrusted (list dir))
+     (vl-catch-all-apply 'TKL:LangSupport (list dir))
+     (vl-catch-all-apply 'TKL:Ribbon (list dir))
      (if (and (not force) (TKL:Stale))
        (progn
-         (princ (strcat "\nTopoKit a fost actualizat la " (vl-registry-read *TKL:REGKEY* "Version")
-                        ": se reincarca modulele."))
+         (princ "\nTopoKit: versiune sau limba noua - se reincarca modulele.")
          (setq force T)))
      (if force (setq TK:Start nil TKA:Generate nil TKT:Menu nil TKI:Run nil c:TKDETASARE nil))
-     (setq *TKL:DIR* dir)
+     (setq *TKL:DIR* dir ldir (TKL:LangDir dir))
      (if (or force (not TK:Start))
-       (setq r (vl-catch-all-apply 'load (list (strcat dir "\\TopoKit.lsp")))))
+       (setq r (vl-catch-all-apply 'load (list (strcat ldir "\\TopoKit.lsp")))
+             *TKL:LANGLOADED* (TKL:Lang)))
      (cond
        ((vl-catch-all-error-p r)
         (princ (strcat "\nTopoKit: eroare la incarcare - " (vl-catch-all-error-message r)))

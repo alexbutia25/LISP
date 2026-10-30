@@ -106,8 +106,10 @@ acad.dcl.scripts = {
                     ("pick", "lb_lat", "0 1 2 3 4 5"), ("pick", "pl_mat", "1"), ("click", "bt_aplica"),
                     ("click", "accept")]]}
 acad.vars["OSMODE"] = 4133
+fn("TK:MakeLayer", "Suprafete", 3)            # etichete TopoKit cadastru (S=...) in model
 fn("c:PAD")
 assert not acad.inputs and not acad.alerts, (acad.inputs, acad.alerts)
+assert any("SUPRAFETE" in v for v in acad.vpfrozen.values()), "etichetele S= din model trebuie ascunse in plan"
 assert acad.vars["OSMODE"] == 4133 and acad.vars["CMDECHO"] == 1, "variabilele de sistem nu au fost restabilite"
 lay = "PAD_123456"
 assert lay.upper() in acad.layouts, acad.layouts.keys()

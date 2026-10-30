@@ -39,7 +39,7 @@
 
 ;; Setarile implicite (marimi in mm pe hartie, ca la TopoLT / CadTopo)
 (setq *TKC:DEF*
-       '(("SCARA" . 1000.0) ("FONT" . "TIMES_NEW_ROMAN")
+       '(("SCARA" . 1000.0) ("FONT" . "TK_ARIAL")
          ("PCT_H" . 1.2) ("PCT_COD" . "Grf") ("PCT_DMIN" . 0.03)
          ("SUP_H" . 1.2) ("SUP_HASH" . 0) ("SUP_PAT" . "ANSI31") ("DET_RUPE" . 1)
          ("COT_H" . 1.2) ("COT_PRE" . "") ("COT_SUF" . "m") ("COT_DEC" . 2)
@@ -158,12 +158,18 @@
            (listp r) r)
     (TKC:Merge r)))
 
+;; TKC:DefCfg - setarile implicite, cu scara planului din setarile TopoKit (implicit 1:500),
+;; ca textele sa aiba aceeasi marime ca formatul / cadrul planului
+(defun TKC:DefCfg (/ sc)
+  (setq sc (if (and (numberp *TK:SCARA*) (listp *TK:SCARI*)) (nth *TK:SCARA* *TK:SCARI*)))
+  (if (numberp sc) (subst (cons "SCARA" (float sc)) (assoc "SCARA" *TKC:DEF*) *TKC:DEF*) *TKC:DEF*))
+
 (defun TKC:CfgAll ()
   (if (null *TKC:CFG*)
     (progn
       (setq *TKC:CFG* (cond ((TKC:ReadCfg (vlax-ldata-get "TOPOKIT" "CAD")))
                             ((TKC:ReadCfg (vlax-ldata-get "CTOPO" "CFG")))
-                            (*TKC:DEF*)))
+                            ((TKC:DefCfg))))
       (TKC:Apply)))
   *TKC:CFG*)
 
@@ -185,7 +191,8 @@
 ;; TKC:Style - stilul de text (TIMES_NEW_ROMAN se creeaza, ca in TopoLT)
 (defun TKC:Style (/ s)
   (setq s (TKC:Cfg "FONT"))
-  (cond ((tblsearch "STYLE" s) s)
+  (cond ((= (strcase s) "TK_ARIAL") (TK:Style))      ; stilul TopoKit (Arial), ca in restul planului
+        ((tblsearch "STYLE" s) s)
         ((= (strcase s) "TIMES_NEW_ROMAN")
          (entmake '((0 . "STYLE") (100 . "AcDbSymbolTableRecord") (100 . "AcDbTextStyleTableRecord")
                     (2 . "TIMES_NEW_ROMAN") (70 . 0) (40 . 0.0) (41 . 1.0) (50 . 0.0) (71 . 0) (42 . 1.2)
@@ -516,7 +523,36 @@
            (vlax-curve-getArea en))
     (TKC:Area (TKC:PlPts en))))
 
+;; TKC:Inside - T daca punctul P e in interiorul poligonului PTS (regula par-impar)
+(defun TKC:Inside (p pts / in i m a b)
+  (setq m (length pts) i 0)
+  (repeat m
+    (setq a (nth i pts) b (nth (rem (1+ i) m) pts) i (1+ i))
+    (if (and (/= (> (cadr a) (cadr p)) (> (cadr b) (cadr p)))
+             (< (car p) (+ (car a) (/ (* (- (car b) (car a)) (- (cadr p) (cadr a))) (- (cadr b) (cadr a))))))
+      (setq in (not in))))
+  in)
+
+;; TKC:ClearSup - sterge etichetele "S=..." (TKSUPRAF) din interiorul poligonului PTS:
+;; la recalculare nu se dubleaza, iar dupa detasare nu ramane suprafata veche.
+;; Returneaza numarul de etichete sterse.
+(defun TKC:ClearSup (pts / ss i d p n)
+  (setq n 0)
+  (if (setq ss (ssget "_X" (list '(0 . "TEXT") (cons 8 *TKC:LAYSUP*) '(1 . "S=*"))))
+    (repeat (setq i (sslength ss))
+      (setq d (entget (ssname ss (setq i (1- i))))
+            p (cdr (assoc (if (or (/= 0 (cdr (assoc 72 d))) (/= 0 (cdr (assoc 73 d)))) 11 10) d)))
+      (if (and (/= 1 (cdr (assoc 67 d))) (wcmatch (cdr (assoc 1 d)) "S=*") (TKC:Inside p pts))  ; doar in model
+        (progn (entdel (cdr (assoc -1 d))) (setq n (1+ n))))))
+  n)
+
+;; TKC:SupLabel - eticheta "S=... mp" in centrul poligonului PTS
+(defun TKC:SupLabel (pts)
+  (TKC:Txt (TKC:Centroid pts) (strcat "S=" (TKC:F (TKC:Area pts) (TKC:Cfg "UN_SUP")) " mp")
+           (TK:MakeLayer *TKC:LAYSUP* 3) *TKC:SUPH* 0.0 1 2))
+
 ;; TKSUPRAF - S= in centrul fiecarui poligon inchis, optional hasura
+;; (eticheta S= existenta in poligon se inlocuieste, nu se dubleaza)
 (defun TKC:CmdSupraf (/ ss i en ar lay tot)
   (princ "\nSelectati poliliniile inchise: ")
   (if (setq ss (ssget '((0 . "LWPOLYLINE") (-4 . "&=") (70 . 1))))
@@ -525,6 +561,7 @@
       (repeat (setq i (sslength ss))
         (setq en (ssname ss (setq i (1- i))) ar (TKC:PlArea en) tot (+ tot ar))
         (if (= 1 (TKC:Cfg "SUP_HASH")) (TKC:Hatch en))
+        (TKC:ClearSup (TKC:PlPts en))
         (TKC:Txt (TKC:Centroid (TKC:PlPts en)) (strcat "S=" (TKC:F ar (TKC:Cfg "UN_SUP")) " mp")
                  lay *TKC:SUPH* 0.0 1 2))
       (TKC:Msg (strcat (itoa (sslength ss)) " suprafete, total " (TKC:F tot (TKC:Cfg "UN_SUP")) " mp.")))))
@@ -585,7 +622,7 @@
         (if (setq v (TKC:Num (cdr (assoc 1 d)))) (setq s (+ s v) cnt (1+ cnt))))
       (TKC:Msg (strcat "Suma = " (TKC:F s 2) "  (" (itoa cnt) " texte numerice din " (itoa (sslength ss)) ")"))
       (if (setq p (getpoint "\nUnde scriu suma <Enter = nu scriu>: "))
-        (TKC:Txt p (TKC:F s 2) (getvar "CLAYER") *TKC:SUPH* 0.0 0 0))
+        (TKC:Txt p (TKC:F s 2) (TK:MakeLayer *TKC:LAYSUP* 3) *TKC:SUPH* 0.0 0 0))
       s)))
 
 ;;; ==========================================================================
@@ -818,6 +855,8 @@
           (TKC:DrawPart (nth 1 s) lay p1 cuts rupe (= 1 (TKC:Cfg "SUP_HASH")))
           (if rupe (progn (TKC:PlNew (nth 1 s) p2) (entdel (nth 1 s))))
           (TKC:Eticheta (TKC:Centroid p1) nr (TKC:Area p1) prop)
+          ;; eticheta S= a parcelei initiale nu mai e valabila: se inlocuieste cu S= pe rest
+          (if (> (TKC:ClearSup (mapcar '(lambda (p) (TKC:v+ p o)) (nth 4 s))) 0) (TKC:SupLabel p2))
           (if (distof nr 2) (vlax-ldata-put "TOPOKIT" "NRPAR" (atoi nr)))
           (TKC:Msg (strcat "Detasat: " (TKC:F (TKC:Area p1) 2) " mp (cerut " (TKC:F target 2)
                            "), rest: " (TKC:F (TKC:Area p2) 2) " mp."))
@@ -1037,6 +1076,7 @@
             (TKC:Msg (strcat "Parcela " (car rw) ": " (TKC:F (TKC:Area pw) 2) " mp (cerut " (TKC:F (caddr rw) 2) ")"))
             (setq i (1+ i)))
           (setq rest (mapcar '(lambda (p) (TKC:v+ p o)) (cadr res)))
+          (if (> (TKC:ClearSup (mapcar '(lambda (p) (TKC:v+ p o)) (nth 4 s))) 0) (TKC:SupLabel rest))
           (if rupe (progn (TKC:PlNew (nth 1 s) rest) (entdel (nth 1 s))))
           (vlax-ldata-put "TOPOKIT" "NRPAR" mx)
           (TKC:Msg (strcat "Rest: " (TKC:F (TKC:Area rest) 2) " mp."))

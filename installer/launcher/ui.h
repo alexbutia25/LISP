@@ -16,7 +16,11 @@ typedef struct {
 enum { UI_NOTE_OK, UI_NOTE_ERR, UI_NOTE_INFO };
 
 /* Actiunile ferestrei, executate de lansator */
-enum { ACT_CMD, ACT_START, ACT_RELOAD, ACT_AUTORUN, ACT_FOLDER, ACT_HELP, ACT_HIDDEN, ACT_DIAG };
+enum { ACT_CMD, ACT_START, ACT_RELOAD, ACT_AUTORUN, ACT_FOLDER, ACT_HELP, ACT_HIDDEN, ACT_DIAG, ACT_LANG };
+
+/* Limba interfetei (HKCU\Software\TopoKit\Language = "RO" / "EN"), comuna cu modulele LISP */
+extern BOOL g_en;
+#define TR(ro, en) (g_en ? (en) : (ro))
 
 void App_State(UiState *st);            /* implementate in topokit.c */
 void App_Action(int act, int arg);

@@ -27,28 +27,48 @@
 #include "ui.h"
 
 #ifndef TK_VERSION
-#define TK_VERSION "1.2.0"
+#define TK_VERSION "1.3.0"
 #endif
 #define UI_CLASS L"TopoKitMainWnd"
 #define W_DIP 840
-#define H_DIP 748
+#define H_DIP 830
 
 /* Cardurile modulelor - aceeasi ordine ca tabelul CMDS din topokit.c */
-static const struct { const wchar_t *title, *desc, *cmd; ARGB accent; } TILES[] = {
-    { L"Setări module", L"Toleranță, opțiuni KMZ, format și cadru", L"TOPOKITSET", 0xFF1B6A8F },
-    { L"Anexe ANCPI", L"Planuri și documente, Ordinul 600/2023", L"ANEXE", 0xFF6A4FB6 },
-    { L"Teren și volume", L"Puncte, model TIN, curbe de nivel, calcul de volume", L"TOPOTEREN", 0xFF2E8B57 },
-    { L"Verificare", L"Controlul documentației înainte de predare", L"VERIFICARE", 0xFFD08A12 },
-    { L"Planșe PDF", L"Plotarea tuturor planșelor într-un singur pas", L"PLANEPDF", 0xFFC8443A },
-    { L"Export KMZ", L"Parcela în Google Earth (Stereo 70 → WGS84)", L"EXPKMZ", 0xFF1F8FBF },
-    { L"DWG to KMZ", L"Convertor DXF/DWG → Google Earth", L"DWGKMZ", 0xFF0E8C7F },
-    { L"Cadru planșă", L"Format A4–A0, cadru, caroiaj și indicator", L"INSCADRU", 0xFF3B5B92 },
-    { L"Vertexi", L"Corecție topologică la intersecții (ADDVTX)", L"ADDVTX", 0xFFA3478F },
-    { L"Calcul înclinație", L"Plan Înclinare: fișiere sau puncte din AutoCAD", L"PLANINCL", 0xFFE0662A },
-    { L"Detașare", L"Parcele noi: paralelă, direcție, punct obligat", L"TKDETASARE", 0xFFB5562E },
-    { L"Suprafețe și cote", L"S= pe poligoane, hașură, lungimi laturi", L"TKSUPRAF", 0xFF4F7A2A },
+static const struct { const wchar_t *title, *desc, *title_en, *desc_en, *cmd; ARGB accent; } TILES[] = {
+    { L"Setări module", L"Toleranță, opțiuni KMZ, format și cadru",
+      L"Module settings", L"Tolerance, KMZ options, format and frame", L"TOPOKITSET", 0xFF1B6A8F },
+    { L"Anexe ANCPI", L"Planuri și documente, Ordinul 600/2023",
+      L"ANCPI annexes", L"Plans and documents, Order 600/2023", L"ANEXE", 0xFF6A4FB6 },
+    { L"Teren și volume", L"Puncte, model TIN, curbe de nivel, calcul de volume",
+      L"Terrain and volumes", L"Points, TIN model, contour lines, volumes", L"TOPOTEREN", 0xFF2E8B57 },
+    { L"Verificare", L"Controlul documentației înainte de predare",
+      L"Check", L"Checks the documentation before submission", L"VERIFICARE", 0xFFD08A12 },
+    { L"Planșe PDF", L"Plotarea tuturor planșelor într-un singur pas",
+      L"PDF sheets", L"Plots all the sheets in one step", L"PLANEPDF", 0xFFC8443A },
+    { L"Export KMZ", L"Parcela în Google Earth (Stereo 70 → WGS84)",
+      L"Export KMZ", L"Parcel in Google Earth (Stereo 70 → WGS84)", L"EXPKMZ", 0xFF1F8FBF },
+    { L"DWG to KMZ", L"Convertor DXF/DWG → Google Earth",
+      L"DWG to KMZ", L"DXF/DWG → Google Earth converter", L"DWGKMZ", 0xFF0E8C7F },
+    { L"Cadru planșă", L"Format A4–A0, cadru, caroiaj și indicator",
+      L"Sheet frame", L"A4–A0 format, frame, grid and title block", L"INSCADRU", 0xFF3B5B92 },
+    { L"Vertexi", L"Corecție topologică la intersecții (ADDVTX)",
+      L"Vertices", L"Topology fix at intersections (ADDVTX)", L"ADDVTX", 0xFFA3478F },
+    { L"Calcul înclinație", L"Plan Înclinare: fișiere sau puncte din AutoCAD",
+      L"Inclination", L"Plan Înclinare: files or points from AutoCAD", L"PLANINCL", 0xFFE0662A },
+    { L"Detașare", L"Parcele noi: paralelă, direcție, punct obligat",
+      L"Detachment", L"New parcels: parallel, direction, fixed point", L"TKDETASARE", 0xFFB5562E },
+    { L"Suprafețe și cote", L"S= pe poligoane, hașură, lungimi laturi",
+      L"Areas and lengths", L"S= on polygons, hatch, side lengths", L"TKSUPRAF", 0xFF4F7A2A },
+    { L"Detașare multiplă", L"Mai multe parcele dintr-un tabel sau din Excel",
+      L"Multiple detachment", L"Several parcels from a table or from Excel", L"TKDETMULT", 0xFFC0392B },
+    { L"Raportare puncte", L"Puncte din fișier: număr, cotă și cod",
+      L"Draw points", L"Points from a file: number, elevation, code", L"TKIMPPCT", 0xFF2F6FB5 },
+    { L"Cote laturi", L"Lungimile laturilor, spre exteriorul poligonului",
+      L"Side lengths", L"Side lengths, outside the polygon", L"TKCOTE", 0xFF8A6A2E },
+    { L"Setări cadastru", L"Scara, înălțimi text, zecimale, hașură",
+      L"Cadastre settings", L"Scale, text heights, decimals, hatch", L"TKCADSET", 0xFF55657A },
 };
-#define NTILES 12
+#define NTILES 16
 
 /* Paleta */
 #define C_BG        0xFFF4F7FA
@@ -65,7 +85,7 @@ static const struct { const wchar_t *title, *desc, *cmd; ARGB accent; } TILES[] 
 #define C_WAIT      0xFFE0A030
 
 /* Zonele active */
-enum { HT_NONE = -1, HT_TILE0 = 0, HT_PRIMARY = 20, HT_TOGGLE, HT_FOLDER, HT_HELP, HT_DIAG };
+enum { HT_NONE = -1, HT_TILE0 = 0, HT_PRIMARY = 20, HT_TOGGLE, HT_FOLDER, HT_HELP, HT_DIAG, HT_LANG };
 
 static HINSTANCE g_inst;
 static HWND g_wnd;
@@ -232,10 +252,11 @@ static void Contour(GpGraphics *g, float cx, float cy, float r, float k, ARGB c,
 static void Layout(void)
 {
     int i;
-    float tw = (W_DIP - 48 - 3 * 16) / 4.0f, th = 132;
+    float tw = (W_DIP - 48 - 3 * 16) / 4.0f, th = 118;
     g_r[HT_PRIMARY] = (R){ W_DIP - 24 - 16 - 178, 120 + 18, 178, 36 };
+    g_r[HT_LANG] = (R){ W_DIP - 24 - 70 - 10 - 92, 22, 92, 24 };
     for (i = 0; i < NTILES; i++)
-        g_r[HT_TILE0 + i] = (R){ 24 + (i % 4) * (tw + 16), 240 + (i / 4) * (th + 16), tw, th };
+        g_r[HT_TILE0 + i] = (R){ 24 + (i % 4) * (tw + 16), 240 + (i / 4) * (th + 14), tw, th };
     g_r[HT_TOGGLE] = (R){ 24, H_DIP - 44, 250, 28 };
     g_r[HT_HELP] = (R){ W_DIP - 24 - 128, H_DIP - 44, 128, 28 };
     g_r[HT_FOLDER] = (R){ W_DIP - 24 - 128 - 12 - 116, H_DIP - 44, 116, 28 };
@@ -245,9 +266,10 @@ static void Layout(void)
 static int HitTest(int px, int py)
 {
     float x = px / g_s, y = py / g_s;
-    int ids[] = { HT_PRIMARY, HT_TOGGLE, HT_FOLDER, HT_HELP, HT_DIAG, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 };
+    int ids[NTILES + 6] = { HT_PRIMARY, HT_TOGGLE, HT_FOLDER, HT_HELP, HT_DIAG, HT_LANG };
     unsigned i;
     UiState st;
+    for (i = 0; i < NTILES; i++) ids[6 + i] = HT_TILE0 + (int)i;
     for (i = 0; i < sizeof ids / sizeof ids[0]; i++) {
         R r = g_r[ids[i]];
         if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) {
@@ -297,7 +319,13 @@ static void Paint(GpGraphics *g, int hover, int pressed)
     DrawImg(g, g_logo, 24, 22, 60, 60);
     StrokeRound(g, 25.5f * s, 23.5f * s, 57 * s, 57 * s, 13 * s, 0x40FFFFFF, 1.2f * s);
     Text(g, L"TopoKit", fTitle, 0xFFFFFFFF, (R){ 100, 20, 400, 38 }, 0, 1, FALSE);
-    Text(g, L"Topografie și cadastru pentru AutoCAD", fSub, 0xD8FFFFFF, (R){ 101, 58, 460, 24 }, 0, 1, FALSE);
+    Text(g, TR(L"Topografie și cadastru pentru AutoCAD", L"Surveying and cadastre for AutoCAD"), fSub, 0xD8FFFFFF,
+         (R){ 101, 58, 460, 24 }, 0, 1, FALSE);
+    {   /* limba: butonul arata limba in care se trece */
+        R lg = g_r[HT_LANG];
+        FillRound(g, lg.x * s, lg.y * s, lg.w * s, lg.h * s, 12 * s, hover == HT_LANG ? 0x55FFFFFF : 0x2EFFFFFF);
+        Text(g, TR(L"English", L"Română"), fSmall, 0xFFFFFFFF, lg, 1, 1, FALSE);
+    }
     FillRound(g, (W_DIP - 24 - 70) * s, 22 * s, 70 * s, 24 * s, 12 * s, 0x2EFFFFFF);
     Text(g, L"v" TK_VERSION, fSmall, 0xFFFFFFFF, (R){ W_DIP - 24 - 70, 22, 70, 24 }, 1, 1, FALSE);
 
@@ -312,20 +340,23 @@ static void Paint(GpGraphics *g, int hover, int pressed)
         StrokeRound(g, c.x * s, c.y * s, c.w * s, c.h * s, 12 * s, C_BORDER, 1 * s);
         if (st.state == UI_ON) {
             dot = C_OK;
-            swprintf(line1, 160, L"Conectat la %ls", st.acad);
-            if (st.doc && st.doc[0]) swprintf(line2, MAX_PATH + 64, L"Desen activ: %ls", st.doc);
-            else swprintf(line2, MAX_PATH + 64, L"Niciun desen deschis – TopoKit creează unul la prima comandă");
-            btn = L"Reîncarcă TopoKit";
+            swprintf(line1, 160, TR(L"Conectat la %ls", L"Connected to %ls"), st.acad);
+            if (st.doc && st.doc[0]) swprintf(line2, MAX_PATH + 64, TR(L"Desen activ: %ls", L"Active drawing: %ls"), st.doc);
+            else swprintf(line2, MAX_PATH + 64, TR(L"Niciun desen deschis – TopoKit creează unul la prima comandă",
+                                                   L"No drawing open – TopoKit creates one at the first command"));
+            btn = TR(L"Reîncarcă TopoKit", L"Reload TopoKit");
         } else if (st.state == UI_STARTING) {
             dot = C_WAIT;
-            swprintf(line1, 160, L"Se pornește AutoCAD…");
-            swprintf(line2, MAX_PATH + 64, L"Comanda aleasă se deschide imediat ce AutoCAD este gata");
-            btn = L"Se pornește…";
+            swprintf(line1, 160, TR(L"Se pornește AutoCAD…", L"Starting AutoCAD…"));
+            swprintf(line2, MAX_PATH + 64, TR(L"Comanda aleasă se deschide imediat ce AutoCAD este gata",
+                                              L"The chosen command opens as soon as AutoCAD is ready"));
+            btn = TR(L"Se pornește…", L"Starting…");
         } else {
             dot = C_OFF;
-            swprintf(line1, 160, L"AutoCAD nu rulează");
-            swprintf(line2, MAX_PATH + 64, L"Alegeți un modul sau porniți AutoCAD – TopoKit se conectează automat");
-            btn = L"Pornește AutoCAD";
+            swprintf(line1, 160, TR(L"AutoCAD nu rulează", L"AutoCAD is not running"));
+            swprintf(line2, MAX_PATH + 64, TR(L"Alegeți un modul sau porniți AutoCAD – TopoKit se conectează automat",
+                                              L"Choose a module or start AutoCAD – TopoKit connects automatically"));
+            btn = TR(L"Pornește AutoCAD", L"Start AutoCAD");
         }
         Dot(g, (c.x + 30) * s, (c.y + 36) * s, 13 * s, (dot & 0x00FFFFFF) | 0x33000000);
         Dot(g, (c.x + 30) * s, (c.y + 36) * s, 6.5f * s, dot);
@@ -353,8 +384,8 @@ static void Paint(GpGraphics *g, int hover, int pressed)
     }
 
     /* --- modulele */
-    Text(g, L"MODULE", fLabel, C_TEXT3, (R){ 26, 212, 200, 20 }, 0, 1, FALSE);
-    Text(g, L"Clic pe un modul pentru a-l deschide în AutoCAD", fSmall, C_TEXT3,
+    Text(g, TR(L"MODULE", L"MODULES"), fLabel, C_TEXT3, (R){ 26, 212, 200, 20 }, 0, 1, FALSE);
+    Text(g, TR(L"Clic pe un modul pentru a-l deschide în AutoCAD", L"Click a module to open it in AutoCAD"), fSmall, C_TEXT3,
          (R){ W_DIP - 24 - 420, 212, 420, 20 }, 2, 1, FALSE);
     for (i = 0; i < NTILES; i++) {
         R t = g_r[HT_TILE0 + i];
@@ -366,12 +397,12 @@ static void Paint(GpGraphics *g, int hover, int pressed)
         FillRound(g, t.x * s, t.y * s, t.w * s, t.h * s, 12 * s, down ? 0xFFF1F6FA : hot ? 0xFFFCFEFF : C_CARD);
         StrokeRound(g, t.x * s, t.y * s, t.w * s, t.h * s, 12 * s, hot ? TILES[i].accent : 0xFFE1E8EE,
                     (hot ? 1.6f : 1.0f) * s);
-        DrawImg(g, g_icons[i], t.x + 18, t.y + 18, 44, 44);
+        DrawImg(g, g_icons[i], t.x + 16, t.y + 14, 40, 40);
         cw = TextWidth(g, TILES[i].cmd, fMono) + 14;
-        FillRound(g, (t.x + t.w - 14 - cw) * s, (t.y + 18) * s, cw * s, 20 * s, 6 * s, 0xFFEEF2F6);
-        Text(g, TILES[i].cmd, fMono, C_TEXT2, (R){ t.x + t.w - 14 - cw, t.y + 18, cw, 20 }, 1, 1, FALSE);
-        Text(g, TILES[i].title, fH, C_TEXT, (R){ t.x + 18, t.y + 72, t.w - 30, 22 }, 0, 1, FALSE);
-        Text(g, TILES[i].desc, fBody, C_TEXT2, (R){ t.x + 18, t.y + 95, t.w - 30, 34 }, 0, 0, TRUE);
+        FillRound(g, (t.x + t.w - 14 - cw) * s, (t.y + 16) * s, cw * s, 20 * s, 6 * s, 0xFFEEF2F6);
+        Text(g, TILES[i].cmd, fMono, C_TEXT2, (R){ t.x + t.w - 14 - cw, t.y + 16, cw, 20 }, 1, 1, FALSE);
+        Text(g, TR(TILES[i].title, TILES[i].title_en), fH, C_TEXT, (R){ t.x + 16, t.y + 60, t.w - 28, 22 }, 0, 1, FALSE);
+        Text(g, TR(TILES[i].desc, TILES[i].desc_en), fBody, C_TEXT2, (R){ t.x + 16, t.y + 82, t.w - 28, 34 }, 0, 0, TRUE);
     }
 
     /* --- subsol */
@@ -386,11 +417,12 @@ static void Paint(GpGraphics *g, int hover, int pressed)
                   st.autorun ? (hover == HT_TOGGLE ? C_TEAL : C_NAVY) : (hover == HT_TOGGLE ? 0xFFB3BFCA : 0xFFC5CFD8));
         kx = st.autorun ? tg.x + 30 : tg.x + 10;
         Dot(g, kx * s, (tg.y + 14) * s, 7.5f * s, 0xFFFFFFFF);
-        Text(g, L"Pornește TopoKit odată cu Windows (în fundal)", fLink, C_TEXT,
+        Text(g, TR(L"Pornește TopoKit odată cu Windows (în fundal)", L"Start TopoKit with Windows (in the background)"),
+             fLink, C_TEXT,
              (R){ tg.x + 52, tg.y, tg.w + 40, tg.h }, 0, 1, FALSE);
         Text(g, L"Diagnostic", hover == HT_DIAG ? fLinkU : fLink, C_LINK, g_r[HT_DIAG], 2, 1, FALSE);
-        Text(g, L"Folder TopoKit", hover == HT_FOLDER ? fLinkU : fLink, C_LINK, g_r[HT_FOLDER], 2, 1, FALSE);
-        Text(g, L"Ghid de utilizare", hover == HT_HELP ? fLinkU : fLink, C_LINK, g_r[HT_HELP], 2, 1, FALSE);
+        Text(g, TR(L"Folder TopoKit", L"TopoKit folder"), hover == HT_FOLDER ? fLinkU : fLink, C_LINK, g_r[HT_FOLDER], 2, 1, FALSE);
+        Text(g, TR(L"Ghid de utilizare", L"User guide"), hover == HT_HELP ? fLinkU : fLink, C_LINK, g_r[HT_HELP], 2, 1, FALSE);
     }
 
     GdipDeleteFont(fTitle); GdipDeleteFont(fSub); GdipDeleteFont(fH); GdipDeleteFont(fBody);
@@ -478,6 +510,7 @@ static void Activate(int ht)
     else if (ht == HT_FOLDER) App_Action(ACT_FOLDER, 0);
     else if (ht == HT_HELP) App_Action(ACT_HELP, 0);
     else if (ht == HT_DIAG) App_Action(ACT_DIAG, 0);
+    else if (ht == HT_LANG) App_Action(ACT_LANG, 0);
     InvalidateRect(g_wnd, NULL, FALSE);
 }
 

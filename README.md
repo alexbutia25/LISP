@@ -7,6 +7,7 @@ Suită modulară AutoLISP + DCL pentru AutoCAD (în stilul TopoLT):
 | `TOPOKIT` | Deschide **fereastra TopoKit** cu toate modulele (aceeași ca la pornirea programului) |
 | `TOPOKITSET` | Setările modulelor: toleranța corecției topologice, opțiunile KMZ, formatul și cadrul planșei |
 | `MYTOPO` | Meniul cu module direct în AutoCAD (dialog), dacă fereastra TopoKit nu e instalată |
+| `TOPOKITLANG` | **Limba interfeței: română / engleză** (mesaje, întrebări, dialoguri, ribbon, fereastra TopoKit) |
 | `ADDVTX` | Corecție topologică – vertexi la intersecțiile poliliniilor |
 | `EXPKMZ` | Export în KMZ/KML pentru Google Earth Pro: o parcelă sau mai multe obiecte pe straturi, cu transformarea oficială **TransDatRO** (Stereo 70 → ETRS89, ~1 mm) |
 | `INSCADRU` | Format A4…A0 (portrait/landscape), cadru și indicator la scară |
@@ -20,6 +21,47 @@ Suită modulară AutoLISP + DCL pentru AutoCAD (în stilul TopoLT):
 | `TOPOTEREN` | Modulul de teren: import puncte și desenare pe coduri, model TIN, curbe de nivel, volume, raster georeferențiat, KML/KMZ, tabele și legende ([detalii](#5-teren--puncte-model-3d-curbe-de-nivel-volume-topoteren)) |
 
 ## Interfața
+
+### Tabul TopoKit din ribbon
+
+La instalare, AutoCAD primește un tab **TopoKit** în ribbon (ca tabul TopoLT), cu un buton și o
+iconiță proprie pentru **fiecare comandă** TopoKit, grupate pe panouri:
+
+| Panou | Butoane |
+|---|---|
+| Configurare | Fereastra TopoKit, Setări module, Setări cadastru, Meniul TopoKit, **Limba română / engleză**, Reîncarcă, Comenzi cadastru |
+| Puncte | **Raportare puncte**, introducere, pe contur, ștergere, renumerotare, selecție și schimbarea codului, fișier coordonate, import puncte teren, tabel |
+| Suprafețe | **Detașare**, **Detașare multiplă** (butoane mari), Suprafețe (S=), Cote laturi, Suma textelor, Vertexi la intersecții |
+| Anexe ANCPI | Anexe ANCPI, Date imobil, Executant, Vecini, Construcții, Anexe Word, Verificare |
+| Planuri | Plan de amplasament, PAD dezlipire, PAD alipire, Releveu, Planșe PDF, Cadru planșă, Legendă |
+| Model 3D | Model TIN, Curbe de nivel, Calcul volum, Volum între TIN-uri, Modulul teren |
+| Imagini și hărți | Imagine georeferențiată, Import KML/KMZ, Google Maps |
+| Google Earth | Export KMZ, DWG to KMZ |
+| Înclinare | Plan înclinare, programul Plan Înclinare, Înclinare din desen |
+
+Iconițele (16 și 32 px) se văd bine pe tema închisă și pe cea deschisă a AutoCAD:
+
+![Iconițele ribbonului TopoKit](docs/ribbon_iconite.png)
+
+Săgeata din colțul panourilor Configurare, Suprafețe și Model 3D deschide setările respective. Meniul
+este fișierul `TopoKit.cuix` (sau `TopoKit_EN.cuix` în engleză) din folderul programului, încărcat
+automat de `TopoKitLoad.lsp`; nu modifică meniul principal al AutoCAD.
+
+### Limba: română / engleză
+
+Comanda `TOPOKITLANG` (butonul *Limba* din ribbon) sau butonul **English / Română** din antetul
+ferestrei TopoKit schimbă limba întregii interfețe: mesajele și întrebările din linia de comandă,
+dialogurile, tabul din ribbon, fereastra TopoKit și meniul iconiței de lângă ceas. TopoKit se
+reîncarcă imediat în desenul curent; celelalte desene deschise trec la prima comandă TopoKit.
+
+![Fereastra TopoKit în engleză](docs/lansator_en.png)
+
+- **Planurile, anexele și documentele rămân în română** (PAD, releveu, cereri, memoriu, tabele și
+  cartușe), fiind documente pentru OCPI conform Ordinului ANCPI nr. 600/2023.
+- În engleză se răspunde cu *Yes* / *No*, iar modul detașării cu *PArallel* / *DIrection* / *PErpendicular* / *FIxedpoint*.
+- Limba se păstrează în `HKCU\Software\TopoKit\Language` (`RO` / `EN`).
+
+### Meniul `TOPOKIT` (dialog)
 
 ![Meniul principal TopoKit](docs/macheta_topokit.png)
 
@@ -43,7 +85,7 @@ Suită modulară AutoLISP + DCL pentru AutoCAD (în stilul TopoLT):
 
 ### Cu instalatorul (recomandat)
 
-1. Descărcați și rulați **[`dist/TopoKitSetup-1.2.0.exe`](dist/TopoKitSetup-1.2.0.exe)** (TopoKit 1.2.0). Nu sunt necesare drepturi
+1. Descărcați și rulați **[`dist/TopoKitSetup-1.3.0.exe`](dist/TopoKitSetup-1.3.0.exe)** (TopoKit 1.3.0). Nu sunt necesare drepturi
    de administrator; instalarea se face pentru utilizatorul curent.
 2. Alegeți opțiunile: scurtătură pe desktop și pornirea în fundal odată cu Windows (ambele bifate implicit).
 3. Deschideți **TopoKit** din meniul Start sau de pe desktop. Atât.
@@ -64,7 +106,8 @@ Ce face instalarea:
   și în *Trusted Locations* (`TRUSTEDPATHS`), apoi încarcă `TopoKit.lsp`, `TopoKitAnexe.lsp` și
   `TopoKitTeren.lsp`. Comanda `TOPOKITRELOAD` reîncarcă modulele.
 - **Fereastra TopoKit** se deschide când porniți programul. Arată starea legăturii cu AutoCAD și
-  modulele, fiecare cu iconița, descrierea și comanda AutoCAD:
+  cele 16 module (printre ele *Detașare*, *Detașare multiplă*, *Raportare puncte*, *Cote laturi* și
+  *Setări cadastru*), fiecare cu iconița, descrierea și comanda AutoCAD:
 
   ![Fereastra TopoKit](docs/lansator_conectat.png)
 
@@ -107,7 +150,7 @@ Ce face instalarea:
     o anulează prin fereastra AutoCAD (WM_COPYDATA) înainte de a trimite modulul.
 - **Dezinstalare:** *Setări → Aplicații → TopoKit* sau meniul Start → *Dezinstalare TopoKit*. Se șterg
   pachetul AutoCAD, lansatorul și setările din registru.
-- **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup-1.2.0.exe /S`; dezinstalare:
+- **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup-1.3.0.exe /S`; dezinstalare:
   `"%LOCALAPPDATA%\Programs\TopoKit\Uninstall.exe" /S`.
 
 Windows SmartScreen poate afișa *„Windows a protejat computerul”*, pentru că instalatorul nu este
@@ -577,6 +620,16 @@ Corecturi față de CadTopo:
   - harta online și meniul.
 - `python3 tests/test_cad.py` testează modulul de cadastru (detașări pe parcele convexe și neconvexe,
   suprafețe, cote, suma textelor, punctele TopoLT, importul și exportul coordonatelor, setările).
+- `python3 tests/test_lang.py` testează limba și ribbonul: dicționarul `lang/en.txt` (fiecare intrare
+  folosită, ghilimele, taste), varianta în engleză (aceeași structură LISP, planurile rămân în română),
+  încărcarea în engleză și revenirea la română în simulator și meniul `.cuix` (XML, butoane, iconițe).
+- **Traducerea:** `lang/en.txt` conține perechile *română → engleză* (domeniul opțional `label`,
+  `call:funcție` sau numele unui fișier limitează unde se traduce un text). `python3 tools/i18n.py
+  extract` listează textele interfeței încă netraduse; la construirea instalatorului,
+  `tools/i18n.py` scrie modulele traduse în `Contents\en`.
+- **Ribbonul** (`TopoKit.cuix`, `TopoKit_EN.cuix`) și iconițele lui se generează cu
+  `python3 tools/make_ribbon.py [--preview docs/ribbon_iconite.png]`; comenzile, etichetele și panourile
+  sunt în `CMDS` și `PANELS`.
 - `python3 tests/test_lint.py` face analiza statică a tuturor modulelor LISP, fără AutoCAD: paranteze,
   funcții definite de două ori, apeluri către funcții inexistente, număr greșit de argumente (la funcțiile
   TopoKit și la cele AutoCAD uzuale), chei și dialoguri DCL nedefinite. Lista funcțiilor AutoCAD

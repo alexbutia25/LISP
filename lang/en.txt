@@ -1,0 +1,682 @@
+# TopoKit - dictionarul interfetei in limba engleza (folosit de tools/i18n.py la compilare)
+# romana <TAB> engleza ; textul exact al sirului din sursa (cu \n, \" ca in .lsp)
+# Textele din planuri, anexe si documente NU se traduc (raman in romana, conform Ordinului ANCPI).
+# Tastele getkword raman cele romanesti (globale); in engleza se adauga taste locale.
+#
+# ---------------------------------------------------------------- tastele (initget)
+Da Nu	Yes No _Da Nu
+PAralela DirectieParalela PErpendiculara PUnctObligat	PArallel DIrection PErpendicular FIxedpoint _PAralela DirectieParalela PErpendiculara PUnctObligat
+#
+# ---------------------------------------------------------------- incarcator
+\nTopoKit: nu gasesc TopoKit.lsp. Reinstalati TopoKit (TopoKitSetup.exe).	\nTopoKit: TopoKit.lsp not found. Reinstall TopoKit (TopoKitSetup.exe).
+\nTopoKit: versiune sau limba noua - se reincarca modulele.	\nTopoKit: new version or language - reloading the modules.
+\nTopoKit: eroare la incarcare - 	\nTopoKit: loading error -
+\nTopoKit reincarcat.	\nTopoKit reloaded.
+ pregatit: TOPOKIT (meniu), ANEXE (Ordin 600/2023), 	 ready: TOPOKIT (menu), ANEXE (Order 600/2023),
+TOPOTEREN (teren, TIN, volume), INCLINARE.	TOPOTEREN (terrain, TIN, volumes), INCLINARE.
+#
+# ---------------------------------------------------------------- TopoKit.lsp: mesaje
+\n** Eroare TopoKit: 	\n** TopoKit error:
+\nSelectati poliliniile pentru corectia topologica: 	\nSelect the polylines for the topology fix:
+\nAnaliza intersectiilor pentru 	\nAnalysing the intersections of
+ polilinii...	 polylines...
+ obiecte ignorate (plase 3D, polifete, polilinii spline/curve-fit, neparalele cu XY sau degenerate).	 objects ignored (3D meshes, polyfaces, spline/curve-fit polylines, not parallel to XY or degenerate).
+ polilinii nu au putut fi modificate (strat blocat).	 polylines could not be modified (locked layer).
+\nS-au procesat 	\nProcessed
+ polilinii si s-au adaugat 	 polylines and added
+ vertexi noi.	 new vertices.
+ polilinii modificate)	 polylines modified)
+\nNu a fost selectata nicio polilinie.	\nNo polyline was selected.
+ puncte cu grila NTv2 (~1 cm)	 points with the NTv2 grid (~1 cm)
+ puncte in afara grilei transformate cu Helmert (~1 m)	 points outside the grid transformed with Helmert (~1 m)
+\nSelectati polilinia inchisa (conturul parcelei): 	\nSelect the closed polyline (parcel outline):
+\nNimic selectat, incercati din nou.	\nNothing selected, try again.
+\nObiectul selectat nu este o polilinie.	\nThe selected object is not a polyline.
+\nPolilinia selectata nu este inchisa.	\nThe selected polyline is not closed.
+\nAxele desenului par inversate: se foloseste 	\nThe drawing axes seem swapped: using
+X desen = Nord.	drawing X = North.
+X desen = Est.	drawing X = East.
+\nFisierul a fost deschis in Google Earth Pro.	\nThe file was opened in Google Earth Pro.
+\nFisierul a fost deschis cu aplicatia asociata.	\nThe file was opened with the associated application.
+\nGoogle Earth Pro nu a fost gasit; deschideti manual fisierul generat.	\nGoogle Earth Pro was not found; open the generated file manually.
+\nSelectati parcela (o polilinie inchisa) sau mai multe obiecte de exportat	\nSelect the parcel (a closed polyline) or several objects to export
+\n(polilinii, linii, arce, cercuri, puncte, puncte COGO, blocuri, texte): 	\n(polylines, lines, arcs, circles, points, COGO points, blocks, texts):
+\nArhivarea KMZ nu a reusit (PowerShell indisponibil); s-a salvat fisier KML.	\nKMZ packing failed (PowerShell not available); a KML file was saved.
+\nNu s-a putut scrie fisierul: 	\nThe file could not be written:
+\nATENTIE: grila 	\nWARNING: the grid
+ nu a fost gasita (copiati-o langa TopoKit.lsp).	 was not found (copy it next to TopoKit.lsp).
+\nSe foloseste transformarea Helmert, precizie ~0.3-1.5 m.	\nUsing the Helmert transformation, accuracy ~0.3-1.5 m.
+\nCoordonatele par in afara domeniului Stereo 70 (verificati desenul). Continuati? [Da/Nu] <Nu>: 	\nThe coordinates seem outside the Stereo 70 range (check the drawing). Continue? [Yes/No] <No>:
+\nNumele parcelei <	\nParcel name <
+\nPolilinia are mai putin de 3 vertexi distincti.	\nThe polyline has fewer than 3 distinct vertices.
+\nExport anulat.	\nExport cancelled.
+\nExport finalizat: 	\nExport finished:
+ puncte, S = 	 points, S =
+\nTransformare: 	\nTransformation:
+\nNiciun obiect exportabil in selectie.	\nNo exportable object in the selection.
+\nNumele exportului <	\nExport name <
+ obiecte:	 objects:
+\nATENTIE: desenul are modificari nesalvate; convertorul citeste ultima versiune salvata (QSAVE).	\nWARNING: the drawing has unsaved changes; the converter reads the last saved version (QSAVE).
+\nDWG to KMZ a fost pornit cu 	\nDWG to KMZ was started with
+\nDWG to KMZ a fost pornit; desenul nu e salvat - alegeti fisierul in program.	\nDWG to KMZ was started; the drawing is not saved - choose the file in the program.
+\nTransformator DWG -> KMZ (Stereo 70 -> ETRS89 TransDatRO).	\nDWG -> KMZ converter (Stereo 70 -> ETRS89 TransDatRO).
+\nSelectati obiectele de transformat sau Enter pentru tot desenul (straturile vizibile): 	\nSelect the objects to convert or Enter for the whole drawing (visible layers):
+\nDesenul nu contine obiecte exportabile.	\nThe drawing has no exportable objects.
+\nFormat 	\nFormat
+ la scara 1:	 at scale 1:
+ inserat pe stratul 	 inserted on layer
+\nPunctul de insertie (coltul stanga-jos al formatului): 	\nInsertion point (lower-left corner of the sheet):
+Toleranta: 	Tolerance:
+ m   |   Transformare: 	 m   |   Transformation:
+   |   Plansa: 	   |   Sheet:
+Toleranta trebuie sa fie un numar pozitiv (ex. 0.001).	The tolerance must be a positive number (e.g. 0.001).
+Introduceti numele parcelei.	Enter the parcel name.
+ - instrumente AutoLISP pentru topografie si cadastru\n\n	 - AutoLISP tools for surveying and cadastre\n\n
+TOPOKIT / MYTOPO - meniul principal\n	TOPOKIT / MYTOPO - main menu\n
+ADDVTX    - vertexi la intersectiile poliliniilor\n	ADDVTX    - vertices at polyline intersections\n
+EXPKMZ    - export KMZ: parcela sau obiecte pe straturi\n	EXPKMZ    - KMZ export: parcel or objects by layer\n
+DWGKMZ    - DWG to KMZ: convertor DXF/DWG -> KMZ (desenul curent)\n	DWGKMZ    - DWG to KMZ: DXF/DWG -> KMZ converter (current drawing)\n
+INSCADRU  - format A4..A0, cadru si indicator la scara\n	INSCADRU  - A4..A0 sheet, frame and title block at scale\n
+ANEXE     - anexe Ordin ANCPI 600/2023\n	ANEXE     - ANCPI Order 600/2023 annexes\n
+TOPOTEREN - puncte, TIN, curbe de nivel, volume\n	TOPOTEREN - points, TIN, contour lines, volumes\n
+INCLINARE - plan de inclinare (verticalitate)\n\n	INCLINARE - inclination plan (verticality)\n\n
+Unitati desen: metri. X desen = Est, Y desen = Nord (implicit).\n	Drawing units: metres. Drawing X = East, drawing Y = North (default).\n
+Transformare: TransDatRO ANCPI (grila ETRS89_KRASOVSCHI42_2DJ,\n	Transformation: TransDatRO ANCPI (grid ETRS89_KRASOVSCHI42_2DJ,\n
+precizie ~1 mm); rezerva: grila NTv2, apoi Helmert 7 parametri.	accuracy ~1 mm); fallback: NTv2 grid, then 7-parameter Helmert.
+Nu s-a putut incarca fisierul TopoKit.dcl.	The file TopoKit.dcl could not be loaded.
+Dialogul topokit_cadru lipseste.	The topokit_cadru dialog is missing.
+Dialogul topokit_setari lipseste.	The topokit_setari dialog is missing.
+\nTopoKit: fereastra modulelor a fost deschisa (setarile: TOPOKITSET).	\nTopoKit: the modules window was opened (settings: TOPOKITSET).
+Dialogul topokit_main lipseste.	The topokit_main dialog is missing.
+  -  Topografie si cadastru pentru AutoCAD	  -  Surveying and cadastre for AutoCAD
+Desen activ: 	Active drawing:
+Generatorul de anexe (TopoKitAnexe.lsp) nu este incarcat.\n	The annex generator (TopoKitAnexe.lsp) is not loaded.\n
+Copiati TopoKitAnexe.lsp, TopoKitAnexe.dcl si folderul \"anexe\" langa TopoKit.lsp,\n	Copy TopoKitAnexe.lsp, TopoKitAnexe.dcl and the \"anexe\" folder next to TopoKit.lsp,\n
+in calea de suport AutoCAD, sau incarcati-l cu APPLOAD.	in the AutoCAD support path, or load it with APPLOAD.
+Modulul de teren (TopoKitTeren.lsp si TopoKitTeren.dcl) nu este incarcat.	The terrain module (TopoKitTeren.lsp and TopoKitTeren.dcl) is not loaded.
+Modulul de inclinare (TopoKitInclinare.lsp si .dcl) nu este incarcat.	The inclination module (TopoKitInclinare.lsp and .dcl) is not loaded.
+Verificarea face parte din TopoKitAnexe.lsp, care nu este incarcat.	The check is part of TopoKitAnexe.lsp, which is not loaded.
+Plansele PDF fac parte din TopoKitAnexe.lsp, care nu este incarcat.	PDF sheets are part of TopoKitAnexe.lsp, which is not loaded.
+ incarcat. Comenzi: TOPOKIT, TOPOKITSET (setari), MYTOPO, ADDVTX, EXPKMZ, DWGKMZ, INSCADRU.	 loaded. Commands: TOPOKIT, TOPOKITSET (settings), MYTOPO, ADDVTX, EXPKMZ, DWGKMZ, INSCADRU.
+Helmert 7 parametri EPSG:15994 (precizie ~0.3-1.5 m)	7-parameter Helmert EPSG:15994 (accuracy ~0.3-1.5 m)
+TransDatRO ANCPI, grila ETRS89_KRASOVSCHI42_2DJ (precizie ~1 mm)	TransDatRO ANCPI, grid ETRS89_KRASOVSCHI42_2DJ (accuracy ~1 mm)
+grila NTv2 ANCPI stereo70_etrs89A.gsb (precizie centimetrica)	NTv2 ANCPI grid stereo70_etrs89A.gsb (centimetre accuracy)
+TransDatRO ANCPI (precizie ~1 mm)	TransDatRO ANCPI (accuracy ~1 mm)
+grila NTv2 ANCPI (precizie centimetrica)	NTv2 ANCPI grid (centimetre accuracy)
+grila NTv2 ANCPI (~1 cm)	NTv2 ANCPI grid (~1 cm)
+grila LIPSA -> Helmert 7p (~0.3-1.5 m)	grid MISSING -> Helmert 7p (~0.3-1.5 m)
+Grila TransDatRO gasita: precizie ~1 mm	TransDatRO grid found: accuracy ~1 mm
+Grila NTv2 gasita: precizie ~1 cm	NTv2 grid found: accuracy ~1 cm
+Grila TransDatRO lipsa: precizie ~1 m	TransDatRO grid missing: accuracy ~1 m
+Ordinul 600/2023 (incarcat)	Order 600/2023 (loaded)
+Ordinul 600/2023 - NU e incarcat	Order 600/2023 - NOT loaded
+raster, KML (incarcat)	raster, KML (loaded)
+raster, KML - NU e incarcat	raster, KML - NOT loaded
+modulul NU e incarcat	module NOT loaded
+puncte din AutoCAD (incarcat)	points from AutoCAD (loaded)
+lipseste programul: INCLINARE	program missing: INCLINARE
+#
+# ---------------------------------------------------------------- TopoKit.dcl (dialoguri)
+TopoKit - Topografie si Cadastru	TopoKit - Surveying and Cadastre
+MODULE  -  clic pe pictograma unui modul pentru a-l deschide	MODULES  -  click a module icon to open it
+Setari module	Module settings
+Optiuni: vertexi, KMZ,	Options: vertices, KMZ,
+format si cadru	sheet and frame
+Anexe ANCPI	ANCPI annexes
+Planuri si documente,	Plans and documents,
+Teren si volume	Terrain and volumes
+Puncte, TIN, curbe, volume	Points, TIN, contours, volumes
+Verificare	Check
+Controlul documentatiei	Checks the documentation
+inainte de predare	before submission
+Planse PDF	PDF sheets
+Plotarea tuturor planselor	Plots all the sheets
+intr-un singur pas	in one step
+Parcela in Google Earth	Parcel in Google Earth
+Convertor DXF/DWG in	DXF/DWG converter to
+Cadru plansa	Sheet frame
+Format A4 - A0, cadru,	A4 - A0 format, frame,
+caroiaj si indicator	grid and title block
+Vertexi	Vertices
+Corectie topologica	Topology fix
+la intersectii	at intersections
+Calcul inclinatie	Inclination
+Plan Inclinare: DWG/DXF, CSV,	Plan Inclinare: DWG/DXF, CSV,
+Stare	Status
+Setarile sunt memorate pe durata sesiunii AutoCAD.	Settings are kept for the AutoCAD session.
+Setari module...	Module settings...
+Despre...	About...
+Inchide	Close
+TopoKit - Setari module	TopoKit - Module settings
+ 1   Corectie Topologica 	 1   Topology Fix
+Adauga vertexi la intersectiile si	Adds vertices at the intersections and
+contactele poliliniilor selectate.	contacts of the selected polylines.
+Cotele Z si arcele raman neschimbate.	Z elevations and arcs stay unchanged.
+Optiuni	Options
+Puncte de contact (T, suprapuneri)	Contact points (T, overlaps)
+Toleranta [m]:	Tolerance [m]:
+Corectie Topologica	Topology Fix
+Comanda directa: ADDVTX	Direct command: ADDVTX
+ 2   Export Google Earth 	 2   Google Earth Export
+Parcela sau obiecte pe straturi	Parcel or objects by layer
+in KMZ: Stereo 70 > ETRS89 (TransDatRO).	to KMZ: Stereo 70 > ETRS89 (TransDatRO).
+Nume parcela:	Parcel name:
+TransDatRO ANCPI (precizie mm)	TransDatRO ANCPI (mm accuracy)
+Puncte de contur / inventar	Outline points / inventory
+Axe inversate (X desen = Nord)	Swapped axes (drawing X = North)
+Deschide in Google Earth Pro	Open in Google Earth Pro
+Export KMZ parcela	Export parcel KMZ
+Transformator DWG > KMZ	DWG > KMZ converter
+Comenzi directe: EXPKMZ, DWGKMZ	Direct commands: EXPKMZ, DWGKMZ
+ 3   Format si Cadru 	 3   Sheet and Frame
+Cadru, spatiu util si indicator pe	Frame, usable area and title block on
+stratul L_CADRU, in Model Space.	layer L_CADRU, in Model Space.
+Scara:	Scale:
+Caroiaj de coordonate (10 cm)	Coordinate grid (10 cm)
+Inserare Format si Cadru	Insert Sheet and Frame
+Comanda directa: INSCADRU	Direct command: INSCADRU
+Renunta	Cancel
+TopoKit - Inserare Format, Cadru si Indicator	TopoKit - Insert Sheet, Frame and Title Block
+Previzualizare	Preview
+Format si scara	Sheet and scale
+Format pagina:	Page format:
+Scara desenului:	Drawing scale:
+Indicator (cartus)	Title block
+Beneficiar:	Client:
+Lucrarea:	Project:
+Titlu plansa:	Sheet title:
+Plansa nr.:	Sheet no.:
+Scara, formatul, data si autorul se completeaza	Scale, format, date and author are filled in
+automat. Textele se pot modifica ulterior cu EATTEDIT.	automatically. Texts can be edited later with EATTEDIT.
+Dupa OK indicati coltul stanga-jos al formatului	After OK pick the lower-left corner of the sheet
+in Model Space.	in Model Space.
+#
+# ---------------------------------------------------------------- TopoKitAnexe: mesaje
+TopoKitAnexe.lsp necesita TopoKit.lsp (in acelasi folder, in calea de suport AutoCAD).	TopoKitAnexe.lsp needs TopoKit.lsp (in the same folder, in the AutoCAD support path).
+Nu am g`asit folderul \"anexe\" (`sabloanele Word `si TopoKitDocx.ps1) l^ang`a TopoKit.lsp.	The \"anexe\" folder (Word templates and TopoKitDocx.ps1) was not found next to TopoKit.lsp.
+Se completeaz`a 	Filling in
+ anexe Word...	 Word annexes...
+Scriptul PowerShell nu a creat documente (verifica`ti jurnalul TopoKit_anexe.json.log).	The PowerShell script created no documents (check the log TopoKit_anexe.json.log).
+ fi`siere create ^in 	 files created in
+ATEN`TIE: imobilul nu ^incape pe formatul/scara aleas`a; se folose`ste scara cea mai mic`a.	WARNING: the property does not fit the chosen sheet/scale; using the smallest scale.
+ATEN`TIE: viewport-ul nu a putut fi creat (MVIEW). Crea`ti-l manual, centrat pe imobil, la scara planului.	WARNING: the viewport could not be created (MVIEW). Create it manually, centred on the property, at the plan scale.
+ATEN`TIE: viewport-ul nu are scara 1:	WARNING: the viewport scale is not 1:
+ (ZOOM nereu`sit); seta`ti scara viewport-ului manual.	 (ZOOM failed); set the viewport scale manually.
+Plan generat ^in layout-ul \"	Plan generated in layout \"
+Plan (anexa 17) generat ^in layout-ul \"	Plan (annex 17) generated in layout \"
+Releveu generat ^in layout-ul \"	Floor survey generated in layout \"
+Nu s-a putut incarca TopoKitAnexe.dcl.	TopoKitAnexe.dcl could not be loaded.
+Dialogul 	The dialog
+ lipseste.	 is missing.
+Selectati mai intai laturile din lista.	First select the sides in the list.
+Modificati campurile care se aplica laturilor selectate.	Change the fields that apply to the selected sides.
+\nNimic selectat.	\nNothing selected.
+\nObiectul nu este o polilinie.	\nThe object is not a polyline.
+\nPolilinia nu este inchisa.	\nThe polyline is not closed.
+\nSelectati 	\nSelect
+ <Enter = gata>: 	 <Enter = done>:
+\nDeja selectat.	\nAlready selected.
+\nSelectati conturul imobilului (polilinie inchisa): 	\nSelect the property outline (closed polyline):
+\nSelectati constructiile (Enter = fara constructii): 	\nSelect the buildings (Enter = no buildings):
+\nSelectati parcelele de folosinta (Enter = o singura categorie): 	\nSelect the land-use parcels (Enter = a single category):
+\nSelectati conturul imobilului care se dezlipeste: 	\nSelect the outline of the property being split:
+\nDezlipirea necesita cel putin doua loturi.	\nA split needs at least two lots.
+\nNumarul cadastral al imobilului 	\nCadastral number of property
+\nSelectati conturul imobilului rezultat din alipire: 	\nSelect the outline of the property resulting from the merge:
+\nAlipirea necesita cel putin doua imobile initiale si imobilul rezultat.	\nA merge needs at least two initial properties and the resulting property.
+\nSelectati conturul imobilului (Enter = anexe fara date masurate): 	\nSelect the property outline (Enter = annexes without measured data):
+A: Latura 	A: Side
+ are 	 is
+ m (puncte duble?).	 m (duplicate points?).
+I: Laturi f`ar`a vecin completat: 	I: Sides without a neighbour:
+A: Construc`tia 	A: Building
+ dep`a`se`ste limita imobilului.	 crosses the property boundary.
+A: Parcelele de folosin`t`a ^insumeaz`a 	A: The land-use parcels total
+ mp, imobilul are 	 sqm, the property has
+I: Suprafa`ta m`asurat`a 	I: Measured area
+ mp, din act 	 sqm, from deed
+ mp: diferen`ta 	 sqm: difference
+E: Loturile ^insumeaz`a 	E: The lots total
+ mp (loturile nu acoper`a exact imobilul).	 sqm (the lots do not cover the property exactly).
+I: Imobilele ini`tiale ^insumeaz`a 	I: The initial properties total
+ mp, imobilul rezultat 	 sqm, the resulting property
+ se autointersecteaz`a.	 self-intersects.
+ se suprapun.	 overlap.
+ erori, 	 errors,
+ atentionari, 	 warnings,
+ informatii	 notes
+Generarea a fost oprit`a (corecta`ti datele `si relua`ti comanda).	Generation was stopped (correct the data and run the command again).
+Layout-ul 	Layout
+ nu a putut fi plotat ^in PDF	 could not be plotted to PDF
+ (fi`sierul PDF este deschis?)	 (is the PDF file open?)
+ planuri PDF ^in 	 PDF plans in
+Desenul nu are planuri generate (layout-uri PAD_* sau RELEVEU_*).	The drawing has no generated plans (PAD_* or RELEVEU_* layouts).
+\nSelectati conturul imobilului: 	\nSelect the property outline:
+\nSelectati constructiile: 	\nSelect the buildings:
+\nSelectati incaperile nivelului (polilinii inchise): 	\nSelect the rooms of the floor (closed polylines):
+\nSelectati contururile unitatilor individuale (Enter = o singura UI): 	\nSelect the outlines of the individual units (Enter = a single unit):
+\nDenumirea unitatii individuale <Apartament 1>: 	\nName of the individual unit <Apartament 1>:
+\nDenumirea nivelului <parter>: 	\nName of the floor <parter>:
+Imobil: 	Property:
+   |   Proprietar: 	   |   Owner:
+   |   Executant: 	   |   Surveyor:
+   |   Selectie memorata: 	   |   Stored selection:
+ selectate)	 selected)
+\nFolositi imobilul (si loturile/constructiile) selectat anterior? [Da/Nu] <Da>: 	\nUse the previously selected property (and lots/buildings)? [Yes/No] <Yes>:
+\nTopoKit Anexe incarcat. Comenzi: ANEXE, PAD, PADDEZ, PADALIP, VECINI, DATEIMOBIL, EXECUTANT, CONSTRUCTIE, RELEVEU, ANEXEWORD.	\nTopoKit Annexes loaded. Commands: ANEXE, PAD, PADDEZ, PADALIP, VECINI, DATEIMOBIL, EXECUTANT, CONSTRUCTIE, RELEVEU, ANEXEWORD.
+ (if *TKA:SEL* (done_dialog 1) (set_tile \"error\" \"Selectati cel putin o anexa sau un pachet.\"))	 (if *TKA:SEL* (done_dialog 1) (set_tile \"error\" \"Select at least one annex or package.\"))
+#
+# ---------------------------------------------------------------- TopoKitAnexe.dcl
+TopoKit - Generator anexe (Ordinul ANCPI nr. 600/2023)	TopoKit - Annex generator (ANCPI Order no. 600/2023)
+Anexe (selectie multipla: Ctrl / Shift + clic)	Annexes (multiple selection: Ctrl / Shift + click)
+Toate anexele Word	All Word annexes
+Deselecteaza	Deselect
+Pachete (documentatie completa)	Packages (complete documentation)
+Prima inregistrare	First registration
+Inscriere constructie	Building registration
+Dezlipire teren	Land split
+Alipire teren	Land merge
+Prima inregistrare UI / apartamentare	First unit registration / apartments
+Datele lucrarii	Job data
+Imobil si proprietari...	Property and owners...
+Lucrare si memoriu tehnic...	Job and technical report...
+Executant (persoana autorizata)...	Surveyor (authorised person)...
+Optiuni planuri (format, scara)...	Plan options (format, scale)...
+Verificare date si geometrie...	Check data and geometry...
+Rezultat	Output
+Ploteaza planurile in PDF	Plot the plans to PDF
+Converteste anexele Word in PDF	Convert the Word annexes to PDF
+Deschide folderul cu anexele	Open the annexes folder
+Genereaza	Generate
+TopoKit - Date imobil si proprietari	TopoKit - Property and owner data
+Imobil	Property
+Numar cadastral:	Cadastral number:
+Nr. carte funciara:	Land book no.:
+UAT:	Municipality (UAT):
+Localitate:	Locality:
+Judet:	County:
+Strada:	Street:
+Nr.:	No.:
+Bl.:	Block:
+Sc.:	Entr.:
+Et.:	Floor:
+Ap.:	Apt.:
+Tarla:	Tarla:
+Parcela:	Parcel:
+Nr. topografic:	Topographic no.:
+Denumirea locului:	Place name:
+Categoria de folosinta:	Land-use category:
+Suprafata din act (mp):	Area from deed (sqm):
+Act de proprietate:	Title deed:
+Mentiuni teren (PAD):	Land notes (site plan):
+OCPI (judet):	OCPI (county):
+BCPI:	BCPI:
+Proprietar 1 (solicitant)	Owner 1 (applicant)
+Nume:	Surname:
+Prenume:	First name:
+CNP/CUI:	Personal / company ID:
+CI seria:	ID card series:
+nr.:	no.:
+CI eliberata de:	ID card issued by:
+Domiciliu - localitate:	Address - locality:
+Judet/sector:	County/district:
+Cod postal:	Postcode:
+Telefon:	Phone:
+E-mail:	E-mail:
+Calitatea:	Capacity:
+Proprietar 2 (optional)	Owner 2 (optional)
+CNP:	Personal ID:
+Datele se salveaza in desen si	The data is saved in the drawing and
+completeaza automat cererile,	fills in the applications,
+declaratiile, PV de vecinatate,	declarations, neighbourhood reports,
+memoriul tehnic si planurile.	technical report and plans.
+TopoKit - Date lucrare si memoriu tehnic	TopoKit - Job data and technical report
+Lucrare	Job
+Tipul lucrarii:	Job type:
+Comunicarea raspunsului:	Reply delivery:
+Intabularea (obiect):	Registration (object):
+Contract/angajament nr.:	Contract no.:
+din data:	dated:
+Data masuratorilor:	Survey date:
+PV vecinatate - exemplare:	Neighbourhood report - copies:
+pagini:	pages:
+CF colectiva (UI):	Collective land book (units):
+Teren aferent cladirii (mp):	Building land (sqm):
+Parti comune (UI):	Common parts (units):
+Declaratia proprietarului (anexa 14)	Owner's declaration (annex 14)
+Pozitionare incerta a imobilului	Uncertain position of the property
+Imobilul se afla in litigiu:	The property is in litigation:
+ID imobil:	Property ID:
+Nr. dosar:	Case no.:
+Instanta:	Court:
+Obiect:	Subject:
+Memoriu tehnic (gol = text generat automat)	Technical report (empty = generated text)
+Metoda:	Method:
+Aparatura:	Equipment:
+Puncte de sprijin:	Control points:
+4. Scop:	4. Purpose:
+5. Documentare:	5. Research:
+6. Operatiuni:	6. Operations:
+Textele lungi se pot ajusta si in documentul Word generat.	Long texts can also be adjusted in the generated Word document.
+TopoKit - Executant (persoana autorizata)	TopoKit - Surveyor (authorised person)
+Identificare	Identification
+Titlu (ing., dr. ing.):	Title (eng., PhD eng.):
+Firma (PFA/PJA):	Company:
+Autorizatie si adresa	Licence and address
+Categoria/clasa:	Category/class:
+Seria (ex. RO-BV-F):	Series (e.g. RO-BV-F):
+Numar:	Number:
+Emisa de:	Issued by:
+Data emiterii:	Issue date:
+TopoKit - Optiuni planuri	TopoKit - Plan options
+Pagina	Page
+Numerotare si cote	Numbering and labels
+Primul numar de punct:	First point number:
+Sens orar, din punctul cel mai de nord-vest	Clockwise, from the north-westernmost point
+Ordinea vertex-urilor poliliniei	Polyline vertex order
+Numerele punctelor din desen (texte / blocuri de punct)	Point numbers from the drawing (texts / point blocks)
+Distanta maxima numar - varf (m):	Maximum number - vertex distance (m):
+Zecimale cu virgula (12,34)	Decimal comma (12,34)
+cu punct (12.34)	decimal point (12.34)
+Inventar de coordonate pe plan	Coordinates inventory on the plan
+Etichete	Labels
+Eticheta anexei 16:	Annex 16 label:
+Eticheta anexei 17:	Annex 17 label:
+TopoKit - Laturi si vecinatati	TopoKit - Sides and neighbours
+Selectati una sau mai multe laturi, completati campurile si apasati Aplica.	Select one or more sides, fill in the fields and press Apply.
+Date latura	Side data
+Identificator vecin (pe plan):	Neighbour identifier (on the plan):
+Vecin (nume si prenume / denumire):	Neighbour (name / company):
+Materializare:	Boundary mark:
+Observatii:	Notes:
+Aplica la laturile selectate	Apply to the selected sides
+Detecteaza din desen	Detect from the drawing
+Sterge datele selectiei	Clear the selection data
+TopoKit - Date constructie	TopoKit - Building data
+Constructie	Building
+Cod (C1, C2...):	Code (C1, C2...):
+Destinatia:	Use:
+Denumire (ex. Casa de locuit):	Name (e.g. Casa de locuit):
+Regim de inaltime (ex. P+1E):	Floors (e.g. P+1E):
+Anul construirii:	Year built:
+Suprafata desfasurata (mp):	Total floor area (sqm):
+Numar unitati individuale:	Number of individual units:
+Alte mentiuni:	Other notes:
+TopoKit - Verificarea datelor si a geometriei	TopoKit - Data and geometry check
+E = eroare (planul ar fi gresit)   A = atentionare   I = informatie	E = error (the plan would be wrong)   A = warning   I = note
+Continua	Continue
+#
+# ---------------------------------------------------------------- TopoKitTeren
+TopoKitTeren.lsp necesita TopoKit.lsp (in acelasi folder, in calea de suport AutoCAD).	TopoKitTeren.lsp needs TopoKit.lsp (in the same folder, in the AutoCAD support path).
+Fisierul nu contine puncte in formatul ales (verificati ordinea coloanelor).	The file has no points in the chosen format (check the column order).
+S-au importat 	Imported
+ puncte si 	 points and
+ linii pe coduri din 	 lines by code from
+\nSelectati punctele 3D si liniile de franger (POINT, INSERT, LINE, polilinii): 	\nSelect the 3D points and breaklines (POINT, INSERT, LINE, polylines):
+Sunt necesare cel putin 3 puncte.	At least 3 points are needed.
+\nSelectati conturul modelului (polilinie inchisa) <Enter = fara contur>: 	\nSelect the model boundary (closed polyline) <Enter = no boundary>:
+Triangulatie pentru 	Triangulating
+ puncte...	 points...
+Modelul TIN are 	The TIN model has
+ triunghiuri (stratul TIN).	 triangles (layer TIN).
+S-au generat 	Generated
+ curbe de nivel intre cotele 	 contour lines between elevations
+ (echidistanta 	 (interval
+\nPunctul pentru tabelul volumelor <Enter = fara tabel>: 	\nPoint for the volumes table <Enter = no table>:
+\nCota planului de referinta <	\nReference plane elevation <
+\nSelectati punctele (POINT sau blocuri de punct): 	\nSelect the points (POINT or point blocks):
+\nColtul stanga-sus al tabelului: 	\nUpper-left corner of the table:
+Tabel cu 	Table with
+ puncte.	 points.
+Desenul nu are blocuri sau linii pentru legenda.	The drawing has no blocks or lines for the legend.
+\nColtul stanga-sus al legendei: 	\nUpper-left corner of the legend:
+Legenda cu 	Legend with
+ semne conventionale.	 conventional signs.
+Nu am gasit fisierul world al imaginii (.jgw, .tfw, .pgw, .wld) langa imagine.	The image world file (.jgw, .tfw, .pgw, .wld) was not found next to the image.
+Imaginea nu a putut fi inserata: 	The image could not be inserted:
+ATENTIE: desenul are axele inversate; imaginea foloseste X = Est.	WARNING: the drawing has swapped axes; the image uses X = East.
+Imagine 	Image
+ pixeli, pixel 	 pixels, pixel
+ m, coltul S-V 	 m, SW corner
+Arhiva KMZ nu contine un fisier KML.	The KMZ archive has no KML file.
+ linii/poligoane si 	 lines/polygons and
+ puncte din 	 points from
+\nPunctul de afisat pe harta online <centrul ecranului>: 	\nPoint to show on the online map <screen centre>:
+Harta: 	Map:
+Valori numerice invalide.	Invalid numeric values.
+Echidistanta, pasul grilei si curba principala trebuie sa fie pozitive.	The contour interval, grid step and major contour must be positive.
+Nu s-a putut incarca TopoKitTeren.dcl.	TopoKitTeren.dcl could not be loaded.
+\nTopoKit Teren incarcat. Comenzi: TOPOTEREN, IMPPCT, TABPCT, LEGENDA, TIN, CURBE, VOLUM, VOLUM2, GEOREF, IMPKML, HARTA.	\nTopoKit Terrain loaded. Commands: TOPOTEREN, IMPPCT, TABPCT, LEGENDA, TIN, CURBE, VOLUM, VOLUM2, GEOREF, IMPKML, HARTA.
+\nSelectati triunghiurile TIN (3DFACE): 	\nSelect the TIN triangles (3DFACE):
+\nSelectati TIN-ul terenului existent (3DFACE): 	\nSelect the existing ground TIN (3DFACE):
+\nSelectati TIN-ul proiectat (3DFACE): 	\nSelect the design TIN (3DFACE):
+Nr, X (Nord), Y (Est), Z, Cod	No, X (North), Y (East), Z, Code
+Nr, Y (Est), X (Nord), Z, Cod	No, Y (East), X (North), Z, Code
+X (Nord), Y (Est), Z (fara numar)	X (North), Y (East), Z (no number)
+TopoKit - Teren: puncte, model 3D, curbe de nivel, volume, raster	TopoKit - Terrain: points, 3D model, contour lines, volumes, raster
+Puncte masurate si plan	Surveyed points and plan
+Coloanele fisierului:	File columns:
+Puncte 3D (la cota Z)	3D points (at elevation Z)
+Uneste punctele consecutive cu acelasi cod	Join consecutive points with the same code
+Scara planului (texte):	Plan scale (texts):
+Import puncte (TXT/CSV)...	Import points (TXT/CSV)...
+Tabel de coordonate	Coordinates table
+Legenda semnelor conventionale	Legend of conventional signs
+Raster, Google Earth si harti online	Raster, Google Earth and online maps
+Raster georeferentiat...	Georeferenced raster...
+Import KML / KMZ...	Import KML / KMZ...
+Punct pe harta online	Point on the online map
+Model 3D (TIN) si curbe de nivel	3D model (TIN) and contour lines
+Latura maxima a triunghiurilor (m, 0 = fara):	Maximum triangle side (m, 0 = none):
+Model TIN din puncte si linii	TIN model from points and lines
+Echidistanta curbelor (m):	Contour interval (m):
+Curba principala la fiecare (curbe):	Major contour every (contours):
+Curbe de nivel din TIN	Contour lines from TIN
+Volume de sapatura si umplutura	Cut and fill volumes
+Cota planului de referinta (m):	Reference plane elevation (m):
+Volume TIN - plan	Volumes TIN - plane
+Pasul grilei pentru doua TIN (m):	Grid step for two TINs (m):
+Volume intre doua TIN	Volumes between two TINs
+Comenzi directe: IMPPCT, TABPCT, LEGENDA, TIN, CURBE, VOLUM, VOLUM2, GEOREF, IMPKML, HARTA	Direct commands: IMPPCT, TABPCT, LEGENDA, TIN, CURBE, VOLUM, VOLUM2, GEOREF, IMPKML, HARTA
+#
+# ---------------------------------------------------------------- TopoKitInclinare
+TopoKitInclinare.lsp necesita TopoKit.lsp (in acelasi folder, in calea de suport AutoCAD).	TopoKitInclinare.lsp needs TopoKit.lsp (in the same folder, in the AutoCAD support path).
+Randul '	Row '
+ puncte (minim 2) - ignorat.	 points (minimum 2) - ignored.
+': directia nu se poate deduce dintr-un singur rand - 	': the direction cannot be deduced from a single row -
+am pus 'dreapta'. Alegeti directia in dialog.	set to 'right'. Choose the direction in the dialog.
+\n  Plansa: 	\n  Sheet:
+Niciun punct.	No points.
+Niciun rand potrivit. Coduri gasite: 	No matching row. Codes found:
+Zecimale: 0...4.	Decimals: 0...4.
+Inaltimea textului: 0.5...10 mm.	Text height: 0.5...10 mm.
+Niciun rand nu are minim 2 puncte: alegeti codurile randurilor.	No row has at least 2 points: choose the row codes.
+Nu s-a putut incarca TopoKitInclinare.dcl.	TopoKitInclinare.dcl could not be loaded.
+ puncte; coduri: 	 points; codes:
+\nSelectati punctele masurate (puncte COGO, puncte AutoCAD, blocuri) sau Enter pentru fisier CSV/TXT: 	\nSelect the surveyed points (COGO points, AutoCAD points, blocks) or Enter for a CSV/TXT file:
+\nNiciun punct (sunt necesare puncte 3D cu cod).	\nNo points (3D points with a code are needed).
+\nNiciun rand nu are minim 2 puncte.	\nNo row has at least 2 points.
+\nColtul stanga-jos al planului <0,0>: 	\nLower-left corner of the plan <0,0>:
+\nPlanul de inclinare a fost desenat pe stratul 	\nThe inclination plan was drawn on layer
+\nPlan Inclinare a fost pornit.	\nPlan Inclinare was started.
+\nPlanInclinare.exe nu a fost gasit (reinstalati TopoKit); se foloseste INCLINARE.	\nPlanInclinare.exe was not found (reinstall TopoKit); using INCLINARE.
+\nPlan Inclinare - selectati punctele masurate (puncte COGO, puncte AutoCAD, blocuri): 	\nPlan Inclinare - select the surveyed points (COGO points, AutoCAD points, blocks):
+ puncte trimise programului Plan Inclinare.	 points sent to the Plan Inclinare program.
+\nTopoKit Inclinare incarcat. Comenzi: PLANINCL (programul Plan Inclinare), INCLINARE (planul direct in desen), PLANINCLSEL.	\nTopoKit Inclination loaded. Commands: PLANINCL (Plan Inclinare program), INCLINARE (plan directly in the drawing), PLANINCLSEL.
+TopoKit - Plan de inclinare (verticalitate)	TopoKit - Inclination plan (verticality)
+Randuri, de la stanga la dreapta (codul punctelor; mai multe coduri separate prin virgula)	Rows, from left to right (point code; several codes separated by commas)
+Cod	Code	label
+Alege din coduri	Pick from codes
+Titlu in plan	Title on plan
+Aplecare	Lean
+Calcul	Calculation
+Potrivire cod:	Code match:
+Abatere:	Deviation:
+Unitate:	Unit:
+Zecimale:	Decimals:
+Inaltimea H la puncte	Height H at points
+Cota Z la puncte	Elevation Z at points
+Ascunde etichetele suprapuse	Hide overlapping labels
+Legenda	Legend	label
+Plansa	Sheet	label
+Orientare:	Orientation:
+Automat prefera:	Automatic prefers:
+Inaltime text (mm):	Text height (mm):
+Strat:	Layer:
+Chenar cu cartus	Border with title block
+Cartus	Title block
+Titlu:	Title:
+Obiectiv:	Object:
+Intocmit:	Drawn by:
+Verticala fiecarui rand trece prin punctul lui cel mai de jos. Desenul este 1:1 (metri); scara mareste chenarul si textele.	Each row's vertical passes through its lowest point. The drawing is 1:1 (metres); the scale enlarges the border and texts.
+#
+# ---------------------------------------------------------------- TopoKitCad (cadastru)
+\nNumar punct <	\nPoint number <
+\nPozitia punctului 	\nPosition of point
+\nSelectati poliliniile (conturul): 	\nSelect the polylines (outline):
+\nPrimul numar <	\nFirst number <
+ puncte noi, 	 new points,
+ varfuri aveau deja punct.	 vertices already had a point.
+ puncte raportate, 	 points drawn,
+ linii ignorate (antet sau gresite).	 lines ignored (header or invalid).
+\nSelectati punctele <Enter = toate>: 	\nSelect the points <Enter = all>:
+Niciun punct gasit.	No points found.
+ puncte scrise in 	 points written to
+\nSelectati punctele de sters: 	\nSelect the points to delete:
+ puncte sterse.	 points deleted.
+\nNumar de start <1>: 	\nStart number <1>:
+\nPrefix <fara>: 	\nPrefix <none>:
+\nPunctul care devine 	\nThe point that becomes
+\nNumarul 	\nNumber
+ exista deja la alt punct. Il folosesc oricum? [Da/Nu] <Nu>: 	 already exists at another point. Use it anyway? [Yes/No] <No>:
+Obiectul ales nu este un punct TopoLT / TopoKit.	The chosen object is not a TopoLT / TopoKit point.
+Nimic selectat, incercati din nou.	Nothing selected, try again.
+ puncte cu codul 	 points with code
+\nSelectati punctele: 	\nSelect the points:
+\nCodul nou: 	\nNew code:
+Cod schimbat la 	Code changed for
+Hasura nu a putut fi creata: 	The hatch could not be created:
+Atentie: polilinia are arce; suprafata include segmentele de cerc.	Note: the polyline has arcs; the area includes the circular segments.
+\nSelectati poliliniile inchise: 	\nSelect the closed polylines:
+ suprafete, total 	 areas, total
+\nSelectati poliliniile de cotat: 	\nSelect the polylines to dimension:
+\nSelectati textele: 	\nSelect the texts:
+Suma = 	Sum =
+ texte numerice din 	 numeric texts out of
+\nUnde scriu suma <Enter = nu scriu>: 	\nWhere to write the sum <Enter = don't write>:
+\nDetasare [PAralela/DirectieParalela/PErpendiculara/PUnctObligat] <	\nDetachment [PArallel/DIrection/PErpendicular/FIxedpoint] <
+\nSelectati conturul parcelei, pe latura dinspre care se face detasarea: 	\nSelect the parcel outline, on the side from which to detach:
+Nu ati selectat o polilinie.	You did not select a polyline.
+Polilinia are mai putin de 3 varfuri.	The polyline has fewer than 3 vertices.
+Atentie: arcele poliliniei sunt tratate ca segmente (corzi).	Note: the polyline arcs are treated as straight segments (chords).
+Suprafata parcelei: 	Parcel area:
+\nDirectia liniei de detasare - primul punct: 	\nDirection of the detachment line - first point:
+\nDirectia liniei de detasare - al doilea punct: 	\nDirection of the detachment line - second point:
+\nPunctul obligat (pe contur): 	\nFixed point (on the outline):
+Directie neprecizata.	Direction not given.
+Punct obligat neprecizat.	Fixed point not given.
+\nSuprafata de detasat <	\nArea to detach <
+Suprafata ceruta depaseste suprafata parcelei (	The requested area exceeds the parcel area (
+\nNumar parcela <	\nParcel number <
+\nNume proprietar <nimic>: 	\nOwner name <none>:
+Linia de detasare taie conturul in 	The detachment line cuts the outline in
+ puncte: s-au desenat taieturile, polilinia nu a fost rupta.	 points: the cuts were drawn, the polyline was not split.
+Detasat: 	Detached:
+ mp (cerut 	 sqm (requested
+), rest: 	), remainder:
+Suprafata parcelei:  	Parcel area:
+Ramane:  	Remains:
+Suprafata trebuie sa fie un numar pozitiv.	The area must be a positive number.
+Alegeti intai un rand din tabel.	First choose a row in the table.
+Excel nu a putut fi citit. Salvati fisierul ca CSV.	Excel could not be read. Save the file as CSV.
+Suprafata (mp)	Area (sqm)	TopoKitCad.lsp
+Rest: 	Remainder:
+TopoKit - Detasari multiple: tabelul suprafetelor	TopoKit - Multiple detachments: areas table
+Nr.	No.	TopoKitCad.lsp
+Proprietar	Owner	TopoKitCad.lsp
+Suprafata	Area	label
+Adauga	Add
+Modifica	Change
+Sterge	Delete
+Sus	Up
+Jos	Down
+Goleste	Clear
+Incarca Excel/CSV...	Load Excel/CSV...
+Salveaza CSV...	Save CSV...
+TopoKit - Setari cadastru	TopoKit - Cadastre settings
+Inaltimile textelor sunt in mm pe hartie (x scara).	Text heights are in mm on paper (x scale).
+Setarile se pastreaza in desen.	The settings are saved in the drawing.
+Setarile au fost salvate in desen.	The settings were saved in the drawing.
+Scara planului  1:	Plan scale  1:
+Stil text	Text style
+Puncte: inaltime text (mm)	Points: text height (mm)
+Puncte: cod implicit	Points: default code
+Puncte: distanta minima (m)	Points: minimum distance (m)
+Suprafete: inaltime text (mm)	Areas: text height (mm)
+Suprafete: hasura	Areas: hatch
+Suprafete: model hasura	Areas: hatch pattern
+Detasare: rupe polilinia	Detachment: split the polyline
+Cotari: inaltime text (mm)	Dimensions: text height (mm)
+Cotari: prefix	Dimensions: prefix
+Cotari: sufix	Dimensions: suffix
+Cotari: zecimale	Dimensions: decimals
+Zecimale coordonate	Coordinate decimals
+Zecimale distante	Distance decimals
+Zecimale suprafete	Area decimals
+Detaseaza o suprafata (paralela, directie, perpendiculara, punct obligat)	Detaches an area (parallel, direction, perpendicular, fixed point)
+Detasari multiple dintr-un tabel (manual sau Excel / CSV)	Multiple detachments from a table (manual or Excel / CSV)
+Calculeaza suprafete (S= in centrul poligonului, hasura optionala)	Computes areas (S= at the polygon centre, optional hatch)
+Coteaza laturile poliliniilor	Labels the polyline side lengths
+Suma numerelor din texte	Sum of the numbers in texts
+Introducere puncte (bloc TopoLT)	Insert points (TopoLT block)
+Puncte in varfurile poliliniilor	Points at the polyline vertices
+Raporteaza puncte din fisier (bloc TopoLT)	Draws points from a file (TopoLT block)
+Reface fisierul de coordonate	Rebuilds the coordinates file
+Sterge puncte (cu textele legate)	Deletes points (with their texts)
+Renumeroteaza puncte	Renumbers points
+Selecteaza puncte dupa cod	Selects points by code
+Schimba codul punctelor	Changes the point code
+Setari: scara, inaltimi text, zecimale	Settings: scale, text heights, decimals
+#
+# ---------------------------------------------------------------- TopoKitCad: dialoguri, meniu
+1 punct sters.	1 point deleted.
+Nu am gasit randuri valide (coloane: Nr, Proprietar, Suprafata).	No valid rows found (columns: No, Owner, Area).
+ randuri incarcate.	 rows loaded.
+Tabel salvat.	Table saved.
+Tabelul e gol.	The table is empty.
+Suma suprafetelor trebuie sa fie mai mica decat suprafata parcelei.	The sum of the areas must be smaller than the parcel area.
+Fereastra nu a putut fi deschisa.	The window could not be opened.
+O linie de detasare taie conturul de mai multe ori: s-au desenat taieturile, polilinia nu a fost rupta.	A detachment line cuts the outline more than once: the cuts were drawn, the polyline was not split.
+Valoare gresita: 	Wrong value:
+\n=== TopoKit - cadastru ===	\n=== TopoKit - cadastre ===
+\nMeniul TopoKit nu a putut fi adaugat in bara de meniuri; comenzile merg din linia de comanda.	\nThe TopoKit menu could not be added to the menu bar; the commands work from the command line.
+\nTopoKit Cadastru incarcat. Comenzi: TKDETASARE, TKDETMULT, TKSUPRAF, TKCOTE, TKSUMA, TKPCT ... (lista: TKCAD).	\nTopoKit Cadastre loaded. Commands: TKDETASARE, TKDETMULT, TKSUPRAF, TKCOTE, TKSUMA, TKPCT ... (list: TKCAD).
+Anexe Ordin 600/2023...	Annexes, Order 600/2023...
+Calculeaza suprafete	Compute areas
+Coordonate	Coordinates
+Corectie topologica (vertexi)	Topology fix (vertices)
+Coteaza polilinii	Label side lengths
+Detasari multiple	Multiple detachments
+Detaseaza o suprafata	Detach an area
+Fereastra TopoKit...	TopoKit window...
+Import puncte si linii pe coduri	Import points and lines by code
+Introducere puncte	Insert points
+Lista comenzilor cadastru	Cadastre command list
+Puncte	Points	call:tkc:submenu
+Puncte pe contur	Points on outline
+Raporteaza puncte (TopoLT)	Draw points (TopoLT)
+Reface fisier coordonate	Rebuild coordinates file
+Schimba codul	Change code
+Selecteaza dupa cod	Select by code
+Setari cadastru...	Cadastre settings...
+Sterge puncte	Delete points
+Suma texte	Sum of texts
+Suprafete	Areas	call:tkc:submenu
+Tabel coordonate	Coordinates table	TopoKitCad.lsp
+Teren si volume...	Terrain and volumes...
+Utile	Utilities
+#
+# ---------------------------------------------------------------- TopoKitInclinare: mesaje
+ puncte, varf 	 points, top
+fara format, texte pentru scara 1:	no sheet, texts for scale 1:
+Fara format, texte pentru 1:	No sheet, texts for 1:

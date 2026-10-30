@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Construieste instalatorul Windows TopoKitSetup.exe.
 
-    python3 tools/build_installer.py [--version 1.2.0] [--out dist]
+    python3 tools/build_installer.py [--version 1.3.0] [--out dist]
 
 Necesita (Linux: apt install nsis mingw-w64; Windows: NSIS 3 + MinGW-w64 in PATH):
     makensis, x86_64-w64-mingw32-gcc, x86_64-w64-mingw32-windres
@@ -11,7 +11,8 @@ Pasi:
   1. compileaza lansatorul installer/launcher/topokit.c + ui.c -> TopoKit.exe;
   2. pregateste build/stage:
        bundle/TopoKit.bundle/PackageContents.xml   (versiunea completata)
-       bundle/TopoKit.bundle/Contents/             *.lsp, *.dcl, grila .gsb, anexe/, README
+       bundle/TopoKit.bundle/Contents/             *.lsp, *.dcl, grila .gsb, anexe/, README,
+                                                   TopoKit.cuix / TopoKit_EN.cuix (ribbon), en/ (engleza)
        app/                                        TopoKit.exe, README.html, docs/,
                                                    PlanInclinare/ (PlanInclinare.exe, PyInstaller),
                                                    modules/ (DWG to KMZ, modulul TopoKit, PyInstaller)
@@ -95,6 +96,13 @@ def main():
         shutil.copy2(ROOT / f, contents / f)
     shutil.copytree(ROOT / "anexe", contents / "anexe")
     shutil.copy2(INST / "launcher" / "topokit.ico", contents / "topokit.ico")
+    # ribbonul TopoKit (TopoKit.cuix romana, TopoKit_EN.cuix engleza) si modulele in engleza
+    # (Contents\en); TopoKitLoad.lsp alege dupa HKCU\Software\TopoKit\Language
+    sys.path.insert(0, str(ROOT / "tools"))
+    import i18n, make_ribbon
+    for name, en in (("TopoKit.cuix", False), ("TopoKit_EN.cuix", True)):
+        make_ribbon.build(contents / name, None, en)
+    i18n.build(contents / "en")
     (app / "README.html").write_text(readme_html((ROOT / "README.md").read_text(encoding="utf-8")),
                                      encoding="utf-8")
     shutil.copytree(ROOT / "docs", app / "docs")

@@ -272,7 +272,7 @@ def load(path):
     for form in parse(tokenize(open(path,encoding='utf-8').read())): ev(form)
 class CErr:
     def __init__(s,m): s.m=m
-def _cap(f,args):
+def _cap(f,args=None):
     try: return call(f,lst(args))
     except Exception as e: return CErr(str(e))
 funcs[Sym('VL-CATCH-ALL-APPLY')]=_cap

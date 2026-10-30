@@ -54,21 +54,25 @@
 #define START_WAIT_MS (240 * 1000)
 
 enum { ID_STATUS = 1000, ID_CMD0 = 1001, ID_OPEN = 1099, ID_START = 1100, ID_RELOAD, ID_AUTORUN,
-       ID_FOLDER, ID_HELP, ID_EXIT, HOTKEY_ID = 1 };
+       ID_FOLDER, ID_HELP, ID_EXIT, ID_LANG, HOTKEY_ID = 1 };
 
-static const struct { const wchar_t *label, *cmd; } CMDS[] = {
-    { L"Setări module (TopoKit)", L"TOPOKITSET" },
-    { L"Generator anexe (Ordin ANCPI 600/2023)", L"ANEXE" },
-    { L"Teren: puncte, TIN, curbe de nivel, volume", L"TOPOTEREN" },
-    { L"Verificare documentație", L"VERIFICARE" },
-    { L"Planșe PDF", L"PLANEPDF" },
-    { L"Export KMZ (Google Earth)", L"EXPKMZ" },
-    { L"DWG to KMZ (convertor DXF/DWG → KMZ)", L"DWGKMZ" },
-    { L"Inserare cadru planșă", L"INSCADRU" },
-    { L"Adăugare vertexi (ADDVTX)", L"ADDVTX" },
-    { L"Calcul înclinație (Plan Înclinare)", L"PLANINCL" },
-    { L"Detașare suprafață", L"TKDETASARE" },
-    { L"Suprafețe (S=, hașură)", L"TKSUPRAF" },
+static const struct { const wchar_t *label, *label_en, *cmd; } CMDS[] = {
+    { L"Setări module (TopoKit)", L"Module settings (TopoKit)", L"TOPOKITSET" },
+    { L"Generator anexe (Ordin ANCPI 600/2023)", L"Annex generator (ANCPI Order 600/2023)", L"ANEXE" },
+    { L"Teren: puncte, TIN, curbe de nivel, volume", L"Terrain: points, TIN, contour lines, volumes", L"TOPOTEREN" },
+    { L"Verificare documentație", L"Check documentation", L"VERIFICARE" },
+    { L"Planșe PDF", L"PDF sheets", L"PLANEPDF" },
+    { L"Export KMZ (Google Earth)", L"Export KMZ (Google Earth)", L"EXPKMZ" },
+    { L"DWG to KMZ (convertor DXF/DWG → KMZ)", L"DWG to KMZ (DXF/DWG → KMZ converter)", L"DWGKMZ" },
+    { L"Inserare cadru planșă", L"Insert sheet frame", L"INSCADRU" },
+    { L"Adăugare vertexi (ADDVTX)", L"Add vertices (ADDVTX)", L"ADDVTX" },
+    { L"Calcul înclinație (Plan Înclinare)", L"Inclination (Plan Înclinare)", L"PLANINCL" },
+    { L"Detașare suprafață", L"Area detachment", L"TKDETASARE" },
+    { L"Suprafețe (S=, hașură)", L"Areas (S=, hatch)", L"TKSUPRAF" },
+    { L"Detașare multiplă", L"Multiple detachment", L"TKDETMULT" },
+    { L"Raportare puncte din fișier", L"Draw points from file", L"TKIMPPCT" },
+    { L"Cote laturi", L"Side lengths", L"TKCOTE" },
+    { L"Setări cadastru", L"Cadastre settings", L"TKCADSET" },
 };
 #define NCMDS ((int)(sizeof(CMDS) / sizeof(CMDS[0])))
 
@@ -83,6 +87,7 @@ static HWND g_hwnd;
 static UINT g_msgTaskbar;
 static NOTIFYICONDATAW g_nid;
 static HICON g_icoOn, g_icoOff;
+BOOL g_en;                              /* interfata in engleza (Language = "EN") */
 static BOOL g_connected = -1;           /* -1 = necunoscut (primul sondaj) */
 static wchar_t g_acadName[64] = L"";    /* "AutoCAD 2024" */
 static wchar_t g_docName[MAX_PATH] = L"";
@@ -146,6 +151,21 @@ static BOOL RegGetStr(HKEY root, const wchar_t *key, const wchar_t *name, wchar_
     }
     RegCloseKey(h);
     return ok && out[0];
+}
+
+static void RegSetStr(const wchar_t *name, const wchar_t *v)
+{
+    HKEY h;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, REG_APP, 0, NULL, 0, KEY_SET_VALUE, NULL, &h, NULL) != ERROR_SUCCESS) return;
+    RegSetValueExW(h, name, 0, REG_SZ, (const BYTE *)v, (DWORD)((wcslen(v) + 1) * sizeof(wchar_t)));
+    RegCloseKey(h);
+}
+
+/* limba aleasa (TOPOKITLANG in AutoCAD sau butonul din fereastra) */
+static void LoadLang(void)
+{
+    wchar_t v[16];
+    g_en = RegGetStr(HKEY_CURRENT_USER, REG_APP, L"Language", v, 16) && !_wcsicmp(v, L"EN");
 }
 
 static BOOL AutorunEnabled(void)
@@ -630,12 +650,12 @@ static void UpdateTray(void)
     g_nid.uFlags = NIF_ICON | NIF_TIP;
     g_nid.hIcon = g_connected == TRUE ? g_icoOn : g_icoOff;
     if (g_connected == TRUE)
-        swprintf(g_nid.szTip, 128, L"TopoKit - conectat la %ls%ls%ls", g_acadName,
+        swprintf(g_nid.szTip, 128, TR(L"TopoKit - conectat la %ls%ls%ls", L"TopoKit - connected to %ls%ls%ls"), g_acadName,
                  g_docName[0] ? L"\n" : L"", g_docName);
     else if (g_pending[0])
-        swprintf(g_nid.szTip, 128, L"TopoKit - se pornește AutoCAD...");
+        swprintf(g_nid.szTip, 128, TR(L"TopoKit - se pornește AutoCAD...", L"TopoKit - starting AutoCAD..."));
     else
-        swprintf(g_nid.szTip, 128, L"TopoKit - AutoCAD nu rulează");
+        swprintf(g_nid.szTip, 128, TR(L"TopoKit - AutoCAD nu rulează", L"TopoKit - AutoCAD is not running"));
     Shell_NotifyIconW(NIM_MODIFY, &g_nid);
     Ui_Refresh();
 }
@@ -760,47 +780,54 @@ static void StartAcad(const wchar_t *cmd)
     BOOL viaLnk = FindAcadShortcut(lnk);
     if (!viaLnk && !FindAcadExe(exe, MAX_PATH)) {
         Log(L"AutoCAD nu a fost gasit");
-        Note(UI_NOTE_ERR, L"AutoCAD nu a fost găsit pe acest calculator");
-        MessageBoxW(MsgOwner(), L"AutoCAD nu a fost găsit pe acest calculator.\n\n"
+        Note(UI_NOTE_ERR, TR(L"AutoCAD nu a fost găsit pe acest calculator", L"AutoCAD was not found on this computer"));
+        MessageBoxW(MsgOwner(), TR(L"AutoCAD nu a fost găsit pe acest calculator.\n\n"
                     L"TopoKit funcționează în AutoCAD 2013 sau mai nou (inclusiv Civil 3D / Map 3D). "
                     L"Dacă AutoCAD este instalat, porniți-l normal: TopoKit se conectează singur.",
+                    L"AutoCAD was not found on this computer.\n\n"
+                    L"TopoKit works in AutoCAD 2013 or newer (including Civil 3D / Map 3D). "
+                    L"If AutoCAD is installed, start it normally: TopoKit connects by itself."),
                     APP_TITLE, MB_ICONWARNING | MB_SETFOREGROUND);
         return;
     }
     what = viaLnk ? lnk : exe;
     Log(L"Pornesc %ls", what);
     if ((INT_PTR)ShellExecuteW(NULL, L"open", what, NULL, NULL, SW_SHOWNORMAL) <= 32) {
-        Note(UI_NOTE_ERR, L"AutoCAD nu a putut fi pornit");
-        MessageBoxW(MsgOwner(), L"AutoCAD nu a putut fi pornit.", APP_TITLE, MB_ICONWARNING | MB_SETFOREGROUND);
+        Note(UI_NOTE_ERR, TR(L"AutoCAD nu a putut fi pornit", L"AutoCAD could not be started"));
+        MessageBoxW(MsgOwner(), TR(L"AutoCAD nu a putut fi pornit.", L"AutoCAD could not be started."), APP_TITLE,
+                    MB_ICONWARNING | MB_SETFOREGROUND);
         return;
     }
     lstrcpynW(g_pending, cmd ? cmd : L"", 64);
     if (!cmd) g_pending[0] = L' ', g_pending[1] = 0;   /* doar asteptam conectarea */
     g_pendingSince = GetTickCount();
     g_readyPolls = 0;
-    Balloon(APP_TITLE, L"Se pornește AutoCAD. TopoKit se deschide imediat ce AutoCAD este gata.");
+    Balloon(APP_TITLE, TR(L"Se pornește AutoCAD. TopoKit se deschide imediat ce AutoCAD este gata.",
+                          L"Starting AutoCAD. TopoKit opens as soon as AutoCAD is ready."));
     UpdateTray();
 }
 
 static void ReportWindowError(const AcadWin *w, DWORD err)
 {
     if (err == ERROR_ACCESS_DENIED || (w->elevated != 0 && SelfElevated() == 0))
-        Note(UI_NOTE_ERR, L"%ls rulează ca administrator: porniți AutoCAD normal (fără „Run as administrator”)",
+        Note(UI_NOTE_ERR, TR(L"%ls rulează ca administrator: porniți AutoCAD normal (fără „Run as administrator”)",
+                             L"%ls runs as administrator: start AutoCAD normally (without \"Run as administrator\")"),
              w->product[0] ? w->product : L"AutoCAD");
     else if (err == ERROR_TIMEOUT)
-        Note(UI_NOTE_ERR, L"%ls nu răspunde – terminați comanda curentă și încercați din nou",
+        Note(UI_NOTE_ERR, TR(L"%ls nu răspunde – terminați comanda curentă și încercați din nou",
+                             L"%ls does not respond – finish the current command and try again"),
              w->product[0] ? w->product : L"AutoCAD");
     else
-        Note(UI_NOTE_ERR, L"Comanda nu a putut fi trimisă în %ls (cod %lu)", w->product[0] ? w->product : L"AutoCAD",
+        Note(UI_NOTE_ERR, TR(L"Comanda nu a putut fi trimisă în %ls (cod %lu)", L"The command could not be sent to %ls (code %lu)"), w->product[0] ? w->product : L"AutoCAD",
              (unsigned long)err);
 }
 
 static void NoteSent(const wchar_t *cmd, BOOL reload, const wchar_t *product, const wchar_t *doc)
 {
     if (reload)
-        Note(UI_NOTE_OK, L"TopoKit a fost reîncărcat în %ls", product);
+        Note(UI_NOTE_OK, TR(L"TopoKit a fost reîncărcat în %ls", L"TopoKit was reloaded in %ls"), product);
     else
-        Note(UI_NOTE_OK, L"%ls trimisă în %ls%ls%ls%ls", cmd, product, doc && doc[0] ? L" (" : L"",
+        Note(UI_NOTE_OK, TR(L"%ls trimisă în %ls%ls%ls%ls", L"%ls sent to %ls%ls%ls%ls"), cmd, product, doc && doc[0] ? L" (" : L"",
              doc && doc[0] ? doc : L"", doc && doc[0] ? L")" : L"");
 }
 
@@ -827,9 +854,11 @@ static void RunCommand(const wchar_t *cmd, BOOL reload)
             return;
         }
         if (hr == RPC_E_CALL_REJECTED || hr == RPC_E_SERVERCALL_RETRYLATER)
-            Note(UI_NOTE_ERR, L"AutoCAD este ocupat – terminați comanda curentă (Esc) și încercați din nou");
+            Note(UI_NOTE_ERR, TR(L"AutoCAD este ocupat – terminați comanda curentă (Esc) și încercați din nou",
+                                 L"AutoCAD is busy – finish the current command (Esc) and try again"));
         else
-            Note(UI_NOTE_ERR, L"AutoCAD a refuzat comanda (cod 0x%08lX) – deschideți un desen și încercați din nou",
+            Note(UI_NOTE_ERR, TR(L"AutoCAD a refuzat comanda (cod 0x%08lX) – deschideți un desen și încercați din nou",
+                                 L"AutoCAD refused the command (code 0x%08lX) – open a drawing and try again"),
                  (unsigned long)hr);
     } else if (haveWin) {
         DWORD err = SendViaWindow(&w, cmd, reload);
@@ -837,7 +866,8 @@ static void RunCommand(const wchar_t *cmd, BOOL reload)
         else ReportWindowError(&w, err);
     } else if (g_pending[0]) {
         lstrcpynW(g_pending, cmd ? cmd : L" ", 64);
-        Note(UI_NOTE_INFO, L"AutoCAD pornește – %ls se deschide imediat ce este gata", cmd ? cmd : L"TopoKit");
+        Note(UI_NOTE_INFO, TR(L"AutoCAD pornește – %ls se deschide imediat ce este gata",
+                              L"AutoCAD is starting – %ls opens as soon as it is ready"), cmd ? cmd : L"TopoKit");
     } else {
         StartAcad(cmd);
     }
@@ -921,7 +951,8 @@ static void Poll(void)
         g_docName[0] = 0;
         if (g_pending[0] && GetTickCount() - g_pendingSince > START_WAIT_MS) {
             g_pending[0] = 0;
-            Note(UI_NOTE_ERR, L"AutoCAD nu a pornit în 4 minute – porniți-l manual, TopoKit se conectează singur");
+            Note(UI_NOTE_ERR, TR(L"AutoCAD nu a pornit în 4 minute – porniți-l manual, TopoKit se conectează singur",
+                                 L"AutoCAD did not start within 4 minutes – start it manually, TopoKit connects by itself"));
         }
     }
     if (was != g_connected || wasMode != g_mode) {
@@ -931,7 +962,7 @@ static void Poll(void)
             Log(L"AutoCAD inchis / nepornit");
         if (g_connected == TRUE && was != TRUE && was != -1) {
             wchar_t t[256];
-            swprintf(t, 256, L"TopoKit este conectat la %ls.", g_acadName);
+            swprintf(t, 256, TR(L"TopoKit este conectat la %ls.", L"TopoKit is connected to %ls."), g_acadName);
             Balloon(APP_TITLE, t);
         }
     }
@@ -1022,7 +1053,7 @@ static void Diagnostic(void)
     }
     fclose(f);
     ShellExecuteW(NULL, L"open", L"notepad.exe", path, NULL, SW_SHOWNORMAL);
-    Note(UI_NOTE_INFO, L"Raportul de diagnostic s-a deschis în Notepad");
+    Note(UI_NOTE_INFO, TR(L"Raportul de diagnostic s-a deschis în Notepad", L"The diagnostic report opened in Notepad"));
 }
 
 static void ShowMain(void)
@@ -1060,10 +1091,11 @@ void App_Action(int act, int arg)
             lstrcpyW(wcsrchr(f, L'\\') + 1, pi ? L"PlanInclinare\\PlanInclinare.exe" : L"modules\\DWGtoKMZ.exe");
             if (PathFileExistsW(f) && (INT_PTR)ShellExecuteW(NULL, L"open", f, NULL, NULL, SW_SHOWNORMAL) > 32) {
                 Log(L"Pornit: %ls", f);
-                Note(UI_NOTE_OK, L"%ls a fost pornit", name);
+                Note(UI_NOTE_OK, TR(L"%ls a fost pornit", L"%ls was started"), name);
             } else if (pi) {
                 Log(L"Lipseste: %ls", f);
-                Note(UI_NOTE_ERR, L"Nu găsesc PlanInclinare.exe – reinstalați TopoKit");
+                Note(UI_NOTE_ERR, TR(L"Nu găsesc PlanInclinare.exe – reinstalați TopoKit",
+                                     L"PlanInclinare.exe was not found – reinstall TopoKit"));
             } else {
                 Log(L"Lipseste: %ls - exportul DWGKMZ din AutoCAD", f);
                 RunCommand(CMDS[arg].cmd, FALSE);
@@ -1094,7 +1126,16 @@ void App_Action(int act, int arg)
         Diagnostic();
         break;
     case ACT_HIDDEN:
-        Balloon(APP_TITLE, L"TopoKit rulează în continuare în fundal. Îl găsiți în iconița de lângă ceas.");
+        Balloon(APP_TITLE, TR(L"TopoKit rulează în continuare în fundal. Îl găsiți în iconița de lângă ceas.",
+                              L"TopoKit keeps running in the background. You find it in the icon next to the clock."));
+        break;
+    case ACT_LANG:          /* romana <-> engleza; AutoCAD reincarca TopoKit in limba noua */
+        g_en = !g_en;
+        RegSetStr(L"Language", g_en ? L"EN" : L"RO");
+        Log(L"Limba: %ls", g_en ? L"EN" : L"RO");
+        if (g_connected == TRUE) RunCommand(NULL, TRUE);
+        else Note(UI_NOTE_INFO, TR(L"Limba română – se aplică și în AutoCAD la pornire",
+                                   L"English – also applied in AutoCAD at start-up"));
         break;
     }
     UpdateTray();
@@ -1108,22 +1149,23 @@ static void ShowMenu(void)
     int i;
     UINT sel;
     if (g_connected == TRUE)
-        swprintf(status, 256, L"Conectat: %ls%ls%ls", g_acadName, g_docName[0] ? L" - " : L"", g_docName);
+        swprintf(status, 256, TR(L"Conectat: %ls%ls%ls", L"Connected: %ls%ls%ls"), g_acadName, g_docName[0] ? L" - " : L"", g_docName);
     else
-        swprintf(status, 256, L"AutoCAD nu rulează");
-    AppendMenuW(m, MF_STRING, ID_OPEN, L"Deschide TopoKit");
+        swprintf(status, 256, TR(L"AutoCAD nu rulează", L"AutoCAD is not running"));
+    AppendMenuW(m, MF_STRING, ID_OPEN, TR(L"Deschide TopoKit", L"Open TopoKit"));
     SetMenuDefaultItem(m, ID_OPEN, FALSE);
     AppendMenuW(m, MF_STRING | MF_GRAYED, ID_STATUS, status);
     AppendMenuW(m, MF_SEPARATOR, 0, NULL);
-    for (i = 0; i < NCMDS; i++) AppendMenuW(m, MF_STRING, ID_CMD0 + i, CMDS[i].label);
+    for (i = 0; i < NCMDS; i++) AppendMenuW(m, MF_STRING, ID_CMD0 + i, TR(CMDS[i].label, CMDS[i].label_en));
     AppendMenuW(m, MF_SEPARATOR, 0, NULL);
-    AppendMenuW(m, MF_STRING | (g_connected == TRUE ? MF_GRAYED : 0), ID_START, L"Pornește AutoCAD");
-    AppendMenuW(m, MF_STRING | (g_connected == TRUE ? 0 : MF_GRAYED), ID_RELOAD, L"Reîncarcă TopoKit în AutoCAD");
-    AppendMenuW(m, MF_STRING | (AutorunEnabled() ? MF_CHECKED : 0), ID_AUTORUN, L"Pornește odată cu Windows");
-    AppendMenuW(m, MF_STRING, ID_FOLDER, L"Deschide folderul TopoKit");
-    AppendMenuW(m, MF_STRING, ID_HELP, L"Ajutor");
+    AppendMenuW(m, MF_STRING | (g_connected == TRUE ? MF_GRAYED : 0), ID_START, TR(L"Pornește AutoCAD", L"Start AutoCAD"));
+    AppendMenuW(m, MF_STRING | (g_connected == TRUE ? 0 : MF_GRAYED), ID_RELOAD, TR(L"Reîncarcă TopoKit în AutoCAD", L"Reload TopoKit in AutoCAD"));
+    AppendMenuW(m, MF_STRING | (AutorunEnabled() ? MF_CHECKED : 0), ID_AUTORUN, TR(L"Pornește odată cu Windows", L"Start with Windows"));
+    AppendMenuW(m, MF_STRING, ID_LANG, TR(L"English", L"Română"));
+    AppendMenuW(m, MF_STRING, ID_FOLDER, TR(L"Deschide folderul TopoKit", L"Open the TopoKit folder"));
+    AppendMenuW(m, MF_STRING, ID_HELP, TR(L"Ajutor", L"Help"));
     AppendMenuW(m, MF_SEPARATOR, 0, NULL);
-    AppendMenuW(m, MF_STRING, ID_EXIT, L"Ieșire");
+    AppendMenuW(m, MF_STRING, ID_EXIT, TR(L"Ieșire", L"Exit"));
     GetCursorPos(&pt);
     SetForegroundWindow(g_hwnd);
     sel = (UINT)TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY, pt.x, pt.y, 0, g_hwnd, NULL);
@@ -1136,6 +1178,7 @@ static void ShowMenu(void)
     else if (sel == ID_AUTORUN) App_Action(ACT_AUTORUN, 0);
     else if (sel == ID_FOLDER) App_Action(ACT_FOLDER, 0);
     else if (sel == ID_HELP) App_Action(ACT_HELP, 0);
+    else if (sel == ID_LANG) App_Action(ACT_LANG, 0);
     else if (sel == ID_EXIT) DestroyWindow(g_hwnd);
 }
 
@@ -1234,6 +1277,7 @@ static BOOL Snapshot(void)
     if (argc > 4) hover = _wtoi(argv[4]);
     if (argc > 5) scale = (float)_wtof(argv[5]);
     if (scale < 0.5f || scale > 4.0f) scale = 1.0f;
+    LoadLang();
     ok = Ui_Init(g_inst) && Ui_Snapshot(argv[2], scale, hover);
     LocalFree(argv);
     ExitProcess(ok ? 0 : 2);
@@ -1272,6 +1316,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show)
         CoRegisterMessageFilter(&g_mf, &old);
     }
     FindContents();
+    LoadLang();
     Log(L"Fisiere LISP: %ls", g_contents);
     InitClsids();
     Ui_Init(inst);

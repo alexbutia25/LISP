@@ -262,7 +262,7 @@ class Acad:
         s.envs, s.ldata, s.inputs, s.out, s.alerts, s.cmds, s.runs, s.plots = {}, {}, [], [], [], [], [], []
         s.layouts = {"MODEL": Obj("layout", name="Model", vp_init=True),
                      "LAYOUT1": Obj("layout", name="Layout1", vp_init=False)}
-        s.vpid = 1
+        s.vpid = 1; s.vpfrozen = {}
         s.dcl = Dcl(s)
         s.doc = Obj("document"); s.app = Obj("application")
         s.install()
@@ -538,6 +538,21 @@ class Acad:
                 assert s.vars["CVPORT"] != 1, "ZOOM XP in paper space"
                 s._setg(e, 12, [pt[0], pt[1]])
                 s._setg(e, 45, grp(s.db[e], 41) / float(m.group(1)))
+            elif name == "VPLAYER":
+                # VPLAYER _F straturi _C "" : straturile inghetate in viewport-ul curent
+                # (_C = viewport-ul curent, din model space; _A = toate viewport-urile layout-ului)
+                opt = args.pop(0).upper().lstrip("_"); assert opt == "F", opt
+                lays = {l.strip().upper() for l in args.pop(0).split(",")}
+                for l in lays: assert s.tblsearch("LAYER", l), f"VPLAYER: stratul {l} nu exista"
+                where = args.pop(0).upper().lstrip("_"); assert where in ("C", "A"), where
+                assert args.pop(0) == "", "VPLAYER se termina cu Enter"
+                if where == "C":
+                    assert s.vars["CVPORT"] != 1, "VPLAYER Current in paper space"
+                    vps = [s.vars["CVPORT"]]
+                else:
+                    assert s.vars["CTAB"] != "Model", "VPLAYER All in model"
+                    vps = [grp(s.db[e], 69) for e in s.entities(s.vars["CTAB"], "VIEWPORT") if grp(s.db[e], 69) != 1]
+                for v in vps: s.vpfrozen.setdefault(v, set()).update(lays)
             else:
                 raise AssertionError(f"comanda nesimulata: {c}")
         return None

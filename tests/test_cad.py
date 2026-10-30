@@ -176,9 +176,43 @@ fn("c:TKRENUM")
 assert fn("TKC:Att", p9, "DENPCT") == "102", "numarul existent nu trebuie folosit fara confirmare"
 print("TKRENUM: avertizeaza cand numarul exista deja la alt punct")
 
+# ---------------------------------------------------------------- etichete S=: fara dubluri, fara suprafete vechi
+def sup_texts(pts):
+    out = []
+    for e in ents("TEXT", "Suprafete"):
+        t = grp(acad.db[e], 1)
+        p = grp(acad.db[e], 11) or grp(acad.db[e], 10)
+        if t.startswith("S=") and fn("TKC:Inside", [p[0], p[1]], [list(q) for q in pts]):
+            out.append(t)
+    return out
+
+B = [(E0 + 400, N0), (E0 + 500, N0), (E0 + 500, N0 + 50), (E0 + 400, N0 + 50)]
+pb = pline(B, "PARCELE")
+acad.inputs = [("ssget", [pb])]
+fn("c:TKSUPRAF")
+acad.inputs = [("ssget", [pb])]
+fn("c:TKSUPRAF")
+assert sup_texts(B) == ["S=5000.00 mp"], sup_texts(B)            # recalculat, nu dublat
+acad.inputs = [("kw", "PAralela"), ("entsel", (pb, [E0 + 450.0, N0 + 0.2])), ("real", 1200.0),
+               ("str", "30"), ("str", "")]
+fn("c:TKDETASARE")
+assert not acad.inputs, acad.inputs
+assert sup_texts(B) == ["S=3800.00 mp"], sup_texts(B)            # S=5000 vechi inlocuit cu restul
+print("TKSUPRAF / TKDETASARE: eticheta S= nu se dubleaza, iar dupa detasare nu ramane suprafata veche")
+
+# ---------------------------------------------------------------- stil si scara: ca restul TopoKit
+assert fn("TKC:Style") == "TK_ARIAL" and fn("TBLSEARCH", "STYLE", "TK_ARIAL")
+print("Textele de cadastru folosesc stilul TopoKit TK_ARIAL (Arial)")
+
 # ---------------------------------------------------------------- setari in desen
+# fara setari salvate, scara vine din setarile TopoKit (scara planului, implicit 1:500)
+call(Sym("VLAX-LDATA-PUT"), ["TOPOKIT", "CAD", None])
+env[Sym("*TKC:CFG*")] = None
+assert fn("TKC:Cfg", "SCARA") == 500.0 and abs(env[Sym("*TKC:TXTH*")] - 0.6) < 1e-12
+env[Sym("*TK:SCARA*")] = 3                                         # 1:1000 in TOPOKITSET
 env[Sym("*TKC:CFG*")] = None
 assert fn("TKC:Cfg", "SCARA") == 1000.0 and abs(env[Sym("*TKC:TXTH*")] - 1.2) < 1e-12
+print("Scara implicita a textelor = scara planului din setarile TopoKit")
 env[Sym("*TKC:CFG*")] = [DP(k, (500.0 if k == "SCARA" else v)) for k, v in
                          ((x.car, x.cdr) for x in fn("TKC:CfgAll"))]
 fn("TKC:SaveCfg")

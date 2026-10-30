@@ -2790,4 +2790,7 @@
 ;; Planul de înclinare (verticalitate: silozuri, stâlpi, coșuri, turnuri)
 (if (and (not *TKI:LOADING*) (not TKI:Run) (findfile "TopoKitInclinare.lsp"))
   (load (findfile "TopoKitInclinare.lsp")))
+;; Cadastru: puncte TopoLT, suprafete, detasari, cotari, suma, coordonate
+(if (and (not *TKC:LOADING*) (not c:TKDETASARE) (findfile "TopoKitCad.lsp"))
+  (load (findfile "TopoKitCad.lsp")))
 (princ)

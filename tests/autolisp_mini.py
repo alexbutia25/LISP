@@ -327,3 +327,46 @@ funcs[Sym('VL-CATCH-ALL-ERROR-MESSAGE')] = lambda e: e.m if isinstance(e, CErr) 
 funcs[Sym('VL-STRING-TRANSLATE')] = lambda src, dst, s: s.translate(str.maketrans(src, dst)) if src else s
 funcs[Sym('VL-STRING-LEFT-TRIM')] = lambda c, s: s.lstrip(c)
 funcs[Sym('CAADR')] = lambda x: car(car(cdr(x)))
+def _vlspos(code, s, start=None, from_end=None):
+    ch = chr(code)
+    if truthy(from_end):
+        i = s.rfind(ch) if start is None else s.rfind(ch, 0, start + 1)
+    else:
+        i = s.find(ch, start or 0)
+    return None if i < 0 else i
+funcs[Sym('VL-STRING-POSITION')] = _vlspos
+funcs[Sym('ASCII')] = lambda s: ord(s[0]) if s else 0
+
+
+# wcmatch cu regulile AutoLISP: # cifra, @ litera, . caracter nealfanumeric, * ? [..],
+# ~ la inceput = negatie, ` = caracterul urmator literal; virgula separa modelele
+import re as _re
+def _wc1(pat):
+    neg = pat.startswith("~") and len(pat) > 1
+    if neg: pat = pat[1:]
+    out, i = "", 0
+    while i < len(pat):
+        c = pat[i]
+        if c == "`" and i + 1 < len(pat): out += _re.escape(pat[i + 1]); i += 2; continue
+        if c == "#": out += "[0-9]"
+        elif c == "@": out += "[A-Za-z]"
+        elif c == ".": out += "[^A-Za-z0-9]"
+        elif c == "*": out += ".*"
+        elif c == "?": out += "."
+        elif c == "[":
+            j = pat.find("]", i + 1)
+            if j < 0: out += _re.escape(c)
+            else:
+                body = pat[i + 1:j]
+                out += "[" + ("^" + _re.escape(body[1:]) if body.startswith("~") else _re.escape(body)) + "]"
+                i = j
+        else: out += _re.escape(c)
+        i += 1
+    return neg, _re.compile(out + r"\Z", _re.S)
+def _wcmatch(s, p):
+    for part in p.split(","):
+        neg, rx = _wc1(part)
+        if bool(rx.match(s)) != neg: return T
+    return None
+funcs[Sym('WCMATCH')] = _wcmatch
+funcs[Sym('LISTP')] = lambda x: T if (x is None or isinstance(x, list)) else None

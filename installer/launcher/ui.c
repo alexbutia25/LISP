@@ -7,7 +7,7 @@
  *   antet      sigla, numele, descrierea, versiunea; curbe de nivel decorative
  *   stare      conexiunea cu AutoCAD (punct colorat, versiune, desen activ) si
  *              butonul principal: Porneste AutoCAD / Reincarca TopoKit
- *   module     10 carduri (iconita, titlu, descriere, comanda AutoCAD); clic =
+ *   module     12 carduri (iconita, titlu, descriere, comanda AutoCAD); clic =
  *              comanda in desenul activ (AutoCAD porneste daca e nevoie)
  *   subsol     comutatorul "Porneste odata cu Windows", Folder, Ghid
  *
@@ -45,8 +45,10 @@ static const struct { const wchar_t *title, *desc, *cmd; ARGB accent; } TILES[] 
     { L"Cadru planșă", L"Format A4–A0, cadru, caroiaj și indicator", L"INSCADRU", 0xFF3B5B92 },
     { L"Vertexi", L"Corecție topologică la intersecții (ADDVTX)", L"ADDVTX", 0xFFA3478F },
     { L"Calcul înclinație", L"Plan Înclinare: fișiere sau puncte din AutoCAD", L"PLANINCL", 0xFFE0662A },
+    { L"Detașare", L"Parcele noi: paralelă, direcție, punct obligat", L"TKDETASARE", 0xFFB5562E },
+    { L"Suprafețe și cote", L"S= pe poligoane, hașură, lungimi laturi", L"TKSUPRAF", 0xFF4F7A2A },
 };
-#define NTILES 10
+#define NTILES 12
 
 /* Paleta */
 #define C_BG        0xFFF4F7FA
@@ -243,7 +245,7 @@ static void Layout(void)
 static int HitTest(int px, int py)
 {
     float x = px / g_s, y = py / g_s;
-    int ids[] = { HT_PRIMARY, HT_TOGGLE, HT_FOLDER, HT_HELP, HT_DIAG, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+    int ids[] = { HT_PRIMARY, HT_TOGGLE, HT_FOLDER, HT_HELP, HT_DIAG, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 };
     unsigned i;
     UiState st;
     for (i = 0; i < sizeof ids / sizeof ids[0]; i++) {

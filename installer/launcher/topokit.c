@@ -67,6 +67,8 @@ static const struct { const wchar_t *label, *cmd; } CMDS[] = {
     { L"Inserare cadru planșă", L"INSCADRU" },
     { L"Adăugare vertexi (ADDVTX)", L"ADDVTX" },
     { L"Calcul înclinație (Plan Înclinare)", L"PLANINCL" },
+    { L"Detașare suprafață", L"TKDETASARE" },
+    { L"Suprafețe (S=, hașură)", L"TKSUPRAF" },
 };
 #define NCMDS ((int)(sizeof(CMDS) / sizeof(CMDS[0])))
 

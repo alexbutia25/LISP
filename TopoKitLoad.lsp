@@ -79,7 +79,7 @@
          (princ (strcat "\nTopoKit a fost actualizat la " (vl-registry-read *TKL:REGKEY* "Version")
                         ": se reincarca modulele."))
          (setq force T)))
-     (if force (setq TK:Start nil TKA:Generate nil TKT:Menu nil TKI:Run nil))
+     (if force (setq TK:Start nil TKA:Generate nil TKT:Menu nil TKI:Run nil c:TKDETASARE nil))
      (setq *TKL:DIR* dir)
      (if (or force (not TK:Start))
        (setq r (vl-catch-all-apply 'load (list (strcat dir "\\TopoKit.lsp")))))

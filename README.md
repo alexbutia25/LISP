@@ -14,6 +14,9 @@ Suită modulară AutoLISP + DCL pentru AutoCAD (în stilul TopoLT):
 | `DWGKMZ` | **DWG to KMZ**: convertorul DXF/DWG → KMZ pentru Google Earth (TransDatRO), deschis direct cu desenul curent; parte din TopoKit (`DWGtoKMZ.exe`) |
 | `PLANINCL` | Programul **Plan Înclinare** (calcul înclinație), exact ca înainte: drag & drop CSV/TXT/DWG/DXF, previzualizare, export DXF/DWG, plus punctele din desenul deschis (`PLANINCLSEL`) |
 | `INCLINARE` | Planul de înclinare / verticalitate (silozuri, stâlpi, coșuri, turnuri) din puncte măsurate pe rânduri, pe planșă A4…A0 cu cartuș ([detalii](#6-calcul-înclinație--programul-plan-înclinare-planincl-și-inclinare)) |
+| `TKDETASARE` / `TKDETMULT` | **Detașare** de suprafețe: paralelă cu o latură, după o direcție, perpendiculară, prin punct obligat; una sau mai multe (tabel manual sau din Excel/CSV) ([detalii](#7-cadastru--detașări-suprafețe-cote-puncte-topolt)) |
+| `TKSUPRAF` / `TKCOTE` / `TKSUMA` | Suprafețe (S= și hașură), cotarea laturilor, suma textelor |
+| `TKPCT` … `TKEXPPCT` | Puncte compatibile TopoLT (bloc „Punct”): introducere, pe contur, renumerotare, coduri, import și export coordonate |
 | `TOPOTEREN` | Modulul de teren: import puncte și desenare pe coduri, model TIN, curbe de nivel, volume, raster georeferențiat, KML/KMZ, tabele și legende ([detalii](#5-teren--puncte-model-3d-curbe-de-nivel-volume-topoteren)) |
 
 ## Interfața
@@ -506,6 +509,33 @@ Modelul de calcul:
   (beneficiar, obiectiv, întocmit, nr. planșă, data). Textele au mărimea în mm pe hârtie.
 
 Setările se păstrează între sesiuni (registru `HKCU\Software\TopoKit\Inclinare`).
+
+## 7. Cadastru – detașări, suprafețe, cote, puncte TopoLT
+
+Funcțiile preluate din CadTopo (modulul `TopoKitCad.lsp`), cu erorile corectate. Sunt și în meniul
+**TopoKit** din bara de meniuri AutoCAD (vizibilă cu `MENUBAR` = 1) și pe cardurile „Detașare” și
+„Suprafețe și cote” din fereastra TopoKit.
+
+| Comandă | Ce face |
+|---|---|
+| `TKDETASARE` | Detașează o suprafață dată: **PAralela** cu latura aleasă, **DirectieParalela** (direcție indicată), **PErpendiculara** pe latură, **PUnctObligat** (linia trece printr-un punct de pe contur). Rupe polilinia în două și pune eticheta: numărul în chenar, proprietarul, suprafața. |
+| `TKDETMULT` | Mai multe parcele succesive dintr-un tabel (Nr, Proprietar, Suprafață) completat manual sau încărcat din Excel / CSV; tabelul se poate salva. |
+| `TKSUPRAF` | `S=… mp` în centrul fiecărui poligon închis, opțional hașură. |
+| `TKCOTE` | Lungimea fiecărei laturi, scrisă spre exteriorul poligonului, citibilă. |
+| `TKSUMA` | Suma numerelor din texte (din `S=500mp` se ia 500; MTEXT formatat; virgulă zecimală). |
+| `TKPCT`, `TKPCTCONTUR` | Puncte noi (bloc „Punct” cu atributele DENPCT, COTA, COD și textul numărului, ca în TopoLT), manual sau în vârfurile poliliniilor, fără dubluri. |
+| `TKIMPPCT`, `TKEXPPCT` | Raportarea punctelor din fișier (Nr X Y Z Cod, separatorul și virgula zecimală detectate) și refacerea fișierului de coordonate (ordine naturală: pt2 înaintea pt10). |
+| `TKSTERGPCT`, `TKRENUM`, `TKSELCOD`, `TKSCHCOD` | Ștergere cu textele legate, renumerotare (avertizează la numere dublate), selecție și schimbarea codului. |
+| `TKCADSET`, `TKCAD` | Setările (scara, înălțimi în mm pe hârtie, zecimale, hașură, rupere) – păstrate în desen – și lista comenzilor. |
+
+Corecturi față de CadTopo:
+- detașarea prin punct obligat nu funcționa: funcția internă `ct:sub` era definită de două ori (a doua, pentru meniu, o înlocuia pe prima);
+- importul din Excel folosea `vlax-invoke-method` fără parametrii opționali (eșuează în AutoCAD 2025/2026);
+- suma textelor lua primul număr (`Lot 3 S=500mp` → 3) și citea greșit MTEXT-ul formatat;
+- importul nu accepta virgula zecimală și lăsa fișierul deschis la eroare;
+- exportul și renumerotarea sortau numerele cu prefix ca 0; renumerotarea nu verifica dublurile;
+- la parcele neconvexe, linia de detasare care taie conturul de mai multe ori se desenează pe bucăți corecte (polilinia nu se mai rupe greșit);
+- bara de meniuri nu mai este pornită forțat (`MENUBAR`).
 
 ## Detalii tehnice
 

@@ -6,7 +6,7 @@
 installer/launcher/:
     topokit.ico, tray_on.ico, tray_off.ico   iconitele programului / barei de sistem
     logo.png                                 sigla din antetul ferestrei TopoKit
-    icons/m1.png ... m10.png                 iconitele modulelor (cardurile ferestrei)
+    icons/m1.png ... m12.png                 iconitele modulelor (cardurile ferestrei)
 installer/art/:
     welcome.bmp (164x314), header.bmp (150x57)   paginile instalatorului NSIS
 docs/topokit_icon.png
@@ -134,6 +134,26 @@ def g_incl(d):          # calcul inclinatie: siloz aplecat fata de verticala
     d.ellipse((88, 198, 104, 214), fill=W)
 
 
+def g_det(d):           # detasare: parcela taiata de o linie, partea detasata hasurata
+    poly = [(40, 196), (52, 60), (210, 48), (220, 200)]
+    d.polygon(poly, outline=W, width=11)
+    for k in range(5):                                   # hasura pe partea detasata (stanga)
+        x = 62 + k * 18
+        d.line((x, 186, x + 40, 78), fill=W, width=5)
+    for k in range(6):                                   # linia de detasare, punctata
+        y0 = 40 + k * 30
+        d.line((150 - (y0 - 40) * 0.05, y0, 150 - (y0 - 22) * 0.05, y0 + 18), fill=W, width=10)
+
+
+def g_sup(d):           # suprafete: poligon cu "S=" si cote pe laturi
+    d.polygon([(44, 190), (60, 70), (200, 52), (214, 196)], outline=W, width=11)
+    f = ImageFont.truetype(FONT, 54)
+    d.text((130, 132), "S=", font=f, fill=W, anchor="mm")
+    d.line((60, 222, 200, 222), fill=W, width=7)
+    for x in (60, 200):
+        d.line((x, 210, x, 234), fill=W, width=7)
+
+
 def g_vertex(d):        # vertexuri pe polilinie
     p = [(44, 176), (98, 92), (152, 156), (212, 72)]
     d.line(p, fill=W, width=12, joint="curve")
@@ -145,7 +165,7 @@ def g_vertex(d):        # vertexuri pe polilinie
 # aceeasi ordine ca TILES din installer/launcher/ui.c
 MODULES = [("#1B6A8F", g_menu), ("#6A4FB6", g_doc), ("#2E8B57", g_tin), ("#D08A12", g_check),
            ("#C8443A", g_pdf), ("#1F8FBF", g_globe), ("#0E8C7F", g_dwgkmz), ("#3B5B92", g_frame),
-           ("#A3478F", g_vertex), ("#E0662A", g_incl)]
+           ("#A3478F", g_vertex), ("#E0662A", g_incl), ("#B5562E", g_det), ("#4F7A2A", g_sup)]
 
 
 def module_icon(color, glyph):

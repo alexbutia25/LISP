@@ -48,7 +48,7 @@ M.load(os.path.join(ROOT, "TopoKitLoad.lsp"))
 acad.after_load()
 win_root = ROOT if os.name == "nt" else "\\" + ROOT.strip("/").replace("/", "\\")
 assert fn("TKL:Dir") == win_root, fn("TKL:Dir")
-assert loads == ["TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitTeren.lsp", "TopoKitInclinare.lsp"], loads
+assert loads == ["TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitTeren.lsp", "TopoKitInclinare.lsp", "TopoKitCad.lsp"], loads
 for c in ("C:TOPOKIT", "C:ANEXE", "C:TOPOTEREN", "C:TOPOKITRELOAD", "C:EXPKMZ"):
     assert defined(c), c
 assert dirs(prefs["SupportPath"])[0] == win_root and len(dirs(prefs["SupportPath"])) == 3, prefs
@@ -67,7 +67,7 @@ print("Al doilea desen: folderul nu se adauga din nou, modulele nu se reincarca"
 # ---------------------------------------------------------------- TOPOKITRELOAD
 loads.clear()
 fn("C:TOPOKITRELOAD")
-assert loads == ["TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitTeren.lsp", "TopoKitInclinare.lsp"], loads
+assert loads == ["TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitTeren.lsp", "TopoKitInclinare.lsp", "TopoKitCad.lsp"], loads
 assert any("TopoKit reincarcat" in o for o in acad.out)
 print("TOPOKITRELOAD reincarca toate modulele")
 
@@ -91,11 +91,11 @@ expr = (m.group(1) + " " + m.group(2)).replace('\\"', '"').replace("%hs", VER) \
 # SendCommand (AutoCAD 2025/2026) respinge caracterele de control: Ctrl+C doar pentru WM_COPYDATA
 assert re.search(r'CommandText\(cmd, reload, FALSE,[^)]*\);\s*BringToFront', src), "SendCommand fara Ctrl+C"
 assert "CommandText(cmd, reload, TRUE," in src, "WM_COPYDATA cu Ctrl+C"
-for k in ("TKL:LOAD", "C:TOPOKIT", "TK:START", "TKA:GENERATE", "TKT:MENU", "TKI:RUN"):
+for k in ("TKL:LOAD", "C:TOPOKIT", "TK:START", "TKA:GENERATE", "TKT:MENU", "TKI:RUN", "C:TKDETASARE"):
     env.pop(Sym(k), None)
 loads.clear()
 run(expr)
-assert loads == ["TopoKitLoad.lsp", "TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitTeren.lsp", "TopoKitInclinare.lsp"], loads
+assert loads == ["TopoKitLoad.lsp", "TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitTeren.lsp", "TopoKitInclinare.lsp", "TopoKitCad.lsp"], loads
 loads.clear()
 run(expr)                                             # deja incarcat: nimic
 assert loads == [], loads
@@ -104,7 +104,7 @@ reg[("HKEY_CURRENT_USER\\Software\\TopoKit", "Version")] = VER
 env[Sym("*TK:VERSION*")] = "1.1.0"
 loads.clear()
 run(expr)
-assert loads == ["TopoKitLoad.lsp", "TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitTeren.lsp", "TopoKitInclinare.lsp"], loads
+assert loads == ["TopoKitLoad.lsp", "TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitTeren.lsp", "TopoKitInclinare.lsp", "TopoKitCad.lsp"], loads
 assert env[Sym("*TK:VERSION*")] == VER
 loads.clear()
 run(expr)                                             # aceeasi versiune: nimic

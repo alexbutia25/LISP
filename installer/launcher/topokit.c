@@ -1091,6 +1091,7 @@ static void Diagnostic(void)
 static void ShowMain(void)
 {
     Log(L"Fereastra TopoKit afisata");
+    LoadLang();                         /* limba aleasa intre timp in AutoCAD (TOPOKITLANG) */
     Ui_Show();
 }
 
@@ -1180,6 +1181,7 @@ static void ShowMenu(void)
     wchar_t status[256];
     int i;
     UINT sel;
+    LoadLang();
     if (g_connected == TRUE)
         swprintf(status, 256, TR(L"Conectat: %ls%ls%ls", L"Connected: %ls%ls%ls"), g_acadName, g_docName[0] ? L" - " : L"", g_docName);
     else

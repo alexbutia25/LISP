@@ -162,10 +162,42 @@ static void RegSetStr(const wchar_t *name, const wchar_t *v)
 }
 
 /* limba aleasa (TOPOKITLANG in AutoCAD sau butonul din fereastra) */
+/* Limba se pastreaza in %LOCALAPPDATA%\TopoKit\language.txt ("RO" / "EN"), citit si de
+ * TopoKitLoad.lsp. Fisier, nu registru: unele instalari AutoCAD vad o copie virtualizata a
+ * registrului, iar fereastra si AutoCAD trebuie sa aiba aceeasi limba. */
+static BOOL LangFile(wchar_t *path)
+{
+    wchar_t dir[MAX_PATH];
+    if (FAILED(SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA | CSIDL_FLAG_CREATE, NULL, 0, dir))) return FALSE;
+    swprintf(path, MAX_PATH, L"%ls\\TopoKit", dir);
+    CreateDirectoryW(path, NULL);
+    lstrcatW(path, L"\\language.txt");
+    return TRUE;
+}
+
 static void LoadLang(void)
 {
-    wchar_t v[16];
+    wchar_t p[MAX_PATH], v[16];
+    char b[8] = { 0 };
+    FILE *f;
+    if (LangFile(p) && (f = _wfopen(p, L"rb"))) {
+        fread(b, 1, sizeof b - 1, f);
+        fclose(f);
+        g_en = (b[0] == 'E' || b[0] == 'e') && (b[1] == 'N' || b[1] == 'n');
+        return;
+    }
     g_en = RegGetStr(HKEY_CURRENT_USER, REG_APP, L"Language", v, 16) && !_wcsicmp(v, L"EN");
+}
+
+static void SaveLang(void)
+{
+    wchar_t p[MAX_PATH];
+    FILE *f;
+    if (LangFile(p) && (f = _wfopen(p, L"wb"))) {
+        fputs(g_en ? "EN\r\n" : "RO\r\n", f);
+        fclose(f);
+    }
+    RegSetStr(L"Language", g_en ? L"EN" : L"RO");
 }
 
 static BOOL AutorunEnabled(void)
@@ -1131,7 +1163,7 @@ void App_Action(int act, int arg)
         break;
     case ACT_LANG:          /* romana <-> engleza; AutoCAD reincarca TopoKit in limba noua */
         g_en = !g_en;
-        RegSetStr(L"Language", g_en ? L"EN" : L"RO");
+        SaveLang();
         Log(L"Limba: %ls", g_en ? L"EN" : L"RO");
         if (g_connected == TRUE) RunCommand(NULL, TRUE);
         else Note(UI_NOTE_INFO, TR(L"Limba română – se aplică și în AutoCAD la pornire",

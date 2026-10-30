@@ -64,15 +64,22 @@
               2))))
 
 ;;; --------------------------------------------------------------------------
-;;;  Limba interfetei: "RO" (implicit) sau "EN", in HKCU\Software\TopoKit\Language
-;;;  (scrisa de comanda TOPOKITLANG si de fereastra TopoKit.exe).
+;;;  Limba interfetei: "RO" (implicit) sau "EN", in fisierul
+;;;  %LOCALAPPDATA%\TopoKit\language.txt (scris de comanda TOPOKITLANG si de
+;;;  fereastra TopoKit.exe). Fisierul, nu registrul: unele instalari AutoCAD vad
+;;;  o copie virtualizata a registrului, diferita de cea a ferestrei TopoKit.
 ;;;  Varianta in engleza a modulelor (.lsp, .dcl) se afla in Contents\en; folderul
 ;;;  e pus in calea de suport INAINTEA folderului Contents, deci findfile gaseste
 ;;;  intai fisierele traduse. Anexele si planurile raman in romana (Ordinul ANCPI).
 ;;; --------------------------------------------------------------------------
-(defun TKL:Lang (/ l)
-  (setq l (vl-registry-read *TKL:REGKEY* "Language"))
-  (if (and (= (type l) 'STR) (= (strcase l) "EN")) "EN" "RO"))
+(defun TKL:LangFile (/ d)
+  (if (setq d (getenv "LOCALAPPDATA")) (strcat (TKL:Slash d) "\\TopoKit\\language.txt")))
+
+(defun TKL:Lang (/ f fh l)
+  (if (and (setq f (TKL:LangFile)) (findfile f) (setq fh (open f "r")))
+    (progn (setq l (read-line fh)) (close fh))
+    (setq l (vl-registry-read *TKL:REGKEY* "Language")))
+  (if (and (= (type l) 'STR) (= (strcase (vl-string-trim " \t" l)) "EN")) "EN" "RO"))
 
 ;; Folderul din care se incarca modulele pentru limba curenta
 (defun TKL:LangDir (dir)
@@ -111,8 +118,12 @@
         (not (vl-catch-all-error-p r)))))))
 
 ;; TKL:SetLang - schimba limba si reincarca TopoKit in desenul curent
-(defun TKL:SetLang (l)
-  (vl-registry-write *TKL:REGKEY* "Language" l)
+(defun TKL:SetLang (l / f fh)
+  (if (setq f (TKL:LangFile))
+    (progn
+      (vl-mkdir (vl-filename-directory f))
+      (if (setq fh (open f "w")) (progn (write-line l fh) (close fh)))))
+  (vl-catch-all-apply 'vl-registry-write (list *TKL:REGKEY* "Language" l))
   (TKL:Load T)
   (princ (if (= l "EN")
            "\nTopoKit: English interface. Other open drawings switch when TopoKit is used there."
@@ -139,10 +150,23 @@
 ;; TKL:Stale - T daca in desen e incarcata alta versiune decat cea instalata
 ;; (TopoKit actualizat cu AutoCAD deschis): codul vechi din memorie nu se
 ;; potriveste cu dialogurile noi de pe disc, deci trebuie reincarcat
-;; (sau in alta limba decat cea aleasa intre timp cu TOPOKITLANG)
+;; (sau in alta limba decat cea aleasa intre timp cu TOPOKITLANG).
+;; Versiunea instalata se citeste din TopoKit.lsp de pe disc, nu din registru.
+(defun TKL:FileVersion (dir / fh l n v i)
+  (if (and dir (setq fh (open (strcat dir "\\TopoKit.lsp") "r")))
+    (progn
+      (setq n 0)
+      (while (and (not v) (< n 80) (setq l (read-line fh)))
+        (setq n (1+ n))
+        (if (and (wcmatch l "(setq `*TK:VERSION`* \"*\")*")
+                 (setq i (vl-string-search "\"" l 20)))
+          (setq v (substr l 21 (- i 20)))))
+      (close fh)
+      v)))
+
 (defun TKL:Stale (/ v)
   (and TK:Start
-       (or (and (setq v (vl-registry-read *TKL:REGKEY* "Version"))
+       (or (and (setq v (TKL:FileVersion (if *TKL:DIR* *TKL:DIR* (TKL:Dir))))
                 (/= v (if *TK:VERSION* *TK:VERSION* "1.0.0")))
            (and *TKL:LANGLOADED* (/= *TKL:LANGLOADED* (TKL:Lang))))))
 
@@ -155,7 +179,6 @@
      (vl-catch-all-apply 'TKL:AddSupport (list dir))
      (vl-catch-all-apply 'TKL:AddTrusted (list dir))
      (vl-catch-all-apply 'TKL:LangSupport (list dir))
-     (vl-catch-all-apply 'TKL:Ribbon (list dir))
      (if (and (not force) (TKL:Stale))
        (progn
          (princ "\nTopoKit: versiune sau limba noua - se reincarca modulele.")
@@ -169,7 +192,8 @@
        ((vl-catch-all-error-p r)
         (princ (strcat "\nTopoKit: eroare la incarcare - " (vl-catch-all-error-message r)))
         nil)
-       (T (TKL:Mark) T)))))
+       ;; meniul ribbon la sfarsit: incarcarea unui .cuix opreste expresia LISP in curs
+       (T (TKL:Mark) (vl-catch-all-apply 'TKL:Ribbon (list dir)) T)))))
 
 ;; Marcaj pentru lansatorul TopoKit.exe (raportul de diagnostic): unde si cand
 ;; s-a incarcat TopoKit ultima data

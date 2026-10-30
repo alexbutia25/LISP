@@ -59,7 +59,8 @@ reîncarcă imediat în desenul curent; celelalte desene deschise trec la prima 
 - **Planurile, anexele și documentele rămân în română** (PAD, releveu, cereri, memoriu, tabele și
   cartușe), fiind documente pentru OCPI conform Ordinului ANCPI nr. 600/2023.
 - În engleză se răspunde cu *Yes* / *No*, iar modul detașării cu *PArallel* / *DIrection* / *PErpendicular* / *FIxedpoint*.
-- Limba se păstrează în `HKCU\Software\TopoKit\Language` (`RO` / `EN`).
+- Limba se păstrează în fișierul `%LOCALAPPDATA%\TopoKit\language.txt` (`RO` / `EN`), comun pentru
+  AutoCAD și fereastra TopoKit.
 
 ### Meniul `TOPOKIT` (dialog)
 

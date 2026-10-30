@@ -8,7 +8,7 @@ Verifica:
     LISP (ghilimele), tastele getkword raman cele globale, domeniile sunt valide;
   - varianta in engleza (tools/i18n.py): aceeasi structura LISP ca originalul, textele din
     planuri si numele de straturi raman in romana;
-  - in simulatorul AutoCAD: cu Language = EN, incarcatorul pune folderul "en" in calea de
+  - in simulatorul AutoCAD: cu language.txt = EN, incarcatorul pune folderul "en" in calea de
     suport inaintea folderului Contents, incarca modulele traduse si meniul TopoKit_EN.cuix;
     TOPOKITLANG / TKL:SetLang revine la romana (cale de suport, meniu, mesaje);
   - meniul ribbon (tools/make_ribbon.py): XML valid, fiecare comanda TopoKit are buton si
@@ -130,7 +130,14 @@ OUT = os.path.join(TMP, "out")
 os.makedirs(OUT)
 acad = Acad(contents, OUT)
 win = lambda p: p.replace("/", "\\")
-reg = {(REG, "ContentsDir"): win(contents) + "\\", (REG, "Language"): "EN"}
+# limba din fisierul %LOCALAPPDATA%\TopoKit\language.txt; registrul (care poate fi o copie
+# virtualizata, diferita de a ferestrei TopoKit) spune altceva si nu conteaza
+reg = {(REG, "ContentsDir"): win(contents) + "\\", (REG, "Language"): "RO", (REG, "Version"): "1.0.0"}
+local = os.path.join(TMP, "local")
+os.makedirs(os.path.join(local, "TopoKit"))
+lang_file = os.path.join(local, "TopoKit", "language.txt")
+open(lang_file, "w").write("EN\n")
+acad.envs["LOCALAPPDATA"] = win(local)
 prefs = {"SupportPath": "C:\\Program Files\\Autodesk\\AutoCAD 2026\\support"}
 M.funcs[Sym("VL-REGISTRY-READ")] = lambda k, v=None: reg.get((k, v))
 M.funcs[Sym("VL-REGISTRY-WRITE")] = lambda k, v, x: reg.__setitem__((k, v), x) or x
@@ -211,7 +218,7 @@ assert loads == [] and prefs["SupportPath"].split(";")[:2] == sp[:2] and len(men
 loads.clear()
 acad.out.clear()
 call(Sym("TKL:SETLANG"), ["RO"])
-assert reg[(REG, "Language")] == "RO"
+assert open(lang_file).read().strip() == "RO" and reg[(REG, "Language")] == "RO"
 sp = prefs["SupportPath"].split(";")
 assert sp[0] == win(contents) and win(en_dir) not in sp, sp
 assert loads == ["TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitTeren.lsp", "TopoKitInclinare.lsp", "TopoKitCad.lsp"], loads
@@ -222,6 +229,12 @@ assert any("interfata in limba romana" in o for o in acad.out)
 env[Sym("*TKL:LANGLOADED*")] = "EN"
 assert call(Sym("TKL:STALE"), []) is not None
 env[Sym("*TKL:LANGLOADED*")] = "RO"
+# versiunea: din TopoKit.lsp instalat, nu din registru (acolo e "1.0.0")
+assert call(Sym("TKL:FILEVERSION"), [win(contents)]) == open(os.path.join(ROOT, "installer", "VERSION")).read().strip()
+assert call(Sym("TKL:STALE"), []) is None
+env[Sym("*TK:VERSION*")] = "1.2.0"
+assert call(Sym("TKL:STALE"), []) is not None
+env[Sym("*TK:VERSION*")] = call(Sym("TKL:FILEVERSION"), [win(contents)])
 print("TKL:SetLang RO: calea de suport fara en, meniul TopoKit.cuix, mesajele in romana")
 
 shutil.rmtree(TMP, ignore_errors=True)

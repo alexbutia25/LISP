@@ -668,7 +668,7 @@ class Acad:
         F = {
             "GETFILED": lambda *a: s.ask("file"), "GETPOINT": lambda *a: s.ask("pt"), "GETREAL": lambda *a: s.ask("real"),
             "VLA-GET-MODELSPACE": lambda d: Obj("modelspace"), "VLA-ADDRASTER": s.add_raster,
-            "VLA-GET-WIDTH": lambda o: o.px, "VLA-GET-HEIGHT": lambda o: o.py,
+            "VLA-GET-WIDTH": lambda o: float(o.px), "VLA-GET-HEIGHT": lambda o: float(o.py),  # AutoCAD: double
             "VLA-PUT-IMAGEWIDTH": lambda o, v: o.props.__setitem__("W", v), "VLA-PUT-IMAGEHEIGHT": lambda o, v: o.props.__setitem__("H", v),
             "VLA-PUT-ROTATION": lambda o, v: o.props.__setitem__("ROT", v), "VLA-PUT-ORIGIN": lambda o, v: o.props.__setitem__("ORIGIN", v),
             "VLAX-3D-POINT": lambda *a: list(a[0]) + [0.0] * (3 - len(a[0])) if len(a) == 1 else list(a),

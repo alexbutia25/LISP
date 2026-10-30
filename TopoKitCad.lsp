@@ -445,7 +445,7 @@
         (foreach e (TKC:Linked en) (entdel e))
         (entdel en)
         (setq cnt (1+ cnt)))
-      (TKC:Msg (strcat (itoa cnt) " puncte sterse.")))))
+      (TKC:Msg (if (= cnt 1) "1 punct sters." (strcat (itoa cnt) " puncte sterse."))))))
 
 ;; TKRENUM - renumerotare pe rand; avertizeaza daca numarul exista deja
 (defun TKC:CmdRenum (/ n pre s go lst nr own)
@@ -830,7 +830,10 @@
 (defun TKC:LRep (l i v / k) (setq k -1) (mapcar '(lambda (x) (setq k (1+ k)) (if (= k i) v x)) l))
 (defun TKC:LDel (l i / k) (setq k -1) (vl-remove-if '(lambda (x) (= (setq k (1+ k)) i)) l))
 (defun TKC:NumS (s) (if s (distof (vl-string-translate "," "." (vl-string-trim " \"" s)) 2)))
-(defun TKC:MNextNr () (itoa (1+ (apply 'max (cons 0 (mapcar '(lambda (x) (atoi (car x))) *TKC:MTAB*))))))
+;; numarul urmator: dupa randurile din tabel si dupa ultima parcela detasata in desen
+(defun TKC:MNextNr ()
+  (itoa (1+ (apply 'max (append (list 0 (cond ((vlax-ldata-get "TOPOKIT" "NRPAR")) ((vlax-ldata-get "CTOPO" "NRPAR")) (0)))
+                                (mapcar '(lambda (x) (atoi (car x))) *TKC:MTAB*))))))
 
 ;; TKC:ReadCsv - Nr ; Proprietar ; Suprafata (separator ; tab sau ,)
 (defun TKC:ReadCsv (fn / f ln fl v rows)
@@ -881,8 +884,8 @@
 (defun TKC:DclMDet ()
   '("tkc_mdet : dialog {"
     "  label = \"TopoKit - Detasari multiple: tabelul suprafetelor\";"
-    "  : text { label = \"Nr.     Proprietar                            Suprafata\"; }"
-    "  : list_box { key = \"lst\"; height = 16; width = 64; fixed_width_font = true; }"
+    "  : list_box { key = \"hdr\"; height = 2; width = 64; tabs = \"8 46\"; tab_truncate = true; is_enabled = false; }"
+    "  : list_box { key = \"lst\"; height = 16; width = 64; tabs = \"8 46\"; tab_truncate = true; }"
     "  : row {"
     "    : edit_box { key = \"nr\"; label = \"Nr.\"; edit_width = 6; }"
     "    : edit_box { key = \"prop\"; label = \"Proprietar\"; edit_width = 28; }"
@@ -908,7 +911,7 @@
     "  errtile;"
     "}"))
 
-(defun TKC:MFmt (rw) (strcat (TKC:Pad (car rw) 8) (TKC:Pad (cadr rw) 36) (TKC:PadL (TKC:F (caddr rw) 2) 12)))
+(defun TKC:MFmt (rw) (strcat (car rw) (chr 9) (cadr rw) (chr 9) (TKC:F (caddr rw) 2)))
 (defun TKC:MSum () (apply '+ (cons 0.0 (mapcar 'caddr *TKC:MTAB*))))
 
 (defun TKC:MRef ()
@@ -988,6 +991,7 @@
   (setq id (load_dialog fn))
   (if (and (>= id 0) (new_dialog "tkc_mdet" id))
     (progn
+      (start_list "hdr") (add_list (strcat "Nr." (chr 9) "Proprietar" (chr 9) "Suprafata (mp)")) (end_list)
       (TKC:MRef)
       (set_tile "nr" (TKC:MNextNr))
       (action_tile "lst" "(TKC:MPick $value)")
@@ -1036,6 +1040,9 @@
           (if rupe (progn (TKC:PlNew (nth 1 s) rest) (entdel (nth 1 s))))
           (vlax-ldata-put "TOPOKIT" "NRPAR" mx)
           (TKC:Msg (strcat "Rest: " (TKC:F (TKC:Area rest) 2) " mp."))
+          ;; parcelele au fost detasate: tabelul se goleste, ca sa nu fie detasate inca o data
+          ;; din greseala la parcela urmatoare (tabelul se poate salva in CSV din dialog)
+          (setq *TKC:MTAB* nil)
           res)))))
 
 ;;; ==========================================================================
@@ -1056,7 +1063,8 @@
 (defun TKC:Q (s) (strcat "\"" s "\""))
 
 (defun TKC:DclSet (/ l)
-  (setq l (list "tkc_set : dialog {" "  label = \"TopoKit - Setari cadastru (marimi in mm pe hartie)\";"))
+  (setq l (list "tkc_set : dialog {" "  label = \"TopoKit - Setari cadastru\";"
+                "  : text { label = \"Inaltimile textelor sunt in mm pe hartie (x scara).\"; }"))
   (foreach f *TKC:FIELDS*
     (setq l (append l (list (if (= (caddr f) "toggle")
                               (strcat "  : toggle { key = " (TKC:Q (car f)) "; label = " (TKC:Q (cadr f)) "; }")

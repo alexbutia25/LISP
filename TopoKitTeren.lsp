@@ -766,7 +766,8 @@
        (TKT:Msg (strcat "Imaginea nu a putut fi inserata: " (vl-catch-all-error-message img)))
        (progn
          ;; dimensiunea în pixeli, mărimea pixelului și rotația
-         (setq px (vla-get-Width img) py (vla-get-Height img)
+         ;; Width / Height sunt numere reale in AutoCAD (ex. 200.0): fix pentru itoa
+         (setq px (fix (+ 0.5 (vla-get-Width img))) py (fix (+ 0.5 (vla-get-Height img)))
                res (sqrt (+ (* (nth 0 w) (nth 0 w)) (* (nth 1 w) (nth 1 w))))
                rot (atan (nth 1 w) (nth 0 w))
                ;; colțul stânga-jos al imaginii: marginea pixelului (-0,5 ; py - 0,5)

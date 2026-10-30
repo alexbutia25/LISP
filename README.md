@@ -575,6 +575,12 @@ Corecturi față de CadTopo:
   - georeferențierea după fișierul world;
   - dus-întorsul prin KML/KMZ;
   - harta online și meniul.
+- `python3 tests/test_cad.py` testează modulul de cadastru (detașări pe parcele convexe și neconvexe,
+  suprafețe, cote, suma textelor, punctele TopoLT, importul și exportul coordonatelor, setările).
+- `python3 tests/test_lint.py` face analiza statică a tuturor modulelor LISP, fără AutoCAD: paranteze,
+  funcții definite de două ori, apeluri către funcții inexistente, număr greșit de argumente (la funcțiile
+  TopoKit și la cele AutoCAD uzuale), chei și dialoguri DCL nedefinite. Lista funcțiilor AutoCAD
+  (`tests/data/acad_builtins.txt`) este extrasă din Civil 3D 2026.
 - Șabloanele Word se regenerează din textul ordinului: `tools/extract_anexe.py` extrage anexele din
   HTML-ul ordinului în `tools/ordin600_anexe.json`, apoi `tools/build_anexe.py` scrie
   `anexe/Anexa_NN.docx` și `anexe/catalog.json` (câmpurile fiecărei anexe).

@@ -2466,9 +2466,11 @@
   (princ))
 
 ;; C:CONSTRUCTIE - datele construcțiilor selectate
+;; (prin TKA:Run: ESC la selectie nu mai afiseaza "; error: Function cancelled")
 (defun c:CONSTRUCTIE (/ lst)
-  (setq lst (TKA:SelPolys "\nSelectati constructiile: "))
-  (foreach e lst (TKA:ConstrDialog e (cond ((TKA:LGet e "COD")) ("C1"))))
+  (TKA:Run '(progn
+              (setq lst (TKA:SelPolys "\nSelectati constructiile: "))
+              (foreach e lst (TKA:ConstrDialog e (cond ((TKA:LGet e "COD")) ("C1"))))))
   (princ))
 
 ;; C:ANEXEWORD - completează anexele Word (cerere, declarație, memoriu,

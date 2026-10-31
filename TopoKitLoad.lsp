@@ -176,15 +176,75 @@
                 (/= v (if *TK:VERSION* *TK:VERSION* "1.0.0")))
            (and *TKL:LANGLOADED* (/= *TKL:LANGLOADED* (TKL:Lang))))))
 
+;;; --------------------------------------------------------------------------
+;;;  Licenta. In pachetul construit cu licentiere (tools/build_installer.py, cand
+;;;  exista installer/licensing.json) *TKL:LICENTA* este T si *TKL:CMDS* contine
+;;;  comenzile modulelor. Inainte de incarcarea modulelor se ruleaza
+;;;  "TopoKit.exe /license" (cod de iesire 0 = licenta buna); rezultatul bun se
+;;;  pastreaza in blackboard pentru toata sesiunea AutoCAD. Fara licenta modulele
+;;;  nu se incarca: comenzile TopoKit afiseaza cum se activeaza si deschid
+;;;  fereastra TopoKit (acolo se introduce codul de activare).
+;;;  TopoKit.exe: folderul din Contents\install.txt (scris de instalator), apoi
+;;;  HKCU\Software\TopoKit\InstallDir.
+;;; --------------------------------------------------------------------------
+(setq *TKL:LICENTA* nil)
+(setq *TKL:CMDS* nil)
+
+(defun TKL:Exe (dir / f fh l)
+  (if (and dir (setq f (findfile (strcat dir "\\install.txt"))) (setq fh (open f "r")))
+    (progn (setq l (read-line fh)) (close fh)))
+  (vl-some '(lambda (d)
+              (if (and (= (type d) 'STR) (/= (vl-string-trim " \t" d) "")
+                       (findfile (strcat (TKL:Slash (vl-string-trim " \t" d)) "\\TopoKit.exe")))
+                (strcat (TKL:Slash (vl-string-trim " \t" d)) "\\TopoKit.exe")))
+           (list l (vl-registry-read *TKL:REGKEY* "InstallDir"))))
+
+;; 0 = se poate lucra; altfel codul LIC_* al lansatorului (10 = neactivat)
+(defun TKL:LicCheck (dir / exe sh r)
+  (cond
+    ((not *TKL:LICENTA*) 0)
+    ((equal (vl-bb-ref '*TKL:LIC*) 0) 0)
+    ((not (setq exe (TKL:Exe dir))) 10)
+    (T
+     (setq sh (vl-catch-all-apply 'vlax-create-object (list "WScript.Shell")))
+     (if (and sh (not (vl-catch-all-error-p sh)))
+       (progn
+         (setq r (vl-catch-all-apply 'vlax-invoke (list sh 'Run (strcat "\"" exe "\" /license") 0 :vlax-true)))
+         (vl-catch-all-apply 'vlax-release-object (list sh))))
+     (setq r (if (and r (not (vl-catch-all-error-p r)) (numberp r)) (fix r) 10))
+     (if (= r 0) (vl-bb-set '*TKL:LIC* 0))
+     r)))
+
+(defun TKL:NoLicense (/ exe)
+  (princ (if (= (TKL:Lang) "EN")
+           "\nTopoKit is not activated on this computer. In the TopoKit window enter the activation code from the administrator."
+           "\nTopoKit nu este activat pe acest calculator. In fereastra TopoKit introduceti codul de activare primit de la administrator."))
+  (if (setq exe (TKL:Exe *TKL:DIR*)) (startapp exe))
+  (princ))
+
+;; comenzile TopoKit cat timp licenta lipseste
+(defun TKL:Stubs ()
+  (foreach c *TKL:CMDS*
+    (eval (list 'defun (read (strcat "C:" c)) '() '(TKL:NoLicense)))))
+
 (defun TKL:Load (force / dir ldir r)
   (cond
     ((not (setq dir (TKL:Dir)))
      (princ "\nTopoKit: nu gasesc TopoKit.lsp. Reinstalati TopoKit (TopoKitSetup.exe).")
      nil)
+    ((progn
+       (vl-catch-all-apply 'TKL:AddSupport (list dir))
+       (vl-catch-all-apply 'TKL:AddTrusted (list dir))
+       (vl-catch-all-apply 'TKL:LangSupport (list dir))
+       (setq *TKL:DIR* dir)
+       (/= (TKL:LicCheck dir) 0))
+     (TKL:Stubs)
+     (princ (if (= (TKL:Lang) "EN")
+              "\nTopoKit: not activated on this computer - open the TopoKit window to activate it."
+              "\nTopoKit: neactivat pe acest calculator - deschideti fereastra TopoKit pentru activare."))
+     (vl-catch-all-apply 'TKL:Ribbon (list dir))
+     nil)
     (T
-     (vl-catch-all-apply 'TKL:AddSupport (list dir))
-     (vl-catch-all-apply 'TKL:AddTrusted (list dir))
-     (vl-catch-all-apply 'TKL:LangSupport (list dir))
      (if (and (not force) (TKL:Stale))
        (progn
          (princ "\nTopoKit: versiune sau limba noua - se reincarca modulele.")

@@ -1395,9 +1395,47 @@ def run_cli(argv):
             print("scris", out)
 
 
+def licenta_ok():
+    """Programul instalat porneste doar cu licenta TopoKit valabila pe acest calculator.
+
+    Verificarea o face TopoKit.exe /license (cod de iesire 0 = licenta buna sau licentiere
+    dezactivata la build), din folderul TopoKit (parintele folderului acestui program).
+    Rulat din sursa (dezvoltare, teste) nu se verifica nimic."""
+    if not getattr(sys, "frozen", False):
+        return True
+    exe = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(sys.executable))), "TopoKit.exe")
+    try:
+        r = subprocess.run([exe, "/license"], capture_output=True, timeout=60,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        if r.returncode == 0:
+            return True
+    except (OSError, subprocess.SubprocessError):
+        pass
+    en = False
+    try:
+        with open(os.path.join(os.environ.get("LOCALAPPDATA", ""), "TopoKit", "language.txt"), encoding="ascii") as f:
+            en = f.read(2).upper() == "EN"
+    except OSError:
+        pass
+    import ctypes
+    ctypes.windll.user32.MessageBoxW(
+        None, "TopoKit is not activated on this computer.\n\nIn the TopoKit window enter the activation code "
+              "you received from the administrator." if en else
+              "TopoKit nu este activat pe acest calculator.\n\nÎn fereastra TopoKit introduceți codul de activare "
+              "primit de la administrator.", "TopoKit", 0x30)
+    if os.path.exists(exe):
+        try:
+            os.startfile(exe)
+        except OSError:
+            pass
+    return False
+
+
 if __name__ == "__main__":
     if len(sys.argv) >= 3 and sys.argv[1] == "--test":
         run_cli(sys.argv)
+    elif not licenta_ok():
+        sys.exit(1)
     else:
         app = App()
         files = [a for a in sys.argv[1:] if os.path.exists(a)]

@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 """Construieste instalatorul Windows TopoKitSetup.exe.
 
-    python3 tools/build_installer.py [--version 1.7.1] [--out dist]
+    python3 tools/build_installer.py [--version 1.8.0] [--out dist]
 
 Necesita (Linux: apt install nsis mingw-w64; Windows: NSIS 3 + MinGW-w64 in PATH):
     makensis, x86_64-w64-mingw32-gcc, x86_64-w64-mingw32-windres
     (pe Windows merg si gcc / windres din MSYS2-MinGW64).
 
+Licenta: daca exista installer/licensing.json (facut cu tools/licenta.py: kid, public_key,
+server), cheia publica si adresa serverului se compileaza in TopoKit.exe, iar TopoKitLoad.lsp
+din pachet primeste *TKL:LICENTA* = T si lista comenzilor modulelor (fara licenta valabila
+comenzile doar trimit la activare). Fara fisier, build-ul ramane fara licentiere (ca inainte).
+
 Pasi:
-  1. compileaza lansatorul installer/launcher/topokit.c + ui.c -> TopoKit.exe;
+  1. compileaza lansatorul installer/launcher/topokit.c + ui.c + license.c -> TopoKit.exe;
   2. pregateste build/stage:
        bundle/TopoKit.bundle/PackageContents.xml   (versiunea completata)
        bundle/TopoKit.bundle/Contents/             *.lsp, *.dcl, grila .gsb, anexe/, README,
@@ -39,6 +44,39 @@ def tool(*names):
 def run(cmd, **kw):
     print("+", " ".join(str(c) for c in cmd))
     subprocess.run([str(c) for c in cmd], check=True, **kw)
+
+
+def licensing_config():
+    """installer/licensing.json -> dict cu kid, public_key, server (sau None = fara licentiere)."""
+    f = INST / "licensing.json"
+    if not f.exists():
+        return None
+    import json
+    cfg = json.loads(f.read_text(encoding="utf-8"))
+    if not re.fullmatch(r"[0-9A-Fa-f]{128}", cfg.get("public_key", "")) or not re.fullmatch(r"[A-Za-z0-9_-]{1,16}", cfg.get("kid", "")):
+        sys.exit(f"{f}: lipseste cheia publica sau kid (rulati tools/licenta.py cheie ...)")
+    if not str(cfg.get("server", "")).startswith("https://"):
+        sys.exit(f"{f}: lipseste adresa serverului de licente (tools/licenta.py server https://...)")
+    return cfg
+
+
+def module_commands():
+    """Comenzile AutoCAD definite in module (defun c:NUME), fara cele ale incarcatorului."""
+    cmds = set()
+    for f in LSP:
+        if f != "TopoKitLoad.lsp":
+            cmds |= {m.upper() for m in re.findall(r"\(defun\s+c:([A-Za-z0-9_-]+)", (ROOT / f).read_text(encoding="utf-8"), re.I)}
+    return sorted(cmds)
+
+
+def licensed_loader(text, cmds):
+    """TopoKitLoad.lsp pentru pachetul cu licentiere: *TKL:LICENTA* = T si lista comenzilor."""
+    for old in ("(setq *TKL:LICENTA* nil)", "(setq *TKL:CMDS* nil)"):
+        if text.count(old) != 1:
+            sys.exit(f"TopoKitLoad.lsp: nu gasesc {old}")
+    lst = " ".join(f'"{c}"' for c in cmds)
+    return (text.replace("(setq *TKL:LICENTA* nil)", "(setq *TKL:LICENTA* T)")
+                .replace("(setq *TKL:CMDS* nil)", f"(setq *TKL:CMDS* '({lst}))"))
 
 
 def readme_html(md_text):
@@ -79,21 +117,34 @@ def main():
     contents.mkdir(parents=True)
     app.mkdir(parents=True)
 
-    # 1. lansatorul
+    # 1. lansatorul (cu cheia publica a licentelor, daca exista installer/licensing.json)
+    lic = licensing_config()
+    lic_defs = []
+    if lic:
+        lic_defs = [f'-DTK_LIC_PUB="{lic["public_key"].upper()}"', f'-DTK_LIC_KID="{lic["kid"]}"',
+                    f'-DTK_LIC_URL="{lic["server"].rstrip("/")}"']
+        print(f"Licentiere: DA (kid {lic['kid']}, server {lic['server']})")
+    else:
+        print("Licentiere: nu (lipseste installer/licensing.json) - TopoKit merge fara activare")
     gcc = tool("x86_64-w64-mingw32-gcc", "gcc")
     windres = tool("x86_64-w64-mingw32-windres", "windres")
     res = build / "topokit_res.o"
     run([windres, f"-DTK_VER_COMMA={ver_comma}", f'-DTK_VER_STR=\\"{a.version}\\"',
          "topokit.rc", "-O", "coff", "-o", res], cwd=INST / "launcher")
     run([gcc, "-municode", "-mwindows", "-O2", "-Wall", "-Wextra", "-s", "-static", f'-DTK_VERSION="{a.version}"',
-         "-o", app / "TopoKit.exe", INST / "launcher" / "topokit.c", INST / "launcher" / "ui.c", res,
-         "-lgdiplus", "-lshlwapi", "-lole32", "-loleaut32", "-luuid", "-lshell32", "-lgdi32", "-luser32"])
+         *lic_defs, "-o", app / "TopoKit.exe", INST / "launcher" / "topokit.c", INST / "launcher" / "ui.c",
+         INST / "launcher" / "license.c", res,
+         "-lgdiplus", "-lshlwapi", "-lole32", "-loleaut32", "-luuid", "-lshell32", "-lgdi32", "-luser32",
+         "-lbcrypt", "-lwinhttp", "-lcrypt32", "-lcomdlg32"])
 
     # 2. pachetul AutoCAD
     xml = (INST / "bundle" / "PackageContents.xml").read_text(encoding="utf-8")
     (bundle / "PackageContents.xml").write_text(xml.replace("@VERSION@", a.version), encoding="utf-8")
     for f in LSP + DCL + [GRID, TDGRID, "README.md"]:
         shutil.copy2(ROOT / f, contents / f)
+    if lic:
+        loader = contents / "TopoKitLoad.lsp"
+        loader.write_text(licensed_loader(loader.read_text(encoding="utf-8"), module_commands()), encoding="utf-8")
     shutil.copytree(ROOT / "anexe", contents / "anexe")
     shutil.copy2(INST / "launcher" / "topokit.ico", contents / "topokit.ico")
     # ribbonul TopoKit (TopoKit.cuix romana, TopoKit_EN.cuix engleza) si modulele in engleza

@@ -1,0 +1,16 @@
+# Serverul de licente TopoKit (vezi README.md). Secretele NU stau aici:
+#   npx wrangler secret put SIGNING_KEY < topokit_cheie_semnare.json
+#   npx wrangler secret put ADMIN_TOKEN
+name = "topokit-licente"
+main = "worker.js"
+compatibility_date = "2025-09-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "topokit-licente"
+database_id = "COMPLETATI-ID-UL-AFISAT-DE-wrangler-d1-create"
+
+[vars]
+LICENSE_DAYS = "14"   # cat e valabila o licenta (se reinnoieste zilnic cand e internet)
+CODE_DAYS = "14"      # cat e valabil un cod de activare nefolosit
+MAX_DEVICES = "2"     # calculatoare de coleg (implicit; se schimba din /admin)

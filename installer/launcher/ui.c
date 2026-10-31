@@ -27,7 +27,7 @@
 #include "ui.h"
 
 #ifndef TK_VERSION
-#define TK_VERSION "1.7.1"
+#define TK_VERSION "1.8.0"
 #endif
 #define UI_CLASS L"TopoKitMainWnd"
 #define W_DIP 1000
@@ -93,7 +93,7 @@ static const struct { const wchar_t *title, *desc, *title_en, *desc_en, *cmd; AR
 #define C_WAIT      0xFFE0A030
 
 /* Zonele active */
-enum { HT_NONE = -1, HT_TILE0 = 0, HT_PRIMARY = 32, HT_TOGGLE, HT_FOLDER, HT_HELP, HT_DIAG, HT_LANG, HT_FUNC };
+enum { HT_NONE = -1, HT_TILE0 = 0, HT_PRIMARY = 32, HT_TOGGLE, HT_FOLDER, HT_HELP, HT_DIAG, HT_LANG, HT_FUNC, HT_LIC };
 
 static HINSTANCE g_inst;
 static HWND g_wnd;
@@ -263,6 +263,7 @@ static void Layout(void)
     float tw = (W_DIP - 48 - 4 * 16) / 5.0f, th = 118;     /* 5 coloane x 4 randuri */
     g_r[HT_PRIMARY] = (R){ W_DIP - 24 - 16 - 178, 120 + 18, 178, 36 };
     g_r[HT_LANG] = (R){ W_DIP - 24 - 70 - 10 - 92, 22, 92, 24 };
+    g_r[HT_LIC] = (R){ W_DIP - 24 - 70 - 10 - 92 - 10 - 230, 22, 230, 24 };
     for (i = 0; i < NTILES; i++)
         g_r[HT_TILE0 + i] = (R){ 24 + (i % 5) * (tw + 16), 240 + (i / 5) * (th + 14), tw, th };
     g_r[HT_TOGGLE] = (R){ 24, H_DIP - 44, 250, 28 };
@@ -275,15 +276,16 @@ static void Layout(void)
 static int HitTest(int px, int py)
 {
     float x = px / g_s, y = py / g_s;
-    int ids[NTILES + 7] = { HT_PRIMARY, HT_TOGGLE, HT_FOLDER, HT_HELP, HT_DIAG, HT_LANG, HT_FUNC };
+    int ids[NTILES + 8] = { HT_PRIMARY, HT_TOGGLE, HT_FOLDER, HT_HELP, HT_DIAG, HT_LANG, HT_FUNC, HT_LIC };
     unsigned i;
     UiState st;
-    for (i = 0; i < NTILES; i++) ids[7 + i] = HT_TILE0 + (int)i;
+    App_State(&st);
+    for (i = 0; i < NTILES; i++) ids[8 + i] = HT_TILE0 + (int)i;
     for (i = 0; i < sizeof ids / sizeof ids[0]; i++) {
         R r = g_r[ids[i]];
+        if (ids[i] == HT_LIC && !st.lic) continue;              /* licentiere dezactivata */
         if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) {
             if (ids[i] == HT_PRIMARY) {
-                App_State(&st);
                 if (st.state == UI_STARTING) return HT_NONE;      /* buton inactiv */
             }
             return ids[i];
@@ -334,6 +336,12 @@ static void Paint(GpGraphics *g, int hover, int pressed)
         R lg = g_r[HT_LANG];
         FillRound(g, lg.x * s, lg.y * s, lg.w * s, lg.h * s, 12 * s, hover == HT_LANG ? 0x55FFFFFF : 0x2EFFFFFF);
         Text(g, TR(L"English", L"Română"), fSmall, 0xFFFFFFFF, lg, 1, 1, FALSE);
+    }
+    if (st.lic) {       /* licenta: numele colegului sau "Activati TopoKit" (portocaliu) */
+        R lc = g_r[HT_LIC];
+        FillRound(g, lc.x * s, lc.y * s, lc.w * s, lc.h * s, 12 * s,
+                  st.licOk ? (hover == HT_LIC ? 0x55FFFFFF : 0x2EFFFFFF) : (hover == HT_LIC ? 0xFFE5A23A : 0xFFD08A1E));
+        Text(g, st.lic, fSmall, 0xFFFFFFFF, (R){ lc.x + 10, lc.y, lc.w - 20, lc.h }, 1, 1, FALSE);
     }
     FillRound(g, (W_DIP - 24 - 70) * s, 22 * s, 70 * s, 24 * s, 12 * s, 0x2EFFFFFF);
     Text(g, L"v" TK_VERSION, fSmall, 0xFFFFFFFF, (R){ W_DIP - 24 - 70, 22, 70, 24 }, 1, 1, FALSE);
@@ -522,6 +530,7 @@ static void Activate(int ht)
     else if (ht == HT_DIAG) App_Action(ACT_DIAG, 0);
     else if (ht == HT_FUNC) App_Action(ACT_FUNC, 0);
     else if (ht == HT_LANG) App_Action(ACT_LANG, 0);
+    else if (ht == HT_LIC) App_Action(ACT_LICENSE, 0);
     InvalidateRect(g_wnd, NULL, FALSE);
 }
 

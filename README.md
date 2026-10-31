@@ -90,7 +90,7 @@ reîncarcă imediat în desenul curent; celelalte desene deschise trec la prima 
 
 ### Cu instalatorul (recomandat)
 
-1. Descărcați și rulați **[`dist/TopoKitSetup-1.7.1.exe`](dist/TopoKitSetup-1.7.1.exe)** (TopoKit 1.7.1). Nu sunt necesare drepturi
+1. Descărcați și rulați **[`dist/TopoKitSetup-1.8.0.exe`](dist/TopoKitSetup-1.8.0.exe)** (TopoKit 1.8.0). Nu sunt necesare drepturi
    de administrator; instalarea se face pentru utilizatorul curent.
 2. Alegeți opțiunile: scurtătură pe desktop și pornirea în fundal odată cu Windows (ambele bifate implicit).
 3. Deschideți **TopoKit** din meniul Start sau de pe desktop. Atât.
@@ -145,7 +145,7 @@ Ce face instalarea:
   - dacă TopoKit nu era încărcat în desen (de exemplu, AutoCAD era deschis în timpul instalării),
     lansatorul îl încarcă înainte de comandă;
   - linie de comandă: `TopoKit.exe /cmd ANEXE` (orice comandă TopoKit), `/background` (doar în fundal),
-    `/quit` (închide lansatorul), `/snapshot F.png [on|off|starting]` (imaginea ferestrei). Jurnalul se află în `%LOCALAPPDATA%\TopoKit\TopoKit.log`.
+    `/quit` (închide lansatorul), `/snapshot F.png [on|off|starting]` (imaginea ferestrei), `/license` (verifică licența: codul de ieșire 0 = în regulă), `/machine` (codul calculatorului). Jurnalul se află în `%LOCALAPPDATA%\TopoKit\TopoKit.log`.
 - **Dacă un modul nu se deschide în AutoCAD** (de exemplu în Civil 3D 2025):
   - rezultatul fiecărui clic apare în fereastră, sub starea conexiunii (verde = comandă trimisă, roșu = motivul);
   - TopoKit găsește AutoCAD și când legătura COM nu funcționează: caută fereastra procesului `acad.exe`
@@ -160,7 +160,7 @@ Ce face instalarea:
     o anulează prin fereastra AutoCAD (WM_COPYDATA) înainte de a trimite modulul.
 - **Dezinstalare:** *Setări → Aplicații → TopoKit* sau meniul Start → *Dezinstalare TopoKit*. Se șterg
   pachetul AutoCAD, lansatorul și setările din registru.
-- **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup-1.7.1.exe /S`; dezinstalare:
+- **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup-1.8.0.exe /S`; dezinstalare:
   `"%LOCALAPPDATA%\Programs\TopoKit\Uninstall.exe" /S`.
 
 Windows SmartScreen poate afișa *„Windows a protejat computerul”*, pentru că instalatorul nu este
@@ -701,6 +701,37 @@ arată ca în plan.
   Într-un desen nepregătit cu `TKPROIECT`, scara se ia din scara de adnotare.
 - Legenda se pune pe stratul **LEGENDA**, cu colțul stânga-sus în punctul indicat.
 
+## 9. Licență – activarea TopoKit pe calculatoarele colegilor (1.8.0)
+
+TopoKit poate fi distribuit doar colegilor din firmă. Fiecare calculator se activează cu un cod, iar
+o copie a instalatorului ajunsă în afara firmei nu folosește la nimic.
+
+**Activarea este opțională.** Fără fișierul `installer/licensing.json`, instalatorul construit merge
+ca înainte, fără activare. Cu fișierul, cheia publică și adresa serverului se compilează în
+`TopoKit.exe` și orice instalare cere activarea.
+
+- **Pentru coleg:**
+  1. În fereastra TopoKit apasă eticheta portocalie **„⚠ Activați TopoKit”** (sus, dreapta).
+  2. Scrie codul de activare primit (`TKIT-XXXXX-XXXXX-XXXXX`) și apasă **Activează**.
+  3. Eticheta devine **„✔ Numele lui”**.
+  4. Licența ține 14 zile și se reînnoiește singură, zilnic, când există internet. Fără internet
+     merge până la 14 zile.
+  5. Fereastra licenței arată și **codul calculatorului** și are butoanele **Importă fișier…**
+     (licență de rezervă, fără internet) și **Dezactivează** (eliberează locul pentru alt calculator).
+- **Fără licență:**
+  - modulele AutoCAD nu se încarcă; orice comandă TopoKit afișează cum se activează și deschide
+    fereastra TopoKit;
+  - DWG to KMZ și Plan Înclinare afișează același mesaj.
+- **Pentru tine (administrator):**
+  - Serverul de licențe e un Cloudflare Worker gratuit, `server/worker.js`, cu pagina de
+    administrare `/admin`: colegi, coduri, calculatoare, oprirea accesului, jurnal.
+  - Punerea în funcțiune, pas cu pas, e în [`server/README.md`](server/README.md).
+  - Cheia de semnare se face cu `tools/licenta.py` și **nu se pune niciodată în proiect**.
+- **Cum se verifică:** `TopoKit.exe /license` iese cu codul 0 când licența e bună. Îl folosesc
+  încărcătorul AutoCAD (o dată pe sesiune) și cele două programe Python.
+  - Licența (`%LOCALAPPDATA%\TopoKit\license.lic`) e semnată ECDSA P-256 și legată de calculator.
+  - Secretul dispozitivului (`state.dat`) e protejat cu DPAPI.
+
 ## Detalii tehnice
 
 - Fiecare comandă are propriul `*error*`: variabilele de sistem `CMDECHO`, `OSMODE`, `ATTREQ` și
@@ -716,6 +747,11 @@ arată ca în plan.
 
 - După modificarea unui fișier `.dcl`, rulați `python3 tools/embed_dcl.py` ca să actualizați copiile
   incluse în `TopoKit.lsp`, `TopoKitAnexe.lsp`, `TopoKitTeren.lsp` și `TopoKitInclinare.lsp`.
+- `python tests/test_licenta.py` (Windows) testează licența: semnarea, `TopoKit.exe /license`
+  compilat cu o cheie de test, activarea, reînnoirea și oprirea accesului contra unui server simulat,
+  SQL-ul serverului, încărcătorul AutoCAD și programele Python.
+  - `tests/server_harness.py` rulează testul complet cu serverul real (`server/worker.js`) într-un
+    browser.
 - `python3 tests/run_tests.py` rulează testele offline, fără AutoCAD, printr-un interpretor AutoLISP
   minimal. Testele acoperă conversia Stereo 70 → WGS84 comparată cu PROJ (dacă `pyproj` este instalat),
   comanda `ADDVTX` pe entități simulate (linii, arce, contacte în T, suprapuneri, polilinii 3D),

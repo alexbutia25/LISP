@@ -18,7 +18,7 @@ ManifestDPIAware true
 !include "FileFunc.nsh"
 
 !ifndef VERSION
-  !define VERSION "1.7.1"
+  !define VERSION "1.8.0"
 !endif
 !ifndef STAGE
   !error "Compilati cu tools/build_installer.py (definește STAGE)"
@@ -129,6 +129,10 @@ Section "${APP} pentru AutoCAD (obligatoriu)" SecMain
   File /r "${STAGE}\app\modules\*.*"
   SetOutPath "$INSTDIR"
 
+  ; folderul lansatorului, citit de TopoKitLoad.lsp (verificarea licentei: TopoKit.exe /license)
+  FileOpen $0 "${BUNDLE}\Contents\install.txt" w
+  FileWrite $0 "$INSTDIR$\r$\n"
+  FileClose $0
   WriteRegStr HKCU "${REGAPP}" "ContentsDir" "${BUNDLE}\Contents"
   WriteRegStr HKCU "${REGAPP}" "InstallDir" "$INSTDIR"
   WriteRegStr HKCU "${REGAPP}" "Version" "${VERSION}"

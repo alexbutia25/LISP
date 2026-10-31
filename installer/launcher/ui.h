@@ -12,11 +12,13 @@ typedef struct {
     BOOL autorun;               /* porneste odata cu Windows */
     const wchar_t *note;        /* mesajul ultimei actiuni (NULL = niciunul) */
     int noteKind;               /* UI_NOTE_OK / UI_NOTE_ERR / UI_NOTE_INFO */
+    const wchar_t *lic;         /* eticheta licentei (NULL = licentiere dezactivata) */
+    BOOL licOk;                 /* licenta valabila pe acest calculator */
 } UiState;
 enum { UI_NOTE_OK, UI_NOTE_ERR, UI_NOTE_INFO };
 
 /* Actiunile ferestrei, executate de lansator */
-enum { ACT_CMD, ACT_START, ACT_RELOAD, ACT_AUTORUN, ACT_FOLDER, ACT_HELP, ACT_HIDDEN, ACT_DIAG, ACT_LANG, ACT_FUNC };
+enum { ACT_CMD, ACT_START, ACT_RELOAD, ACT_AUTORUN, ACT_FOLDER, ACT_HELP, ACT_HIDDEN, ACT_DIAG, ACT_LANG, ACT_FUNC, ACT_LICENSE };
 
 /* Limba interfetei (HKCU\Software\TopoKit\Language = "RO" / "EN"), comuna cu modulele LISP */
 extern BOOL g_en;

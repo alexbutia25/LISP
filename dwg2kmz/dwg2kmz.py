@@ -37,7 +37,7 @@ except Exception:
     HAS_DND = False
 
 APP_NAME = "DWG to KMZ"
-TOPOKIT = "TopoKit 1.7.1"   # programul face parte din TopoKit
+TOPOKIT = "TopoKit 1.8.0"   # programul face parte din TopoKit
 HELP_FILE = "Instructiuni DWG to KMZ.html"
 FLAT_DIST = 0.05  # metri - precizia aproximarii arcelor / curbelor
 
@@ -1684,12 +1684,50 @@ def open_help():
     return False
 
 
+def licenta_ok():
+    """Programul instalat porneste doar cu licenta TopoKit valabila pe acest calculator.
+
+    Verificarea o face TopoKit.exe /license (cod de iesire 0 = licenta buna sau licentiere
+    dezactivata la build), din folderul TopoKit (parintele folderului acestui program).
+    Rulat din sursa (dezvoltare, teste) nu se verifica nimic."""
+    if not getattr(sys, "frozen", False):
+        return True
+    exe = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(sys.executable))), "TopoKit.exe")
+    try:
+        r = subprocess.run([exe, "/license"], capture_output=True, timeout=60,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        if r.returncode == 0:
+            return True
+    except (OSError, subprocess.SubprocessError):
+        pass
+    en = False
+    try:
+        with open(os.path.join(os.environ.get("LOCALAPPDATA", ""), "TopoKit", "language.txt"), encoding="ascii") as f:
+            en = f.read(2).upper() == "EN"
+    except OSError:
+        pass
+    import ctypes
+    ctypes.windll.user32.MessageBoxW(
+        None, "TopoKit is not activated on this computer.\n\nIn the TopoKit window enter the activation code "
+              "you received from the administrator." if en else
+              "TopoKit nu este activat pe acest calculator.\n\nÎn fereastra TopoKit introduceți codul de activare "
+              "primit de la administrator.", "TopoKit", 0x30)
+    if os.path.exists(exe):
+        try:
+            os.startfile(exe)
+        except OSError:
+            pass
+    return False
+
+
 def main():
     theme = asset("topokit.json")
     if theme:
         ctk.set_default_color_theme(theme)
     if "--ajutor" in sys.argv:          # ghidul programului
         open_help()
+        return
+    if not licenta_ok():
         return
     app = App()
     if len(sys.argv) > 1 and sys.argv[1].lower().endswith((".dxf", ".dwg")):

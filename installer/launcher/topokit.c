@@ -39,22 +39,32 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <wchar.h>
+#include <commdlg.h>
 #include "resource.h"
 #include "ui.h"
+#include "license.h"
 
 #define APP_TITLE   L"TopoKit"
+#ifndef WND_CLASS                       /* alte nume doar pentru teste (o a doua instanta) */
 #define WND_CLASS   L"TopoKitLauncherWnd"
+#endif
+#ifndef MUTEX_NAME
 #define MUTEX_NAME  L"Local\\TopoKitLauncher"
+#endif
 #define REG_APP     L"Software\\TopoKit"
 #define REG_RUN     L"Software\\Microsoft\\Windows\\CurrentVersion\\Run"
 #define WM_TRAY     (WM_APP + 1)
 #define WM_REMOTE   (WM_APP + 2)    /* cererea altei instante, procesata dupa WM_COPYDATA */
+#define WM_LICDONE  (WM_APP + 3)    /* reinnoirea licentei (fir separat) s-a terminat */
+#define WM_LICDLG   (WM_APP + 4)    /* deschide fereastra licentei */
+#define TIMER_LIC   2
+#define LIC_TICK_MS (20 * 60 * 1000)
 #define TIMER_POLL  1
 #define POLL_MS     3000
 #define START_WAIT_MS (240 * 1000)
 
 enum { ID_STATUS = 1000, ID_CMD0 = 1001, ID_OPEN = 1099, ID_START = 1100, ID_RELOAD, ID_AUTORUN,
-       ID_FOLDER, ID_HELP, ID_EXIT, ID_LANG, HOTKEY_ID = 1 };
+       ID_FOLDER, ID_HELP, ID_EXIT, ID_LANG, ID_LICENSE, HOTKEY_ID = 1 };
 
 static const struct { const wchar_t *label, *label_en, *cmd; } CMDS[] = {
     { L"Proiect nou (straturi, unități, stiluri)", L"New project (layers, units, styles)", L"TKPROIECT" },
@@ -1092,11 +1102,252 @@ static void Diagnostic(void)
     Note(UI_NOTE_INFO, TR(L"Raportul de diagnostic s-a deschis în Notepad", L"The diagnostic report opened in Notepad"));
 }
 
+static LicInfo g_lic;                   /* licenta (vezi mai jos, "licenta") */
+static void LicUpdate(void);
+
 static void ShowMain(void)
 {
     Log(L"Fereastra TopoKit afisata");
     LoadLang();                         /* limba aleasa intre timp in AutoCAD (TOPOKITLANG) */
     Ui_Show();
+    if (Lic_Enabled()) {
+        LicUpdate();
+        if (g_lic.status != LIC_OK) PostMessageW(g_hwnd, WM_LICDLG, 0, 0);
+    }
+}
+
+/* ------------------------------------------------------------------ licenta (license.c) */
+static BOOL g_licChecked, g_licBusy, g_licTried;
+static DWORD g_licTry;
+
+static void LicUpdate(void)
+{
+    if (!Lic_Enabled()) return;
+    Lic_Check(NULL, &g_lic);
+    g_licChecked = TRUE;
+}
+
+static DWORD WINAPI LicRefreshThread(LPVOID p)
+{
+    wchar_t m[256];
+    int r = Lic_Refresh(m, 256);
+    (void)p;
+    PostMessageW(g_hwnd, WM_LICDONE, (WPARAM)r, 0);
+    return 0;
+}
+
+/* reinnoire in fundal: o data pe zi (licenta are 14 zile), reincercare la o ora dupa o eroare */
+static void LicTick(void)
+{
+    HANDLE t;
+    if (!Lic_Enabled() || g_licBusy) return;
+    LicUpdate();
+    if (!g_lic.device) return;
+    if (g_lic.status == LIC_OK && Lic_Now() - g_lic.iat < 20 * 3600) return;
+    if (g_licTried && GetTickCount() - g_licTry < 60 * 60 * 1000) return;
+    g_licTried = TRUE;
+    g_licTry = GetTickCount();
+    g_licBusy = TRUE;
+    if ((t = CreateThread(NULL, 0, LicRefreshThread, NULL, 0, NULL)) != NULL) CloseHandle(t);
+    else g_licBusy = FALSE;
+}
+
+static void LicDlgFill(HWND d, const wchar_t *status)
+{
+    wchar_t t[600], m[32], date[32];
+    BOOL ok;
+    LicUpdate();
+    ok = g_lic.status == LIC_OK;
+    SetWindowTextW(d, TR(L"Licență TopoKit", L"TopoKit licence"));
+    if (ok) {
+        Lic_FormatDate(g_lic.exp, date, 32);
+        swprintf(t, 600, TR(L"Licență activă pentru %ls.\nValabilă până la %ls%ls.", L"Active licence for %ls.\nValid until %ls%ls."),
+                 g_lic.name, date, g_lic.device ? TR(L" – se reînnoiește singură când există internet",
+                                                       L" – renewed automatically when online") : L"");
+    } else {
+        swprintf(t, 600, L"%ls.\n%ls", Lic_StatusText(g_lic.status),
+                 TR(L"Introduceți codul de activare primit de la administrator și apăsați Activează.",
+                    L"Enter the activation code you received from the administrator and press Activate."));
+    }
+    SetDlgItemTextW(d, IDC_LIC_INFO, t);
+    SetDlgItemTextW(d, IDC_LIC_CODELBL, TR(L"Cod de activare:", L"Activation code:"));
+    ShowWindow(GetDlgItem(d, IDC_LIC_CODELBL), ok ? SW_HIDE : SW_SHOW);
+    ShowWindow(GetDlgItem(d, IDC_LIC_CODE), ok ? SW_HIDE : SW_SHOW);
+    Lic_Machine(m, TRUE);
+    swprintf(t, 600, TR(L"Codul acestui calculator: %ls", L"This computer's code: %ls"), m);
+    SetDlgItemTextW(d, IDC_LIC_MACHINE, t);
+    SetDlgItemTextW(d, IDC_LIC_COPY, TR(L"Copiază codul", L"Copy code"));
+    SetDlgItemTextW(d, IDC_LIC_IMPORT, TR(L"Importă fișier...", L"Import file..."));
+    SetDlgItemTextW(d, IDC_LIC_DEACT, TR(L"Dezactivează", L"Deactivate"));
+    ShowWindow(GetDlgItem(d, IDC_LIC_DEACT), ok ? SW_SHOW : SW_HIDE);
+    SetDlgItemTextW(d, IDOK, ok ? TR(L"Reînnoiește", L"Renew") : TR(L"Activează", L"Activate"));
+    EnableWindow(GetDlgItem(d, IDOK), !ok || g_lic.device);
+    SetDlgItemTextW(d, IDCANCEL, TR(L"Închide", L"Close"));
+    if (status) SetDlgItemTextW(d, IDC_LIC_STATUS, status);
+}
+
+static void CopyText(HWND owner, const wchar_t *t)
+{
+    size_t n = (wcslen(t) + 1) * sizeof(wchar_t);
+    HGLOBAL h;
+    if (!OpenClipboard(owner)) return;
+    EmptyClipboard();
+    if ((h = GlobalAlloc(GMEM_MOVEABLE, n)) != NULL) {
+        memcpy(GlobalLock(h), t, n);
+        GlobalUnlock(h);
+        if (!SetClipboardData(CF_UNICODETEXT, h)) GlobalFree(h);
+    }
+    CloseClipboard();
+}
+
+static INT_PTR CALLBACK LicDlgProc(HWND d, UINT msg, WPARAM wp, LPARAM lp)
+{
+    wchar_t code[64], msgt[512], f[MAX_PATH] = L"";
+    HCURSOR old;
+    (void)lp;
+    switch (msg) {
+    case WM_INITDIALOG:
+        SendMessageW(d, WM_SETICON, ICON_BIG, (LPARAM)LoadIconW(g_inst, MAKEINTRESOURCEW(IDI_APP)));
+        SendDlgItemMessageW(d, IDC_LIC_CODE, EM_LIMITTEXT, 40, 0);
+        LicDlgFill(d, L"");
+        if (g_lic.status != LIC_OK) { SetFocus(GetDlgItem(d, IDC_LIC_CODE)); return FALSE; }
+        return TRUE;
+    case WM_COMMAND:
+        switch (LOWORD(wp)) {
+        case IDOK:
+            old = SetCursor(LoadCursorW(NULL, IDC_WAIT));
+            SetDlgItemTextW(d, IDC_LIC_STATUS, TR(L"Se contactează serverul de licențe...", L"Contacting the licence server..."));
+            UpdateWindow(d);
+            if (g_lic.status == LIC_OK) {
+                int r = Lic_Refresh(msgt, 512);
+                if (r == LIC_R_OK) lstrcpyW(msgt, TR(L"Licența a fost reînnoită.", L"The licence was renewed."));
+            } else {
+                GetDlgItemTextW(d, IDC_LIC_CODE, code, 64);
+                if (Lic_Activate(code, msgt, 512) == LIC_OK && !msgt[0])
+                    lstrcpyW(msgt, TR(L"TopoKit a fost activat pe acest calculator.", L"TopoKit was activated on this computer."));
+            }
+            SetCursor(old);
+            Log(L"Licenta: %ls", msgt);
+            LicDlgFill(d, msgt);
+            return TRUE;
+        case IDC_LIC_IMPORT: {
+            OPENFILENAMEW ofn;
+            memset(&ofn, 0, sizeof ofn);
+            ofn.lStructSize = sizeof ofn;
+            ofn.hwndOwner = d;
+            ofn.lpstrFilter = L"TopoKit (*.lic)\0*.lic\0*.*\0*.*\0";
+            ofn.lpstrFile = f;
+            ofn.nMaxFile = MAX_PATH;
+            ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+            if (GetOpenFileNameW(&ofn)) {
+                if (Lic_Import(f, msgt, 512)) lstrcpyW(msgt, TR(L"Licența a fost importată.", L"The licence was imported."));
+                Log(L"Licenta importata din %ls: %ls", f, msgt);
+                LicDlgFill(d, msgt);
+            }
+            return TRUE;
+        }
+        case IDC_LIC_DEACT:
+            if (MessageBoxW(d, TR(L"Dezactivați TopoKit pe acest calculator?\nLocul se eliberează pentru alt calculator; "
+                                  L"aici veți avea nevoie de un cod nou.",
+                                  L"Deactivate TopoKit on this computer?\nThe seat is freed for another computer; "
+                                  L"here you will need a new code."),
+                            TR(L"Licență TopoKit", L"TopoKit licence"), MB_YESNO | MB_ICONQUESTION) == IDYES) {
+                old = SetCursor(LoadCursorW(NULL, IDC_WAIT));
+                if (Lic_Deactivate(msgt, 512) != LIC_R_NET)
+                    lstrcpyW(msgt, TR(L"TopoKit a fost dezactivat pe acest calculator.", L"TopoKit was deactivated on this computer."));
+                SetCursor(old);
+                Log(L"Licenta: %ls", msgt);
+                LicDlgFill(d, msgt);
+            }
+            return TRUE;
+        case IDC_LIC_COPY:
+            Lic_Machine(code, TRUE);
+            CopyText(d, code);
+            SetDlgItemTextW(d, IDC_LIC_STATUS, TR(L"Codul calculatorului a fost copiat.", L"The computer code was copied."));
+            return TRUE;
+        case IDCANCEL:
+            EndDialog(d, 0);
+            return TRUE;
+        }
+        break;
+    }
+    return FALSE;
+}
+
+static void LicenseDialog(void)
+{
+    static BOOL open;
+    if (open || !Lic_Enabled()) return;
+    open = TRUE;
+    DialogBoxParamW(g_inst, MAKEINTRESOURCEW(IDD_LICENSE), Ui_Hwnd(), LicDlgProc, 0);
+    open = FALSE;
+    LicUpdate();
+    Ui_Refresh();
+    UpdateTray();
+}
+
+/* ------------------------------------------------------------------ licenta: linia de comanda
+ *   /license [F]   cod de iesire 0 = se poate lucra, 10..14 = LIC_* (TopoKitLoad.lsp, programele Python);
+ *                  o licenta care expira in mai putin de 3 zile se reinnoieste intai, daca e internet
+ *   /machine       codul calculatorului
+ *   /activate COD, /refresh, /deactivate   (teste si administrare)
+ * Textul merge la iesirea standard, daca procesul care ne-a pornit a redirectat-o. */
+static void Out(const wchar_t *fmt, ...)
+{
+    wchar_t w[600];
+    char u8[1400];
+    va_list ap;
+    DWORD n;
+    HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (!h || h == INVALID_HANDLE_VALUE) return;
+    va_start(ap, fmt);
+    vswprintf(w, 600, fmt, ap);
+    va_end(ap);
+    n = (DWORD)WideCharToMultiByte(CP_UTF8, 0, w, -1, u8, sizeof u8, NULL, NULL);
+    if (n > 1) WriteFile(h, u8, n - 1, &n, NULL);
+}
+
+static BOOL LicenseCli(void)
+{
+    int argc, code = 0;
+    wchar_t **argv = CommandLineToArgvW(GetCommandLineW(), &argc), msg[512] = L"", buf[64];
+    LicInfo li;
+    if (!argv || argc < 2) { LocalFree(argv); return FALSE; }
+    LoadLang();
+    if (!_wcsicmp(argv[1], L"/license")) {
+        if (!Lic_Enabled()) Out(L"0 licentiere dezactivata\n");
+        else {
+            const wchar_t *f = argc > 2 ? argv[2] : NULL;
+            code = Lic_Check(f, &li);
+            if (!f && li.device && (code == LIC_NONE || code == LIC_EXPIRED || code == LIC_BAD ||
+                                    (code == LIC_OK && li.exp - Lic_Now() < 3 * 86400))) {
+                Lic_Refresh(msg, 512);
+                code = Lic_Check(NULL, &li);
+            }
+            if (code == LIC_OK) {
+                Lic_FormatDate(li.exp, buf, 64);
+                Out(L"0 %ls %ls\n", li.name, buf);
+            } else Out(L"%d %ls\n", code, Lic_StatusText(code));
+        }
+    } else if (!_wcsicmp(argv[1], L"/machine")) {
+        Lic_Machine(buf, TRUE);
+        Out(L"%ls\n", buf);
+    } else if (!_wcsicmp(argv[1], L"/activate") && argc > 2) {
+        code = Lic_Activate(argv[2], msg, 512) == LIC_OK ? 0 : 2;
+        Out(L"%d %ls\n", code, msg);
+    } else if (!_wcsicmp(argv[1], L"/refresh")) {
+        code = Lic_Refresh(msg, 512);
+        Out(L"%d %ls\n", code, msg);
+    } else if (!_wcsicmp(argv[1], L"/deactivate")) {
+        code = Lic_Deactivate(msg, 512);
+        Out(L"%d %ls\n", code, msg);
+    } else {
+        LocalFree(argv);
+        return FALSE;
+    }
+    LocalFree(argv);
+    ExitProcess((UINT)code);
+    return TRUE;
 }
 
 /* ------------------------------------------------------------------ legatura cu fereastra (ui.c) */
@@ -1111,13 +1362,33 @@ void App_State(UiState *st)
         st->note = g_note;
         st->noteKind = g_noteKind;
     }
+    st->lic = NULL;
+    st->licOk = TRUE;
+    if (Lic_Enabled()) {
+        static wchar_t lic[160];
+        if (!g_licChecked) LicUpdate();
+        st->licOk = g_lic.status == LIC_OK;
+        if (st->licOk) swprintf(lic, 160, L"\u2714 %ls", g_lic.name[0] ? g_lic.name : TR(L"Licență activă", L"Active licence"));
+        else swprintf(lic, 160, L"\u26A0 %ls", TR(L"Activați TopoKit", L"Activate TopoKit"));
+        st->lic = lic;
+    }
 }
 
 void App_Action(int act, int arg)
 {
     wchar_t f[MAX_PATH];
     switch (act) {
+    case ACT_LICENSE:
+        LicenseDialog();
+        break;
     case ACT_CMD:
+        if (Lic_Enabled()) {
+            LicUpdate();
+            if (g_lic.status != LIC_OK) {       /* fara licenta: intai activarea */
+                LicenseDialog();
+                break;
+            }
+        }
         if (arg >= 0 && arg < NCMDS &&
             (!wcscmp(CMDS[arg].cmd, L"PLANINCL") || !wcscmp(CMDS[arg].cmd, L"DWGKMZ"))) {
             /* programele separate (nu au nevoie de AutoCAD): Plan Inclinare si
@@ -1206,6 +1477,7 @@ static void ShowMenu(void)
     AppendMenuW(m, MF_STRING | (AutorunEnabled() ? MF_CHECKED : 0), ID_AUTORUN, TR(L"Pornește odată cu Windows", L"Start with Windows"));
     AppendMenuW(m, MF_STRING, ID_LANG, TR(L"English", L"Română"));
     AppendMenuW(m, MF_STRING, ID_FOLDER, TR(L"Deschide folderul TopoKit", L"Open the TopoKit folder"));
+    if (Lic_Enabled()) AppendMenuW(m, MF_STRING, ID_LICENSE, TR(L"Licență...", L"Licence..."));
     AppendMenuW(m, MF_STRING, ID_HELP, TR(L"Ajutor", L"Help"));
     AppendMenuW(m, MF_SEPARATOR, 0, NULL);
     AppendMenuW(m, MF_STRING, ID_EXIT, TR(L"Ieșire", L"Exit"));
@@ -1222,6 +1494,7 @@ static void ShowMenu(void)
     else if (sel == ID_FOLDER) App_Action(ACT_FOLDER, 0);
     else if (sel == ID_HELP) App_Action(ACT_HELP, 0);
     else if (sel == ID_LANG) App_Action(ACT_LANG, 0);
+    else if (sel == ID_LICENSE) App_Action(ACT_LICENSE, 0);
     else if (sel == ID_EXIT) DestroyWindow(g_hwnd);
 }
 
@@ -1245,6 +1518,21 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     case WM_TIMER:
         if (wp == TIMER_POLL) Poll();
+        else if (wp == TIMER_LIC) { LicTick(); Ui_Refresh(); }
+        return 0;
+    case WM_LICDONE:
+        g_licBusy = FALSE;
+        Log(L"Licenta: reinnoire %ls", wp == LIC_R_OK ? L"reusita" : wp == LIC_R_REVOKED ? L"refuzata (acces oprit)" :
+                                       wp == LIC_R_NODEVICE ? L"fara activare online" : L"amanata (fara legatura)");
+        LicUpdate();
+        Ui_Refresh();
+        UpdateTray();
+        if (wp == LIC_R_REVOKED)
+            Balloon(APP_TITLE, TR(L"Licența TopoKit de pe acest calculator a fost oprită de administrator.",
+                                  L"The TopoKit licence on this computer was stopped by the administrator."));
+        return 0;
+    case WM_LICDLG:
+        LicenseDialog();
         return 0;
     case WM_HOTKEY:
         if (wp == HOTKEY_ID) ShowMain();          /* fereastra TopoKit */
@@ -1270,6 +1558,7 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     case WM_DESTROY:
         KillTimer(h, TIMER_POLL);
+        KillTimer(h, TIMER_LIC);
         UnregisterHotKey(h, HOTKEY_ID);
         Shell_NotifyIconW(NIM_DELETE, &g_nid);
         Ui_Destroy();
@@ -1336,6 +1625,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show)
     (void)prev; (void)cmdline; (void)show;
     g_inst = inst;
     if (Snapshot()) return 0;
+    if (LicenseCli()) return 0;
     ParseArgs(arg, 64);
 
     mutex = CreateMutexW(NULL, TRUE, MUTEX_NAME);
@@ -1383,6 +1673,12 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show)
     RegisterHotKey(g_hwnd, HOTKEY_ID, MOD_CONTROL | MOD_ALT | MOD_SHIFT | 0x4000 /* MOD_NOREPEAT */, 'T');
     Poll();
     SetTimer(g_hwnd, TIMER_POLL, POLL_MS, NULL);
+    if (Lic_Enabled()) {
+        LicUpdate();
+        Log(L"Licenta: %ls%ls%ls", Lic_StatusText(g_lic.status), g_lic.name[0] ? L" - " : L"", g_lic.name);
+        LicTick();
+        SetTimer(g_hwnd, TIMER_LIC, LIC_TICK_MS, NULL);
+    }
 
     if (!arg[0]) ShowMain();
     else if (!wcscmp(arg, L"/diag")) Diagnostic();

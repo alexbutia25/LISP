@@ -90,7 +90,7 @@ reîncarcă imediat în desenul curent; celelalte desene deschise trec la prima 
 
 ### Cu instalatorul (recomandat)
 
-1. Descărcați și rulați **[`dist/TopoKitSetup-1.4.0.exe`](dist/TopoKitSetup-1.4.0.exe)** (TopoKit 1.4.0). Nu sunt necesare drepturi
+1. Descărcați și rulați **[`dist/TopoKitSetup-1.4.1.exe`](dist/TopoKitSetup-1.4.1.exe)** (TopoKit 1.4.1). Nu sunt necesare drepturi
    de administrator; instalarea se face pentru utilizatorul curent.
 2. Alegeți opțiunile: scurtătură pe desktop și pornirea în fundal odată cu Windows (ambele bifate implicit).
 3. Deschideți **TopoKit** din meniul Start sau de pe desktop. Atât.
@@ -156,7 +156,7 @@ Ce face instalarea:
     o anulează prin fereastra AutoCAD (WM_COPYDATA) înainte de a trimite modulul.
 - **Dezinstalare:** *Setări → Aplicații → TopoKit* sau meniul Start → *Dezinstalare TopoKit*. Se șterg
   pachetul AutoCAD, lansatorul și setările din registru.
-- **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup-1.4.0.exe /S`; dezinstalare:
+- **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup-1.4.1.exe /S`; dezinstalare:
   `"%LOCALAPPDATA%\Programs\TopoKit\Uninstall.exe" /S`.
 
 Windows SmartScreen poate afișa *„Windows a protejat computerul”*, pentru că instalatorul nu este
@@ -617,18 +617,20 @@ ce se configurează:
 - **Unitățile**: metri (`INSUNITS` 6, 3 zecimale), unghiuri în grade centesimale (`AUNITS` 2) sau
   grade-minute-secunde.
 - **Punctele AutoCAD**, ca la `PTYPE`: cerculeț (`PDMODE` 33) de 1 mm pe hârtie.
-- **Scara**: scara de adnotare (`CANNOSCALE`, după care se dimensionează etichetele Civil 3D),
-  `LTSCALE` = scara / 500 (1 la 1:500, ca în standard) și scara modulului de cadastru și a cadrului.
+- **Scara**: scara de adnotare (`CANNOSCALE`) rămâne mereu **1:1000**, ca la stilurile de caroiaj
+  folosite până acum. Scara planului schimbă doar mărimile: punctele, textele, etichetele Civil 3D ale
+  TopoKit, cotele (`DIMSCALE`), `LTSCALE` = scara / 500 (1 la 1:500, ca în standard), plus scara
+  modulului de cadastru și a cadrului.
 - **În Civil 3D**:
-  - stilul de punct **Basic** folosește AutoCAD POINT pentru marker, alb, cu mărimea de 1 mm la scara desenului;
-  - eticheta **Point Description** arată descrierea: Arial 1.5 mm, albă, Anchor și Attachment *Middle left*,
+  - stilul de punct **Basic** folosește AutoCAD POINT pentru marker, alb, în unități absolute (0.5 m la 1:500);
+  - eticheta **Point Description** arată descrierea: Arial, 0.75 m la 1:500, albă, Anchor și Attachment *Middle left*,
     gap jumătate din înălțimea textului. Când o muți, rămâne *as composed*, fără leader;
   - punctele noi și grupul *_All Points* folosesc aceste stiluri, pe stratul Puncte;
   - Drawing Settings: metri; distanțe cu 2 zecimale; coordonate și cote cu 3; suprafețe în mp cu 2;
     unghiuri și direcții (azimut de la nord) în unitatea aleasă;
   - stilurile de caroiaj (vezi mai jos).
 
-Mărimile din standard sunt în mm pe hârtie, deci se potrivesc la orice scară:
+Mărimile din standard, în metri în desen (scara de adnotare rămâne 1:1000):
 
 | Element | Pe hârtie | 1:50 | 1:100 | 1:200 | 1:500 | 1:1000 | 1:2000 | 1:5000 |
 |---|---|---|---|---|---|---|---|---|
@@ -637,11 +639,16 @@ Mărimile din standard sunt în mm pe hârtie, deci se potrivesc la orice scară
 | LTSCALE | – | 0.1 | 0.2 | 0.4 | 1 | 2 | 4 | 10 |
 | Cruciulițe caroiaj | – | 2 m | 5 m | 10 m | 25 m | 50 m | 100 m | 250 m |
 
-**`TKSCARA`** aduce desenul la altă scară. Etichetele Civil 3D se adaptează singure prin scara de
-adnotare. Tipurile de linie și punctele se recalculează. Textele de pe straturile standard (TEXT, MTEXT)
-se măresc sau se micșorează în proporție, deci și cele micșorate intenționat rămân proporționale.
+**`TKSCARA`** aduce desenul la altă scară. Scara de adnotare rămâne 1:1000; se schimbă doar mărimile:
+- stilurile Civil 3D ale TopoKit (punctul Basic, eticheta Point Description, caroiajul) primesc mărimile
+  noi, deci toate punctele și etichetele se adaptează;
+- tipurile de linie, punctele AutoCAD și cotele noi se recalculează;
+- textele (TEXT, MTEXT) și cotele (DIMENSION) de pe straturile standard și de pe cele ale modulului de
+  cadastru (numerele punctelor, cote, suprafețe) se măresc sau se micșorează în proporție, deci și cele
+  micșorate intenționat rămân proporționale.
 
-**`TKCAROIAJ`** cere zona planului și pune caroiajul la distanța din standard, pe stratul Caroiaj:
+**`TKCAROIAJ`** cere distanța dintre cruciulițe (Enter = cea din standard, de ex. 25 m la 1:500; se
+poate scrie oricare alta), apoi zona planului, și pune caroiajul pe stratul Caroiaj:
 
 - **La colțuri** sunt linii în L de 13 mm, cu `N=` scris orizontal pe linia orizontală și `E=` scris vertical
   lângă linia verticală, ca în stilurile de caroiaj folosite până acum. Se văd doar coordonatele și liniile.

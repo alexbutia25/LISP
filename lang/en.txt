@@ -711,12 +711,8 @@ Proiectul este pregatit. Caroiajul: TKCAROIAJ; alta scara: TKSCARA.	The project 
 Scara trebuie sa fie una din standard: 50, 100, 200, 500, 1000, 2000, 5000.	The scale must be one of the standard ones: 50, 100, 200, 500, 1000, 2000, 5000.
 \nScara noua a planului (acum 1:	\nNew plan scale (now 1:
 Desenul este la scara 1:	The drawing is at scale 1:
-: etichetele Civil 3D, punctele si tipurile de linie	: the Civil 3D labels, points and linetypes
- s-au adaptat; texte redimensionate: 	 were adapted; texts resized: 
 Desenul este deja la scara 1:	The drawing is already at scale 1:
 Caroiaj la scara 1:	Grid at scale 1:
-: cruciulite la 	: crosses every 
- m (alta scara: TKSCARA).	 m (another scale: TKSCARA).
 \nPrimul colt al zonei caroiajului: 	\nFirst corner of the grid area: 
 \nColtul opus: 	\nOpposite corner: 
 Zona este prea mica: trebuie sa cuprinda cel putin doua linii de caroiaj pe fiecare directie (	The area is too small: it must contain at least two grid lines in each direction (
@@ -738,3 +734,8 @@ Desenul nu este deschis in Civil 3D: stilurile de puncte si etichete au fost sar
 Schimba scara planului	Change plan scale
 Caroiaj de coordonate	Coordinate grid
 Proiect	Project	call:tkc:submenu
+ (alta scara: TKSCARA).	 (another scale: TKSCARA).
+\nDistanta intre cruciulite, in metri <	\nDistance between crosses, in meters <
+ m; scara de adnotare 1:1000.	 m; annotation scale 1:1000.
+ (scara de adnotare ramane 1:1000): punctele,	 (the annotation scale stays 1:1000): the points,
+ etichetele, tipurile de linie si cotele s-au adaptat; texte redimensionate: 	 labels, linetypes and dimensions were adapted; texts resized: 

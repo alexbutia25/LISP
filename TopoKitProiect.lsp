@@ -49,7 +49,8 @@
     ("Construc\\U+021Bii" 5 0) ("Caroiaj" 8 0) ("PAD" 7 -3)))
 
 ;; Straturile ale caror texte se scaleaza cu TKSCARA (wcmatch)
-(setq *TKP:LAYTXT* "PUNCTE*,ASCUNS*,TERENURI,VECIN*,DIMENSIUNI,CONSTRUC*,CAROIAJ,PAD")
+;; (si straturile modulului de cadastru: numerele punctelor, cotele, suprafetele)
+(setq *TKP:LAYTXT* "PUNCTE*,ASCUNS*,TERENURI,VECIN*,DIMENSIUNI,CONSTRUC*,CAROIAJ,PAD,0_PNT_NUMBER,DIMENSIONS,SUPRAFETE")
 
 ;; Stilurile Civil 3D create de TopoKit
 (setq *TKP:STPCT* "Basic" *TKP:STLBL* "Point Description" *TKP:STCRUCE* "Caroiaj - cruciulita")
@@ -104,7 +105,14 @@
 ;; TKP:Scara - scara curenta a planului (din setarile proiectului)
 (defun TKP:Scara () (TKP:Get "SCARA"))
 ;; TKP:K - metri in desen pentru 1 mm pe hartie
+;; TKP:K - metri in desen pentru 1 mm pe hartie la scara planului
 (defun TKP:K (sc) (/ sc 1000.0))
+
+;; Scara de adnotare ramane mereu 1:1000 (ca stilurile de caroiaj existente); la alta scara a
+;; planului se schimba doar marimile. TKP:Pm - valoarea din stilurile Civil 3D (metri pe
+;; hartie la 1:1000) pentru MM milimetri pe hartie la scara SC: 1.5 mm la 1:500 -> 0.00075
+(setq *TKP:ANNO* 1000)
+(defun TKP:Pm (mm sc) (* (/ mm 1000.0) (/ sc (float *TKP:ANNO*))))
 
 ;;; ==========================================================================
 ;;;  STRATURI, FONT, UNITATI, PUNCTE, SCARA
@@ -225,13 +233,16 @@
       (if (> (getvar "CMDACTIVE") 0) (command))))
   name)
 
-;; TKP:SetScale - scara planului: adnotare (etichetele Civil 3D), tipuri de linie
-;; (LTSCALE 1 la 1:500), puncte AutoCAD (cerculet de 1 mm), setarile TopoKit
-(defun TKP:SetScale (sc / name i)
-  (setq name (TKP:ScaleName sc))
+;; TKP:SetScale - scara planului. Scara de adnotare ramane 1:1000; se schimba marimile:
+;; tipurile de linie (LTSCALE 1 la 1:500), punctele AutoCAD (cerculet de 1 mm pe hartie),
+;; cotele noi (text 1.5 mm pe hartie) si setarile TopoKit
+(defun TKP:SetScale (sc / name i dt)
+  (setq name (TKP:ScaleName *TKP:ANNO*))
   (vl-catch-all-apply 'setvar (list "CANNOSCALE" name))
+  (setq dt (getvar "DIMTXT"))
   (foreach v (list (cons "LTSCALE" (/ sc 500.0)) '("CELTSCALE" . 1.0) '("MSLTSCALE" . 0) '("PSLTSCALE" . 1)
-                   '("PDMODE" . 33) (cons "PDSIZE" (* *TKP:PCT* (TKP:K sc))))
+                   '("PDMODE" . 33) (cons "PDSIZE" (* *TKP:PCT* (TKP:K sc)))
+                   (cons "DIMSCALE" (* (TKP:K sc) (/ *TKP:TXT* (if (and dt (> dt 0)) dt 2.5)))))
     (vl-catch-all-apply 'setvar (list (car v) (cdr v))))
   (TKP:Put "SCARA" sc)
   ;; aceeasi scara pentru cadrul planului si pentru modulul de cadastru
@@ -241,14 +252,20 @@
            (TKC:SaveCfg)))
   name)
 
-;; TKP:ScaleTexts - textele de pe straturile standard se maresc / micsoreaza cu factorul F
-(defun TKP:ScaleTexts (f / ss i e d n)
+;; TKP:ScaleTexts - textele si cotele de pe straturile standard se maresc / micsoreaza cu
+;; factorul F (pozitia ramane); cotele AutoCAD prin factorul lor de scara
+(defun TKP:ScaleTexts (f / ss i e d n o sf)
   (setq n 0)
-  (if (setq ss (ssget "_X" '((0 . "TEXT,MTEXT"))))
+  (if (setq ss (ssget "_X" '((0 . "TEXT,MTEXT,DIMENSION"))))
     (repeat (setq i (sslength ss))
       (setq e (ssname ss (setq i (1- i))) d (entget e))
-      (if (wcmatch (strcase (cdr (assoc 8 d))) *TKP:LAYTXT*)
-        (progn
+      (cond
+        ((not (wcmatch (strcase (cdr (assoc 8 d))) *TKP:LAYTXT*)))
+        ((= (cdr (assoc 0 d)) "DIMENSION")
+         (setq o (vlax-ename->vla-object e) sf (vl-catch-all-apply 'vla-get-scalefactor (list o)))
+         (if (and (numberp sf) (not (vl-catch-all-error-p (vl-catch-all-apply 'vla-put-scalefactor (list o (* f sf))))))
+           (setq n (1+ n))))
+        (T
           (setq d (subst (cons 40 (* f (cdr (assoc 40 d)))) (assoc 40 d) d))
           (if (and (= (cdr (assoc 0 d)) "MTEXT") (assoc 41 d))
             (setq d (subst (cons 41 (* f (cdr (assoc 41 d)))) (assoc 41 d) d)))
@@ -345,13 +362,13 @@
 
 ;; TKP:PointStyles - stilul de punct Basic (AutoCAD POINT, alb, 1 mm la scara) si
 ;; eticheta Point Description (descrierea, Arial 1.5 mm, alba, Middle left)
-(defun TKP:PointStyles (cdoc / ps r st h g)
-  (setq h (/ *TKP:TXT* 1000.0) g (/ *TKP:TXT* 2000.0))
+(defun TKP:PointStyles (cdoc sc / ps r st h g)
+  (setq h (TKP:Pm *TKP:TXT* sc) g (* 0.5 h))
   (if (setq ps (car (TKP:Item (TKP:G cdoc 'PointStyles) *TKP:STPCT*)))
     (progn
       (TKP:P ps 'MarkerType 0)                 ; aeccUsePointForMarker: PDMODE (PTYPE)
-      (TKP:P ps 'MarkerSizeType 0)             ; aeccDrawingScale
-      (TKP:P ps 'MarkerSize (/ *TKP:PCT* 1000.0))
+      (TKP:P ps 'MarkerSizeType 2)             ; aeccAbsoluteUnits: 0.5 m la 1:500
+      (TKP:P ps 'MarkerSize (* *TKP:PCT* (TKP:K sc)))
       (foreach d '(MarkerDisplayStylePlan MarkerDisplayStyleModel LabelDisplayStylePlan LabelDisplayStyleModel)
         (TKP:P (TKP:G ps d) 'Color 7))))
   (if (setq r (TKP:Item (TKP:G cdoc 'PointLabelStyles) *TKP:STLBL*))
@@ -395,10 +412,10 @@
 
 ;; TKP:GridStyles - stilurile General Note Label pentru caroiaj: un colt (N= orizontal,
 ;; E= vertical, linii in L) pentru fiecare colt si cruciulita din interior
-(defun TKP:GridStyles (cdoc / coll h ga gp L c st r sx sy)
+(defun TKP:GridStyles (cdoc sc / coll h ga gp L c st r sx sy)
   ;; textele incep la 1.5 x inaltimea din colt (nu se suprapun) si stau la 0.2 x inaltimea de linie
   (setq coll (TKP:G cdoc 'GeneralNoteLabelStyles)
-        h (/ *TKP:TXT* 1000.0) ga (* 1.5 h) gp (* 0.2 h) L (/ *TKP:LIN* 1000.0) c (/ *TKP:CRUCE* 1000.0))
+        h (TKP:Pm *TKP:TXT* sc) ga (* 1.5 h) gp (* 0.2 h) L (TKP:Pm *TKP:LIN* sc) c (TKP:Pm *TKP:CRUCE* sc))
   ;; (cod  sens-x sens-y  atasare-N  atasare-E)
   (foreach k '(("SS" 1 -1 0 2) ("SD" -1 -1 2 8) ("JS" 1 1 6 0) ("JD" -1 1 8 6))
     (if (setq r (TKP:Item coll (cdr (assoc (car k) *TKP:STCOLT*))))
@@ -424,16 +441,16 @@
   (TKP:Find coll *TKP:STCRUCE*))
 
 ;; TKP:Civil - toata configurarea Civil 3D; intoarce lista mesajelor
-(defun TKP:Civil (ang / cdoc out)
+(defun TKP:Civil (ang sc / cdoc out)
   (if (setq cdoc (TKP:C3d))
     (progn
       (setq out (list (if (TKP:Ambient cdoc ang)
                           "Civil 3D: unitati in metri, distante, unghiuri si directii setate."
                           "Civil 3D: setarile de unitati nu au putut fi schimbate.")
-                      (if (TKP:PointStyles cdoc)
+                      (if (TKP:PointStyles cdoc sc)
                           "Civil 3D: punctele pe stilul Basic (AutoCAD POINT, alb) cu eticheta Point Description."
                           "Civil 3D: stilurile de punct nu au putut fi configurate complet.")
-                      (if (TKP:GridStyles cdoc)
+                      (if (TKP:GridStyles cdoc sc)
                           "Civil 3D: stilurile de caroiaj (General Note Label) sunt gata; caroiajul: TKCAROIAJ."
                           "Civil 3D: stilurile de caroiaj nu au putut fi create.")))
       (vl-catch-all-apply 'vlax-invoke (list cdoc 'Regen acAllViewports))
@@ -509,10 +526,10 @@
   (TKP:SetScale sc)
   (setq out (cons (strcat "Scara 1:" (itoa sc) ": text " (TKP:Num (* *TKP:TXT* (TKP:K sc))) " m, cerculet punct "
                           (TKP:Num (* *TKP:PCT* (TKP:K sc))) " m (PTYPE), LTSCALE " (TKP:Num (/ sc 500.0))
-                          ", caroiaj la " (TKP:Num (cdr (assoc sc *TKP:PAS*))) " m.")
+                          ", caroiaj la " (TKP:Num (cdr (assoc sc *TKP:PAS*))) " m; scara de adnotare 1:1000.")
                   out))
   (if (= (cdr (assoc "C3D" cfg)) "1")
-    (setq out (append (reverse (TKP:Civil ang)) out)))
+    (setq out (append (reverse (TKP:Civil ang sc)) out)))
   (if (tblsearch "LAYER" "Puncte") (setvar "CLAYER" "Puncte"))
   (reverse out))
 
@@ -535,6 +552,14 @@
         ((member (setq v (atoi s)) *TKP:SCARI*) v)
         (T (TKP:Msg "Scara trebuie sa fie una din standard: 50, 100, 200, 500, 1000, 2000, 5000.") nil)))
 
+;; TKP:CivilSizes - marimile stilurilor Civil 3D ale TopoKit (punct, eticheta, caroiaj) la scara SC
+(defun TKP:CivilSizes (sc / cdoc)
+  (if (setq cdoc (TKP:C3d))
+    (progn
+      (TKP:PointStyles cdoc sc)
+      (if (TKP:Find (TKP:G cdoc 'GeneralNoteLabelStyles) *TKP:STCRUCE*) (TKP:GridStyles cdoc sc))
+      (vl-catch-all-apply 'vlax-invoke (list cdoc 'Regen acAllViewports)))))
+
 (defun TKP:CmdScara (/ old new n)
   (setq old (TKP:Scara))
   (if (and (setq new (TKP:AskScale (strcat "\nScara noua a planului (acum 1:" (itoa old) ")") old))
@@ -542,8 +567,9 @@
     (progn
       (TKP:SetScale new)
       (setq n (TKP:ScaleTexts (/ (float new) old)))
-      (TKP:Msg (strcat "Desenul este la scara 1:" (itoa new) ": etichetele Civil 3D, punctele si tipurile de linie"
-                       " s-au adaptat; texte redimensionate: " (itoa n) ".")))
+      (TKP:CivilSizes new)
+      (TKP:Msg (strcat "Desenul este la scara 1:" (itoa new) " (scara de adnotare ramane 1:1000): punctele,"
+                       " etichetele, tipurile de linie si cotele s-au adaptat; texte redimensionate: " (itoa n) ".")))
     (if new (TKP:Msg (strcat "Desenul este deja la scara 1:" (itoa old) ".")))))
 
 ;;; ==========================================================================
@@ -595,10 +621,14 @@
       n)
     0))
 
-(defun TKP:CmdCaroiaj (/ sc pas k p1 p2 xs ys corners inner cdoc kw n)
+(defun TKP:CmdCaroiaj (/ sc pas k p1 p2 xs ys corners inner cdoc kw n d)
   (setq sc (TKP:Scara) pas (cdr (assoc sc *TKP:PAS*)) k (TKP:K sc))
   (TK:MakeLayer "Caroiaj" 8)
-  (TKP:Msg (strcat "Caroiaj la scara 1:" (itoa sc) ": cruciulite la " (TKP:Num pas) " m (alta scara: TKSCARA)."))
+  (TKP:Msg (strcat "Caroiaj la scara 1:" (itoa sc) " (alta scara: TKSCARA)."))
+  ;; distanta dintre cruciulite: implicit cea din standard, se poate scrie alta
+  (initget 6)
+  (if (setq d (getreal (strcat "\nDistanta intre cruciulite, in metri <" (TKP:Num pas) ">: ")))
+    (setq pas (float d)))
   (if (and (setq p1 (getpoint "\nPrimul colt al zonei caroiajului: "))
            (setq p2 (getcorner p1 "\nColtul opus: ")))
     (progn
@@ -617,7 +647,7 @@
                 (if (not (and (member x (list (car xs) (last xs))) (member y (list (car ys) (last ys)))))
                   (setq inner (cons (list x y) inner))))))
           (setq cdoc (TKP:C3d) n 0)
-          (if (and cdoc (TKP:GridStyles cdoc))
+          (if (and cdoc (TKP:GridStyles cdoc sc))
             (progn
               (setvar "CLAYER" "Caroiaj")
               (foreach c corners

@@ -258,9 +258,11 @@ check("Font Arial in 2 stiluri de text" in out, out[-600:])
 # unitati si scara 1:500
 v = acad.vars
 check((v["INSUNITS"], v["LUNITS"], v["LUPREC"], v["AUNITS"], v["AUPREC"]) == (6, 2, 3, 2, 4), "unitati")
-check(v["CANNOSCALE"] == "1:500" and abs(v["LTSCALE"] - 1.0) < 1e-9 and v["MSLTSCALE"] == 0, "scara")
+# scara de adnotare ramane 1:1000; la 1:500 se schimba doar marimile
+check(v["CANNOSCALE"] == "1:1000" and abs(v["LTSCALE"] - 1.0) < 1e-9 and v["MSLTSCALE"] == 0, "scara")
+check(abs(v["DIMSCALE"] - 0.3) < 1e-9, "cote: text 1.5 mm pe hartie la 1:500 (DIMTXT 2.5)")
 check(v["PDMODE"] == 33 and abs(v["PDSIZE"] - 0.5) < 1e-9, "PTYPE: cerculet de 0.5 m la 1:500")
-check(["_.-SCALELISTEDIT", "_A", "1:500", "1:500", "_E"] in COMMANDS, COMMANDS)
+check(["_.-SCALELISTEDIT", "_A", "1:1000", "1:1000", "_E"] in COMMANDS, COMMANDS)
 check(fn("TKP:Scara") == 500 and fn("TKC:Cfg", "SCARA") == 500.0, "scara salvata pentru TopoKit si cadastru")
 check(env[Sym("*TK:SCARA*")] == 2, "scara cadrului (1:500)")
 
@@ -274,15 +276,15 @@ check(P[(amb + ".AngleSettings.Unit", "Value")] == 3 and P[(amb + ".AngleSetting
 check(P[(amb + ".DirectionSettings.MeasurementType", "Value")] == 2, "azimut")
 check(P[(amb + ".AreaSettings.Unit", "Value")] == 1 and P[(amb + ".CoordinateSettings.Precision", "Value")] == 3, "arii, coord")
 ps = "PointStyles[Basic]"
-check(P[(ps, "MarkerType")] == 0 and P[(ps, "MarkerSizeType")] == 0 and abs(P[(ps, "MarkerSize")] - 0.001) < 1e-12, "Basic")
+check(P[(ps, "MarkerType")] == 0 and P[(ps, "MarkerSizeType")] == 2 and abs(P[(ps, "MarkerSize")] - 0.5) < 1e-12, "Basic: 0.5 m la 1:500")
 check(P[(ps + ".MarkerDisplayStylePlan", "Color")] == 7, "punct alb")
 lbl = "PointLabelStyles[Point Description]"
 check(("PointLabelStyles", "ADD", ["Point Description"]) in CALLS, "stilul Point Description se creeaza")
 tc = lbl + ".TextComponents[Point Description]"
 check(P[(tc + ".Contents", "Value")] == "<[Full Description(CP)]>", "descrierea")
-check(abs(P[(tc + ".Height", "Value")] - 0.0015) < 1e-12 and P[(tc + ".Color", "Value")] == 7, "1.5 mm, alb")
+check(abs(P[(tc + ".Height", "Value")] - 0.00075) < 1e-12 and P[(tc + ".Color", "Value")] == 7, "0.75 m la 1:500 (adnotare 1:1000), alb")
 check(P[(tc + ".AnchorPoint", "Value")] == 3 and P[(tc + ".Attachment", "Value")] == 3, "Middle left / Middle left")
-check(abs(P[(tc + ".XOffset", "Value")] - 0.00075) < 1e-12, "gap = jumatate din text")
+check(abs(P[(tc + ".XOffset", "Value")] - 0.000375) < 1e-12, "gap = jumatate din text")
 check(P[(lbl + ".DraggedLeaderStyle.Visibility", "Value")] == "VLAX-FALSE", "fara leader cand e mutata")
 check(P[(lbl + ".DraggedComponentStyle.StackText", "Value")] == "VLAX-FALSE", "as composed")
 check(P[(lbl + ".LabelProperties.TextStyle", "Value")] == "Standard", "stilul de text (Arial)")
@@ -305,10 +307,10 @@ for k, (sx, sy, an, ae) in {"stanga sus": (1, -1, 0, 2), "dreapta sus": (-1, -1,
     ho, ve = st + ".LineComponents[Linie orizontala]", st + ".LineComponents[Linie verticala]"
     check(abs(P[(ho + ".Angle", "Value")] - (0.0 if sx > 0 else math.pi)) < 1e-12, k)
     check(abs(P[(ve + ".Angle", "Value")] - (math.pi / 2 if sy > 0 else 1.5 * math.pi)) < 1e-12, k)
-    check(abs(P[(ho + ".Length", "Value")] - 0.013) < 1e-12, k)
+    check(abs(P[(ho + ".Length", "Value")] - 0.0065) < 1e-12, k)
     check(P[(ho + ".UseEndPointAnchor", "Value")] == "VLAX-FALSE", f"{k}: linia are unghi si lungime proprii")
     # textele nu se suprapun in colt: incep la 1.5 x inaltimea din colt
-    check(abs(abs(P[(n + ".XOffset", "Value")]) - 0.00225) < 1e-12 and abs(abs(P[(e + ".YOffset", "Value")]) - 0.00225) < 1e-12, k)
+    check(abs(abs(P[(n + ".XOffset", "Value")]) - 0.001125) < 1e-12 and abs(abs(P[(e + ".YOffset", "Value")]) - 0.001125) < 1e-12, k)
     check(P[(st + ".LabelProperties.PlanReadable", "Value")] == "VLAX-FALSE", k)
 check(abs(P[("NoteStyles[Caroiaj - cruciulita].LineComponents[Brat sud].Angle", "Value")] - 1.5 * math.pi) < 1e-12, "cruce")
 # textul implicit "Note" al stilurilor noi se ascunde (doar coordonatele si liniile)
@@ -316,7 +318,7 @@ for k in ("colt stanga sus", "colt dreapta jos"):
     st = cdoc.get("GeneralNoteLabelStyles")
     sty = next(x for x in st.items if x.props.get("NAME") == f"Caroiaj - {k}")
     note = sty.get("TextComponents").invoke("ADD", ["Text"])     # componenta implicita "Note"
-fn("TKP:GridStyles", cdoc)
+fn("TKP:GridStyles", cdoc, 500)
 for k in ("colt stanga sus", "colt dreapta jos"):
     check(P[(f"NoteStyles[Caroiaj - {k}].TextComponents[Text].Visibility", "Value")] == "VLAX-FALSE", f"{k}: Note ascuns")
     check(P[(f"NoteStyles[Caroiaj - {k}].TextComponents[Nord].Visibility", "Value")] == "VLAX-TRUE", k)
@@ -324,7 +326,7 @@ check("Civil 3D: stilurile de caroiaj (General Note Label) sunt gata" in out, ou
 
 # ---------------------------------------------------------------- caroiajul (Civil 3D: General Note Label)
 COMMANDS.clear()
-acad.inputs += [("pt", [545010.0, 458010.0, 0.0]), ("pt", [545090.0, 458070.0, 0.0]), ("kw", None)]
+acad.inputs += [("real", None), ("pt", [545010.0, 458010.0, 0.0]), ("pt", [545090.0, 458070.0, 0.0]), ("kw", None)]
 fn("c:TKCAROIAJ")
 notes = [c for c in COMMANDS if c and c[0] == "_.AeccAddNoteLabel"]
 check(len(notes) == 5, COMMANDS)                     # 4 colturi + cruciulitele
@@ -345,6 +347,10 @@ fn("c:TKSCARA")
 txt = {grp(acad.db[e], 1): grp(acad.db[e], 40) for e in ents("TEXT")}
 check(abs(txt["Ion Popescu"] - 1.5) < 1e-9 and txt["alt strat"] == 2.0, txt)
 check(acad.vars["CANNOSCALE"] == "1:1000" and abs(acad.vars["LTSCALE"] - 2.0) < 1e-9 and abs(acad.vars["PDSIZE"] - 1.0) < 1e-9, "1:1000")
+# stilurile Civil 3D ale TopoKit au marimile noi (adnotarea ramane 1:1000)
+check(abs(P[(tc + ".Height", "Value")] - 0.0015) < 1e-12 and abs(P[(ps, "MarkerSize")] - 1.0) < 1e-12, "1:1000: text 1.5 m, punct 1 m")
+check(abs(P[("NoteStyles[Caroiaj - colt stanga jos].TextComponents[Nord].Height", "Value")] - 0.0015) < 1e-12, "caroiaj 1:1000")
+check(abs(P[("NoteStyles[Caroiaj - cruciulita].LineComponents[Brat est].Length", "Value")] - 0.0025) < 1e-12, "cruciulita 1:1000")
 check(fn("TKP:Scara") == 1000 and fn("TKC:Cfg", "SCARA") == 1000.0, "scara noua salvata")
 acad.inputs += [("str", "300")]
 fn("c:TKSCARA")
@@ -352,13 +358,13 @@ check(fn("TKP:Scara") == 1000 and "Scara trebuie sa fie una din standard" in "".
 
 # ---------------------------------------------------------------- caroiajul fara Civil 3D (linii si texte)
 civil[0] = False
-acad.inputs += [("pt", [545000.0, 458000.0, 0.0]), ("pt", [545210.0, 458160.0, 0.0]), ("kw", "Nu")]
+acad.inputs += [("real", 30.0), ("pt", [545000.0, 458000.0, 0.0]), ("pt", [545210.0, 458160.0, 0.0]), ("kw", "Nu")]
 n0 = len(ents("LINE", "Caroiaj"))
 fn("c:TKCAROIAJ")
 lines = ents("LINE", "Caroiaj")[n0:]
 check(len(lines) == 8, len(lines))                  # 4 colturi x 2 linii, fara cruciulite
 texts = {grp(acad.db[e], 1): acad.db[e] for e in ents("TEXT", "Caroiaj")}
-check(set(texts) == {"N=458000", "N=458150", "E=545000", "E=545200"}, set(texts))
+check(set(texts) == {"N=458010", "N=458160", "E=545010", "E=545190"}, set(texts))   # cruciulite la 30 m (scris)
 for e in ents("TEXT", "Caroiaj"):
     d = acad.db[e]
     check(abs(grp(d, 40) - 1.5) < 1e-9, "text 1.5 m la 1:1000")
@@ -366,6 +372,6 @@ for e in ents("TEXT", "Caroiaj"):
         check(abs(grp(d, 50) - math.pi / 2) < 1e-12, "E= vertical")
 # coltul stanga jos: linia orizontala spre est, cea verticala spre nord, de 13 m (13 mm la 1:1000)
 L = [(grp(acad.db[e], 10), grp(acad.db[e], 11)) for e in lines[:2]]
-check(L == [([545000.0, 458000.0, 0.0], [545013.0, 458000.0, 0.0]), ([545000.0, 458000.0, 0.0], [545000.0, 458013.0, 0.0])], L)
+check(L == [([545010.0, 458010.0, 0.0], [545023.0, 458010.0, 0.0]), ([545010.0, 458010.0, 0.0], [545010.0, 458023.0, 0.0])], L)
 
 print("Toate testele TopoKitProiect au trecut.")

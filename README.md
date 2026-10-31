@@ -624,6 +624,10 @@ Corecturi față de CadTopo:
 - `python3 tests/test_lang.py` testează limba și ribbonul: dicționarul `lang/en.txt` (fiecare intrare
   folosită, ghilimele, taste), varianta în engleză (aceeași structură LISP, planurile rămân în română),
   încărcarea în engleză și revenirea la română în simulator și meniul `.cuix` (XML, butoane, iconițe).
+- `python3 tests/test_dwg.py [desen.dwg ...]` testează citirea DXF-urilor stricate în DWG to KMZ.
+  LibreDWG scrie uneori materiale și solide 3D cu text binar și rânduri rupte („Invalid group code”)
+  sau intrări de dicționar spre handle 0. `dwg.repair_dxf` scoate doar acele obiecte, iar entitățile
+  din desen rămân toate. Cu fișiere DWG ca argumente, testul le citește și pe ele.
 - **Traducerea:** `lang/en.txt` conține perechile *română → engleză* (domeniul opțional `label`,
   `call:funcție` sau numele unui fișier limitează unde se traduce un text). `python3 tools/i18n.py
   extract` listează textele interfeței încă netraduse; la construirea instalatorului,

@@ -246,6 +246,35 @@ def _read_table(e):
         return []
 
 
+def open_dxf(path):
+    """Deschide DXF-ul; daca e stricat (ex. scris de LibreDWG), il repara: scoate obiectele
+    cu date corupte si sectiunile de care nu avem nevoie, apoi incearca din nou."""
+    try:
+        return ezdxf.readfile(path)
+    except Exception as ex:
+        first = ex
+    fd, fixed = tempfile.mkstemp(suffix=".dxf", prefix="dwg2kmz_fix_")
+    os.close(fd)
+    try:
+        dwg.repair_dxf(path, fixed, minimal=True)
+        for reader in (ezdxf.readfile, lambda p: recover.readfile(p)[0]):
+            try:
+                return reader(fixed)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    finally:
+        try:
+            os.remove(fixed)
+        except OSError:
+            pass
+    try:
+        return recover.readfile(path)[0]
+    except Exception:
+        raise first
+
+
 def read_dxf(path):
     if path.lower().endswith(".dwg"):
         dxf_path, tmp_dir, _conv = dwg.dwg_to_dxf(path)
@@ -253,10 +282,7 @@ def read_dxf(path):
             return read_dxf(dxf_path)
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
-    try:
-        doc = ezdxf.readfile(path)
-    except Exception:
-        doc, _ = recover.readfile(path)
+    doc = open_dxf(path)
     msp = doc.modelspace()
     feats = []
     counters = {"point": 0}

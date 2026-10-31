@@ -98,21 +98,27 @@
 ;; Tabul "TopoKit" din ribbon: meniul partial TopoKit.cuix (romana) sau
 ;; TopoKit_EN.cuix (engleza). Ambele au grupul de meniu "TOPOKIT"; la schimbarea
 ;; limbii grupul se descarca si se incarca celalalt fisier.
-(defun TKL:Ribbon (dir / want mgs g cur r)
+;; Meniul ramane incarcat de la o sesiune la alta; dupa o actualizare fisierul .cuix e altul
+;; (marime / data), deci se reincarca o data pe sesiune AutoCAD (amprenta e in blackboard,
+;; comuna tuturor desenelor deschise).
+(defun TKL:Ribbon (dir / want mgs g cur r stamp)
   (setq want (strcat dir "\\" (if (= (TKL:Lang) "EN") "TopoKit_EN.cuix" "TopoKit.cuix")))
   (cond
     ((not (findfile want)) nil)
     (T
      (setq mgs (vla-get-MenuGroups (vlax-get-acad-object))
-           g (vl-catch-all-apply 'vla-item (list mgs "TOPOKIT")))
+           g (vl-catch-all-apply 'vla-item (list mgs "TOPOKIT"))
+           stamp (list (strcase (vl-filename-base want)) (vl-file-size want) (vl-file-systime want)))
      (if (vl-catch-all-error-p g) (setq g nil))
      (if g (setq cur (vl-catch-all-apply 'vla-get-MenuFileName (list g))))
      (cond
        ((and g (= (type cur) 'STR)
-             (= (strcase (strcat (vl-filename-directory cur) "\\" (vl-filename-base cur)))
-                (strcase (strcat dir "\\" (vl-filename-base want)))))
-        T)                                                   ; deja incarcat
+             (= (strcase (vl-string-translate "/" "\\" (strcat (vl-filename-directory cur) "\\" (vl-filename-base cur))))
+                (strcase (vl-string-translate "/" "\\" (strcat dir "\\" (vl-filename-base want)))))
+             (equal (vl-bb-ref '*TKL:CUIX*) stamp))
+        T)                                                   ; acelasi fisier, deja incarcat
        (T
+        (vl-bb-set '*TKL:CUIX* stamp)
         (if g (vl-catch-all-apply 'vla-Unload (list g)))
         (setq r (vl-catch-all-apply 'vlax-invoke (list mgs 'Load want)))
         (not (vl-catch-all-error-p r)))))))

@@ -27,22 +27,28 @@
 #include "ui.h"
 
 #ifndef TK_VERSION
-#define TK_VERSION "1.3.0"
+#define TK_VERSION "1.4.0"
 #endif
 #define UI_CLASS L"TopoKitMainWnd"
-#define W_DIP 840
+#define W_DIP 1000
 #define H_DIP 830
 
 /* Cardurile modulelor - aceeasi ordine ca tabelul CMDS din topokit.c */
 static const struct { const wchar_t *title, *desc, *title_en, *desc_en, *cmd; ARGB accent; } TILES[] = {
+    { L"Proiect nou", L"Straturi, Arial, unități, puncte, stiluri Civil 3D",
+      L"New project", L"Layers, Arial, units, points, Civil 3D styles", L"TKPROIECT", 0xFF0F7C6E },
+    { L"Scara planului", L"1:50…1:5000: etichete, puncte, linii, texte",
+      L"Plan scale", L"1:50…1:5000: labels, points, lines, texts", L"TKSCARA", 0xFFB07D12 },
+    { L"Caroiaj", L"Colțuri N= / E= și cruciulițe",
+      L"Coordinate grid", L"N= / E= corners and crosses", L"TKCAROIAJ", 0xFF5A6B7C },
     { L"Setări module", L"Toleranță, opțiuni KMZ, format și cadru",
       L"Module settings", L"Tolerance, KMZ options, format and frame", L"TOPOKITSET", 0xFF1B6A8F },
     { L"Anexe ANCPI", L"Planuri și documente, Ordinul 600/2023",
       L"ANCPI annexes", L"Plans and documents, Order 600/2023", L"ANEXE", 0xFF6A4FB6 },
-    { L"Teren și volume", L"Puncte, model TIN, curbe de nivel, calcul de volume",
-      L"Terrain and volumes", L"Points, TIN model, contour lines, volumes", L"TOPOTEREN", 0xFF2E8B57 },
+    { L"Teren și volume", L"Puncte, TIN, curbe de nivel, volume",
+      L"Terrain & volumes", L"Points, TIN, contour lines, volumes", L"TOPOTEREN", 0xFF2E8B57 },
     { L"Verificare", L"Controlul documentației înainte de predare",
-      L"Check", L"Checks the documentation before submission", L"VERIFICARE", 0xFFD08A12 },
+      L"Check", L"Checks documents before submission", L"VERIFICARE", 0xFFD08A12 },
     { L"Planșe PDF", L"Plotarea tuturor planșelor într-un singur pas",
       L"PDF sheets", L"Plots all the sheets in one step", L"PLANEPDF", 0xFFC8443A },
     { L"Export KMZ", L"Parcela în Google Earth (Stereo 70 → WGS84)",
@@ -60,15 +66,17 @@ static const struct { const wchar_t *title, *desc, *title_en, *desc_en, *cmd; AR
     { L"Suprafețe și cote", L"S= pe poligoane, hașură, lungimi laturi",
       L"Areas and lengths", L"S= on polygons, hatch, side lengths", L"TKSUPRAF", 0xFF4F7A2A },
     { L"Detașare multiplă", L"Mai multe parcele dintr-un tabel sau din Excel",
-      L"Multiple detachment", L"Several parcels from a table or from Excel", L"TKDETMULT", 0xFFC0392B },
+      L"Batch detachment", L"Several parcels from a table or from Excel", L"TKDETMULT", 0xFFC0392B },
     { L"Raportare puncte", L"Puncte din fișier: număr, cotă și cod",
       L"Draw points", L"Points from a file: number, elevation, code", L"TKIMPPCT", 0xFF2F6FB5 },
+    { L"Introducere puncte", L"Puncte noi cu număr, cotă și cod (TopoLT)",
+      L"Insert points", L"New points with number, elevation, code (TopoLT)", L"TKPCT", 0xFFD0453A },
     { L"Cote laturi", L"Lungimile laturilor, spre exteriorul poligonului",
       L"Side lengths", L"Side lengths, outside the polygon", L"TKCOTE", 0xFF8A6A2E },
     { L"Setări cadastru", L"Scara, înălțimi text, zecimale, hașură",
       L"Cadastre settings", L"Scale, text heights, decimals, hatch", L"TKCADSET", 0xFF55657A },
 };
-#define NTILES 16
+#define NTILES 20
 
 /* Paleta */
 #define C_BG        0xFFF4F7FA
@@ -85,7 +93,7 @@ static const struct { const wchar_t *title, *desc, *title_en, *desc_en, *cmd; AR
 #define C_WAIT      0xFFE0A030
 
 /* Zonele active */
-enum { HT_NONE = -1, HT_TILE0 = 0, HT_PRIMARY = 20, HT_TOGGLE, HT_FOLDER, HT_HELP, HT_DIAG, HT_LANG };
+enum { HT_NONE = -1, HT_TILE0 = 0, HT_PRIMARY = 32, HT_TOGGLE, HT_FOLDER, HT_HELP, HT_DIAG, HT_LANG };
 
 static HINSTANCE g_inst;
 static HWND g_wnd;
@@ -96,7 +104,7 @@ static int g_hover = HT_NONE, g_pressed = HT_NONE;
 static BOOL g_tracking, g_hiddenOnce;
 
 typedef struct { float x, y, w, h; } R;
-static R g_r[32];                          /* zonele, in DIP */
+static R g_r[48];                          /* zonele, in DIP */
 
 /* ------------------------------------------------------------------ resurse */
 static GpBitmap *LoadPng(int id)
@@ -252,11 +260,11 @@ static void Contour(GpGraphics *g, float cx, float cy, float r, float k, ARGB c,
 static void Layout(void)
 {
     int i;
-    float tw = (W_DIP - 48 - 3 * 16) / 4.0f, th = 118;
+    float tw = (W_DIP - 48 - 4 * 16) / 5.0f, th = 118;     /* 5 coloane x 4 randuri */
     g_r[HT_PRIMARY] = (R){ W_DIP - 24 - 16 - 178, 120 + 18, 178, 36 };
     g_r[HT_LANG] = (R){ W_DIP - 24 - 70 - 10 - 92, 22, 92, 24 };
     for (i = 0; i < NTILES; i++)
-        g_r[HT_TILE0 + i] = (R){ 24 + (i % 4) * (tw + 16), 240 + (i / 4) * (th + 14), tw, th };
+        g_r[HT_TILE0 + i] = (R){ 24 + (i % 5) * (tw + 16), 240 + (i / 5) * (th + 14), tw, th };
     g_r[HT_TOGGLE] = (R){ 24, H_DIP - 44, 250, 28 };
     g_r[HT_HELP] = (R){ W_DIP - 24 - 128, H_DIP - 44, 128, 28 };
     g_r[HT_FOLDER] = (R){ W_DIP - 24 - 128 - 12 - 116, H_DIP - 44, 116, 28 };

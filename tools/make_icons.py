@@ -6,7 +6,7 @@
 installer/launcher/:
     topokit.ico, tray_on.ico, tray_off.ico   iconitele programului / barei de sistem
     logo.png                                 sigla din antetul ferestrei TopoKit
-    icons/m1.png ... m12.png                 iconitele modulelor (cardurile ferestrei)
+    icons/m1.png ... m20.png                 iconitele modulelor (cardurile ferestrei)
 installer/art/:
     welcome.bmp (164x314), header.bmp (150x57)   paginile instalatorului NSIS
 docs/topokit_icon.png
@@ -207,11 +207,46 @@ def g_gear(d):          # setari cadastru: roata dintata peste o parcela
     d.polygon([(cx - 22, cy + 18), (cx - 14, cy - 22), (cx + 22, cy - 18), (cx + 18, cy + 20)], fill=W)
 
 
+def g_proiect(d):       # proiect nou: foaie cu straturile standard (benzi) si plus
+    d.rounded_rectangle((40, 30, 170, 214), radius=12, outline=W, width=11)
+    for i, y in enumerate((70, 104, 138, 172)):
+        d.rectangle((62, y - 9, 80, y + 9), fill=W)
+        d.line((94, y, 148, y), fill=W, width=9)
+    d.ellipse((150, 140, 238, 228), fill=W)
+    d.line((194, 158, 194, 210), fill=(0, 0, 0, 0), width=12)
+    d.line((168, 184, 220, 184), fill=(0, 0, 0, 0), width=12)
+
+
+def g_scara(d):         # scara planului: rigla si 1:500
+    d.text((128, 80), "1:500", font=ImageFont.truetype(FONT, 66), fill=W, anchor="mm")
+    d.rounded_rectangle((26, 140, 230, 214), radius=8, outline=W, width=10)
+    for i, x in enumerate(range(52, 214, 26)):
+        d.line((x, 140, x, 168 if i % 2 else 184), fill=W, width=8)
+
+
+def g_caroiaj(d):       # caroiaj: colturi in L cu coordonate si cruciulite
+    for x, y, sx, sy in ((40, 40, 1, 1), (216, 40, -1, 1), (40, 216, 1, -1), (216, 216, -1, -1)):
+        d.line((x + sx * 62, y, x, y, x, y + sy * 62), fill=W, width=11, joint="curve")
+    for x, y in ((100, 100), (156, 100), (100, 156), (156, 156)):
+        d.line((x - 20, y, x + 20, y), fill=W, width=9)
+        d.line((x, y - 20, x, y + 20), fill=W, width=9)
+
+
+def g_pct(d):           # introducere puncte: simbol de punct cu numar si plus
+    d.ellipse((46, 70, 146, 170), outline=W, width=12)
+    d.ellipse((84, 108, 108, 132), fill=W)
+    d.text((176, 74), "12", font=ImageFont.truetype(FONT, 56), fill=W, anchor="mm")
+    d.line((190, 150, 190, 226), fill=W, width=14)
+    d.line((152, 188, 228, 188), fill=W, width=14)
+
+
 # aceeasi ordine ca TILES din installer/launcher/ui.c
-MODULES = [("#1B6A8F", g_menu), ("#6A4FB6", g_doc), ("#2E8B57", g_tin), ("#D08A12", g_check),
+MODULES = [("#0F7C6E", g_proiect), ("#B07D12", g_scara), ("#5A6B7C", g_caroiaj),
+           ("#1B6A8F", g_menu), ("#6A4FB6", g_doc), ("#2E8B57", g_tin), ("#D08A12", g_check),
            ("#C8443A", g_pdf), ("#1F8FBF", g_globe), ("#0E8C7F", g_dwgkmz), ("#3B5B92", g_frame),
            ("#A3478F", g_vertex), ("#E0662A", g_incl), ("#B5562E", g_det), ("#4F7A2A", g_sup),
-           ("#C0392B", g_detmult), ("#2F6FB5", g_points), ("#8A6A2E", g_cote), ("#55657A", g_gear)]
+           ("#C0392B", g_detmult), ("#2F6FB5", g_points), ("#D0453A", g_pct), ("#8A6A2E", g_cote),
+           ("#55657A", g_gear)]
 
 
 def module_icon(color, glyph):
@@ -265,7 +300,7 @@ def installer_art(lg):
 
 
 import sys
-if "--modules" in sys.argv:          # doar iconitele modulelor (m1..m16), restul graficii ramane
+if "--modules" in sys.argv:          # doar iconitele modulelor (m1..m20), restul graficii ramane
     for i, (c, g) in enumerate(MODULES, 1):
         module_icon(c, g).save(OUT / "icons" / f"m{i}.png")
     print("Iconitele modulelor generate in", OUT / "icons")

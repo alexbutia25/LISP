@@ -31,6 +31,7 @@ iconiță proprie pentru **fiecare comandă** TopoKit, grupate pe panouri:
 | Panou | Butoane |
 |---|---|
 | Configurare | Fereastra TopoKit, Setări module, Setări cadastru, Meniul TopoKit, **Limba română / engleză**, Reîncarcă, Comenzi cadastru |
+| Proiect | **Proiect nou** (buton mare), Scara planului, Caroiaj |
 | Puncte | **Raportare puncte**, introducere, pe contur, ștergere, renumerotare, selecție și schimbarea codului, fișier coordonate, import puncte teren, tabel |
 | Suprafețe | **Detașare**, **Detașare multiplă** (butoane mari), Suprafețe (S=), Cote laturi, Suma textelor, Vertexi la intersecții |
 | Anexe ANCPI | Anexe ANCPI, Date imobil, Executant, Vecini, Construcții, Anexe Word, Verificare |
@@ -44,7 +45,9 @@ Iconițele (16 și 32 px) se văd bine pe tema închisă și pe cea deschisă a 
 
 ![Iconițele ribbonului TopoKit](docs/ribbon_iconite.png)
 
-Săgeata din colțul panourilor Configurare, Suprafețe și Model 3D deschide setările respective. Meniul
+Săgeata din colțul panourilor Configurare, Proiect, Suprafețe și Model 3D deschide setările respective.
+După o actualizare, meniul se reîncarcă singur o dată pe sesiune AutoCAD, când fișierul `.cuix` s-a
+schimbat, așa că panourile noi apar fără alți pași. Meniul
 este fișierul `TopoKit.cuix` (sau `TopoKit_EN.cuix` în engleză) din folderul programului, încărcat
 automat de `TopoKitLoad.lsp`; nu modifică meniul principal al AutoCAD.
 
@@ -87,7 +90,7 @@ reîncarcă imediat în desenul curent; celelalte desene deschise trec la prima 
 
 ### Cu instalatorul (recomandat)
 
-1. Descărcați și rulați **[`dist/TopoKitSetup-1.3.0.exe`](dist/TopoKitSetup-1.3.0.exe)** (TopoKit 1.3.0). Nu sunt necesare drepturi
+1. Descărcați și rulați **[`dist/TopoKitSetup-1.4.0.exe`](dist/TopoKitSetup-1.4.0.exe)** (TopoKit 1.4.0). Nu sunt necesare drepturi
    de administrator; instalarea se face pentru utilizatorul curent.
 2. Alegeți opțiunile: scurtătură pe desktop și pornirea în fundal odată cu Windows (ambele bifate implicit).
 3. Deschideți **TopoKit** din meniul Start sau de pe desktop. Atât.
@@ -108,8 +111,9 @@ Ce face instalarea:
   și în *Trusted Locations* (`TRUSTEDPATHS`), apoi încarcă `TopoKit.lsp`, `TopoKitAnexe.lsp` și
   `TopoKitTeren.lsp`. Comanda `TOPOKITRELOAD` reîncarcă modulele.
 - **Fereastra TopoKit** se deschide când porniți programul. Arată starea legăturii cu AutoCAD și
-  cele 16 module (printre ele *Detașare*, *Detașare multiplă*, *Raportare puncte*, *Cote laturi* și
-  *Setări cadastru*), fiecare cu iconița, descrierea și comanda AutoCAD:
+  cele 20 de module, pe 5 coloane. Primele sunt *Proiect nou*, *Scara planului* și *Caroiaj*; printre
+  celelalte sunt *Detașare*, *Detașare multiplă*, *Raportare puncte*, *Introducere puncte*, *Cote laturi*
+  și *Setări cadastru*. Fiecare card are iconița, descrierea și comanda AutoCAD:
 
   ![Fereastra TopoKit](docs/lansator_conectat.png)
 
@@ -152,7 +156,7 @@ Ce face instalarea:
     o anulează prin fereastra AutoCAD (WM_COPYDATA) înainte de a trimite modulul.
 - **Dezinstalare:** *Setări → Aplicații → TopoKit* sau meniul Start → *Dezinstalare TopoKit*. Se șterg
   pachetul AutoCAD, lansatorul și setările din registru.
-- **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup-1.3.0.exe /S`; dezinstalare:
+- **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup-1.4.0.exe /S`; dezinstalare:
   `"%LOCALAPPDATA%\Programs\TopoKit\Uninstall.exe" /S`.
 
 Windows SmartScreen poate afișa *„Windows a protejat computerul”*, pentru că instalatorul nu este

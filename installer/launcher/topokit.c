@@ -57,6 +57,9 @@ enum { ID_STATUS = 1000, ID_CMD0 = 1001, ID_OPEN = 1099, ID_START = 1100, ID_REL
        ID_FOLDER, ID_HELP, ID_EXIT, ID_LANG, HOTKEY_ID = 1 };
 
 static const struct { const wchar_t *label, *label_en, *cmd; } CMDS[] = {
+    { L"Proiect nou (straturi, unități, stiluri)", L"New project (layers, units, styles)", L"TKPROIECT" },
+    { L"Scara planului", L"Plan scale", L"TKSCARA" },
+    { L"Caroiaj de coordonate", L"Coordinate grid", L"TKCAROIAJ" },
     { L"Setări module (TopoKit)", L"Module settings (TopoKit)", L"TOPOKITSET" },
     { L"Generator anexe (Ordin ANCPI 600/2023)", L"Annex generator (ANCPI Order 600/2023)", L"ANEXE" },
     { L"Teren: puncte, TIN, curbe de nivel, volume", L"Terrain: points, TIN, contour lines, volumes", L"TOPOTEREN" },
@@ -71,6 +74,7 @@ static const struct { const wchar_t *label, *label_en, *cmd; } CMDS[] = {
     { L"Suprafețe (S=, hașură)", L"Areas (S=, hatch)", L"TKSUPRAF" },
     { L"Detașare multiplă", L"Multiple detachment", L"TKDETMULT" },
     { L"Raportare puncte din fișier", L"Draw points from file", L"TKIMPPCT" },
+    { L"Introducere puncte", L"Insert points", L"TKPCT" },
     { L"Cote laturi", L"Side lengths", L"TKCOTE" },
     { L"Setări cadastru", L"Cadastre settings", L"TKCADSET" },
 };

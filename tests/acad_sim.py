@@ -260,6 +260,7 @@ class Acad:
                   "CVPORT": 2, "CMDECHO": 1, "OSMODE": 0, "ATTREQ": 1, "DIMZIN": 8, "TILEMODE": 1,
                   "BACKGROUNDPLOT": 2}
         s.envs, s.ldata, s.inputs, s.out, s.alerts, s.cmds, s.runs, s.plots = {}, {}, [], [], [], [], [], []
+        s.bb = {}                                   # blackboard (vl-bb-set / vl-bb-ref), comun desenelor
         s.layouts = {"MODEL": Obj("layout", name="Model", vp_init=True),
                      "LAYOUT1": Obj("layout", name="Layout1", vp_init=False)}
         s.vpid = 1; s.vpfrozen = {}
@@ -601,6 +602,10 @@ class Acad:
             "VL-FILE-DIRECTORY-P": lambda f: T if os.path.isdir(s.path(f)) else None,
             "VL-MKDIR": lambda f: os.makedirs(s.path(f), exist_ok=True) or T,
             "VL-FILE-DELETE": lambda f: (os.remove(s.path(f)) or T) if os.path.exists(s.path(f)) else None,
+            "VL-FILE-SIZE": lambda f: os.path.getsize(s.path(f)) if os.path.isfile(s.path(f)) else None,
+            "VL-FILE-SYSTIME": lambda f: list(__import__("time").localtime(os.path.getmtime(s.path(f)))[:6]) if os.path.isfile(s.path(f)) else None,
+            "VL-BB-SET": lambda k, v: s.bb.__setitem__(str(k).upper(), v) or v,
+            "VL-BB-REF": lambda k: s.bb.get(str(k).upper()),
             "VL-FILE-RENAME": lambda a, b: (os.rename(s.path(a), s.path(b)) or T) if os.path.exists(s.path(a)) and not os.path.exists(s.path(b)) else None,
             "VL-REGISTRY-READ": lambda *a: None, "VL-REGISTRY-WRITE": lambda *a: a[-1] if a else None,
             "VL-FILENAME-MKTEMP": lambda p=None, d=None, ext="": os.path.join(s.outdir, f"{p or 'tmp'}_{len(s.order)}{ext or ''}"),

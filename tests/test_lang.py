@@ -184,9 +184,13 @@ M.funcs[Sym("VLA-UNLOAD")] = lambda g: menus.pop(g[1])
 orig_invoke = M.funcs.get(Sym("VLAX-INVOKE"))
 
 
+menu_loads = []
+
+
 def invoke(o, m, *a):
     if o == "menugroups" and str(m).upper() == "LOAD":
         menus["TOPOKIT"] = a[0][:-5]                   # AutoCAD raporteaza fisierul fara extensie
+        menu_loads.append(a[0])
         return ("menugroup", "TOPOKIT")
     return orig_invoke(o, m, *a)
 
@@ -211,8 +215,23 @@ print("Engleza: folderul en inaintea Contents, modulele traduse, meniul TopoKit_
 
 # al doilea desen: nimic nou (aceeasi cale, acelasi meniu)
 loads.clear()
+n_menu = len(menu_loads)
 M.load(os.path.join(contents, "TopoKitLoad.lsp"))
 assert loads == [] and prefs["SupportPath"].split(";")[:2] == sp[:2] and len(menus) == 1
+call(Sym("TKL:RIBBON"), [win(contents)])
+assert len(menu_loads) == n_menu, "acelasi .cuix: meniul nu se reincarca"
+# dupa o actualizare (alt fisier .cuix, acelasi nume): meniul se reincarca, ca sa apara panourile noi
+with open(os.path.join(contents, "TopoKit_EN.cuix"), "ab") as fh:
+    fh.write(bytes(16))
+call(Sym("TKL:RIBBON"), [win(contents)])
+assert len(menu_loads) == n_menu + 1 and menus == {"TOPOKIT": win(contents) + r"\TopoKit_EN"}, (menu_loads, menus)
+call(Sym("TKL:RIBBON"), [win(contents)])
+assert len(menu_loads) == n_menu + 1, "o singura reincarcare pe sesiune"
+# meniul ramas incarcat din sesiunea trecuta (blackboard gol): se reincarca o data
+acad.bb.clear()
+call(Sym("TKL:RIBBON"), [win(contents)])
+assert len(menu_loads) == n_menu + 2
+print("Ribbon: meniul se reincarca doar cand fisierul .cuix s-a schimbat (o data pe sesiune)")
 
 # ---------------------------------------------------------------- inapoi la romana
 loads.clear()

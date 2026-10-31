@@ -80,6 +80,11 @@ cdoc = Com("Doc", PointStyles=Coll("PointStyles", ["Standard", "Basic"]),
            PointLabelStyles=Coll("PointLabelStyles", ["Description Only", "Point Number Only"]),
            GeneralNoteLabelStyles=Coll("NoteStyles", ["General Note"]),
            PointGroups=Coll("PointGroups", ["_All Points"]))
+# stilul de segment din sablon: "Distance Only" cu lungimea in picioare, 3 zecimale
+line_styles = Coll("LineStyles", ["Distance Only"])
+_seg = line_styles.items[0].get("TextComponents").invoke("ADD", ["Distance"])
+_seg.get("Contents").props["VALUE"] = "<[General Segment Length(Uft|P3|RN|AP|GC|UN|Sn|OF)]>'"
+cdoc.props["GENERALLINELABELSTYLES"] = line_styles
 c3dapp = Com("App", ActiveDocument=cdoc)
 civil = [True]
 
@@ -169,14 +174,43 @@ def setfont(o, face, bold, italic, cs, pf):
 
 COMMANDS = []
 STYLE_LOG = []
+NOTE_ACTIVE = [False]
 def command(*args):
+    if args and args[0] == "_.AeccAddNoteLabel":
+        NOTE_ACTIVE[0] = True
+    elif args and args[0] == "_non" and NOTE_ACTIVE[0]:
+        acad.entmake([DP(0, "AECC_GENERAL_NOTE_LABEL"), DP(8, "C-ANNO"), [10] + list(args[1])])
+    elif args == ("",):
+        NOTE_ACTIVE[0] = False
     if args and args[0] == "_.AeccAddNoteLabel":
         STYLE_LOG.append(("style", PUTS.get(("Doc.Settings.GeneralCommandsSettings.AddNoteLabelSettings.StyleSettings.NoteLabelStyle", "Value"))))
     COMMANDS.append(list(args))
-    if args and args[0] == "_.-LAYMRG":            # LAYMRG: stratul gol se muta pe 0 si dispare
-        assert list(args[1:2] + args[3:]) == ["_N", "", "_N", "0", "_Y"], args
-        acad.tables["LAYER"].pop(args[2].upper(), None)
+    laymrg(list(args))
     return None
+
+
+# -LAYMRG simulat, si cand argumentele vin in mai multe apeluri (command): _N strat [_N strat ...] "" _N tinta _Y
+LAYMRG = {"state": None, "names": [], "runs": []}
+def laymrg(args):
+    for a in args:
+        st = LAYMRG["state"]
+        if a == "_.-LAYMRG":
+            LAYMRG.update(state="sel", names=[])
+        elif st == "sel":
+            assert a in ("_N", ""), a
+            LAYMRG["state"] = "name" if a == "_N" else "target"
+        elif st == "name":
+            assert acad.tables["LAYER"].get(a.upper()) is not None, f"LAYMRG: strat inexistent {a}"
+            LAYMRG["names"].append(a); LAYMRG["state"] = "sel"
+        elif st == "target":
+            assert a == "_N", a; LAYMRG["state"] = "tname"
+        elif st == "tname":
+            assert a == "0", a; LAYMRG["state"] = "yes"
+        elif st == "yes":
+            assert a == "_Y", a
+            for n in LAYMRG["names"]:
+                acad.tables["LAYER"].pop(n.upper(), None)       # stratul gol se muta pe 0 si dispare
+            LAYMRG["runs"].append(list(LAYMRG["names"])); LAYMRG["state"] = None
 
 
 for k, v in {"TBLOBJNAME": tblobjname, "ENTGET": entget, "ENTMOD": entmod, "COMMAND": command,
@@ -194,6 +228,14 @@ for k, v in {"TBLOBJNAME": tblobjname, "ENTGET": entget, "ENTMOD": entmod, "COMM
 env[Sym(":VLAX-TRUE")] = "VLAX-TRUE"
 env[Sym(":VLAX-FALSE")] = "VLAX-FALSE"
 env[Sym("ACALLVIEWPORTS")] = 3
+_setvar = acad.setvar
+def setvar(v, val):
+    if v.upper() == "CLAYER":
+        d = acad.tables["LAYER"].get(str(val).upper())
+        if d is None or (grp(d, 70) or 0) & 1:
+            raise RuntimeError(f'AutoCAD variable setting rejected: "CLAYER" "{val}"')
+    return _setvar(v, val)
+M.funcs[Sym("SETVAR")] = setvar
 acad.vars["CMDACTIVE"] = 0
 
 M.load(os.path.join(ROOT, "TopoKit.lsp"))          # incarca si TopoKitProiect.lsp
@@ -225,7 +267,7 @@ out = "".join(acad.out)
 # DOAR straturile goale se sterg: C-TOPO-POINTS si C-ANNO direct, V-NODE (folosit de stiluri) cu LAYMRG
 for name in ("C-TOPO-POINTS", "V-NODE", "C-ANNO"):
     check(lay(name) is None, f"stratul gol {name} trebuia sters")
-check([c for c in COMMANDS if c[0] == "_.-LAYMRG"] == [["_.-LAYMRG", "_N", "V-NODE", "", "_N", "0", "_Y"]], COMMANDS)
+check(LAYMRG["runs"] == [["V-NODE"]], LAYMRG["runs"])        # un singur LAYMRG pentru toate straturile din sablon
 # straturile cu obiecte (in model, intr-un bloc, intr-un atribut) nu se ating deloc
 for name in ("Proprietari", "A-BLOC", "C-ATRIB"):
     check(lay(name) is not None and name.upper() not in DELETE_TRIED, f"stratul cu obiecte {name} nu se sterge")
@@ -297,6 +339,21 @@ check(P[("PointGroups[_All Points]", "PointLabelStyle")].path == lbl, "_All Poin
 check(P[("Doc.Settings.DrawingSettings.ObjectLayerSettings.PointEntityLayer", "Layer")] == "Puncte", "strat puncte")
 check(P[("Doc.Settings.DrawingSettings.ObjectLayerSettings.GeneralNoteLabelLayer", "Layer")] == "Caroiaj", "strat caroiaj")
 
+# eticheta de segment Distance Only: metri, 2 zecimale, " m", 0.75 m la 1:500, Bottom center, pe Dimensiuni
+seg = "LineStyles[Distance Only].TextComponents[Distance]"
+check(P[(seg + ".Contents", "Value")] == "<[General Segment Length(Um|P2|RN|AP|GC|UN|Sn|OF)]> m", "Distance Only")
+# "drag mode" oprit: la Distance Only si ca valoare implicita pentru stilurile noi din desen
+check(P[("LineStyles[Distance Only].DraggedLeaderStyle.Visibility", "Value")] == "VLAX-FALSE", "Distance Only fara leader")
+check(P[("LineStyles[Distance Only].DraggedComponentStyle.StackText", "Value")] == "VLAX-FALSE", "Distance Only as composed")
+dd = "Doc.Settings.DrawingSettings.LabelStyleDefaults"
+check(P[(dd + ".DraggedLeaderStyle.Visibility", "Value")] == "VLAX-FALSE"
+      and P[(dd + ".DraggedComponentStyle.StackText", "Value")] == "VLAX-FALSE", "implicit pentru stilurile noi")
+check(abs(P[(seg + ".Height", "Value")] - 0.00075) < 1e-12 and P[(seg + ".Attachment", "Value")] == 7, "marime, Bottom center")
+check(abs(P[(seg + ".YOffset", "Value")] - 0.000375) < 1e-12 and P[(seg + ".Color", "Value")] == 7, "gap, alb")
+check(P[("Doc.Settings.DrawingSettings.ObjectLayerSettings.GeneralSegmentLabelLayer", "Layer")] == "Dimensiuni", "strat cote")
+for k in ("AddSegmentLabelSettings", "AddSegmentLabelsSettings"):
+    check(P[(f"Doc.Settings.GeneralCommandsSettings.{k}.StyleSettings.LineLabelStyle", "Value")] == "Distance Only", k)
+
 # stilurile de caroiaj: N= orizontal, E= vertical, linii in L spre interior
 for k, (sx, sy, an, ae) in {"stanga sus": (1, -1, 0, 2), "dreapta sus": (-1, -1, 2, 8),
                              "stanga jos": (1, 1, 6, 0), "dreapta jos": (-1, 1, 8, 6)}.items():
@@ -328,6 +385,11 @@ for k in ("colt stanga sus", "colt dreapta jos"):
 check("Civil 3D: stilurile de caroiaj (General Note Label) sunt gata" in out, out[-900:])
 
 # ---------------------------------------------------------------- caroiajul (Civil 3D: General Note Label)
+# ca in desenul utilizatorului: stratul Caroiaj e inghetat si oprit, stratul curent e Puncte
+d = acad.tables["LAYER"]["CAROIAJ"]
+acad.tables["LAYER"]["CAROIAJ"] = [x for x in d if not (isinstance(x, DP) and x.car in (62, 70))] + [DP(70, 1), DP(62, -8)]
+acad.vars["CLAYER"] = "Puncte"
+acad.out.clear()
 COMMANDS.clear()
 acad.inputs += [("real", None), ("pt", [545010.0, 458010.0, 0.0]), ("pt", [545090.0, 458070.0, 0.0]), ("kw", None),
                 ("kw", None)]                         # cruciulite: Da; coordonate: implicit (Directie)
@@ -342,6 +404,13 @@ check(len(pts) == 4 + 2, pts)                        # noduri 3 x 2: interiorul 
 # cele 2 cruciulite sunt pe marginile de jos si de sus: arata E= (coordonata care se schimba pe margine)
 check(sorted(v for k, v in STYLE_LOG[4:]) == ["Caroiaj - cruciulita E", "Caroiaj - cruciulita E jos"], STYLE_LOG)
 check(fn("TKP:Get", "CRUCECOORD") == "Directie", "setarea se pastreaza")
+# stratul curent al utilizatorului nu se schimba; Caroiaj e dezghetat si pornit; etichetele trec pe Caroiaj
+check(acad.vars["CLAYER"] == "Puncte", acad.vars["CLAYER"])
+d = acad.tables["LAYER"]["CAROIAJ"]
+check((grp(d, 70) or 0) & 1 == 0 and grp(d, 62) == 8, d)
+check(any("Stratul Caroiaj era inghetat sau oprit" in o for o in acad.out), acad.out[-6:])
+labels = ents("AECC_GENERAL_NOTE_LABEL")
+check(len(labels) == 6 and all(grp(acad.db[e], 8) == "Caroiaj" for e in labels), [grp(acad.db[e], 8) for e in labels])
 
 # stilurile cruciulitelor cu coordonate: N= orizontal, E= vertical, ca la coltul din stanga jos
 cx = "NoteStyles[Caroiaj - cruciulita N E]"
@@ -401,8 +470,6 @@ check(sorted(g["Caroiaj - cruciulita N E jos"]) == [(x, 458100.0) for x in (5450
 check(sorted(g["Caroiaj - cruciulita N E stanga"]) == [(545100.0, y) for y in (458025.0, 458050.0, 458075.0)], "Ambele: coloana din dreapta")
 check(len(g["Caroiaj - cruciulita N E"]) == 15, "Ambele: restul spre dreapta-sus")
 check(fn("TKP:Get", "CRUCECOORD") == "Ambele", "setarea noua se pastreaza")
-acad.vars["CLAYER"] = "Caroiaj"
-check(acad.vars["CLAYER"] == "Caroiaj", "caroiajul pe stratul Caroiaj")
 
 # ---------------------------------------------------------------- TKSCARA: textele se redimensioneaza
 acad.add_text([545030.0, 458030.0], "Ion Popescu", 0.75, "Vecinătăți")
@@ -415,6 +482,7 @@ check(acad.vars["CANNOSCALE"] == "1:1000" and abs(acad.vars["LTSCALE"] - 2.0) < 
 # stilurile Civil 3D ale TopoKit au marimile noi (adnotarea ramane 1:1000)
 check(abs(P[(tc + ".Height", "Value")] - 0.0015) < 1e-12 and abs(P[(ps, "MarkerSize")] - 1.0) < 1e-12, "1:1000: text 1.5 m, punct 1 m")
 check(abs(P[("NoteStyles[Caroiaj - colt stanga jos].TextComponents[Nord].Height", "Value")] - 0.0015) < 1e-12, "caroiaj 1:1000")
+check(abs(P[("LineStyles[Distance Only].TextComponents[Distance].Height", "Value")] - 0.0015) < 1e-12, "cote 1:1000")
 check(abs(P[("NoteStyles[Caroiaj - cruciulita].LineComponents[Brat est].Length", "Value")] - 0.0025) < 1e-12, "cruciulita 1:1000")
 check(fn("TKP:Scara") == 1000 and fn("TKC:Cfg", "SCARA") == 1000.0, "scara noua salvata")
 acad.inputs += [("str", "300")]
@@ -423,6 +491,7 @@ check(fn("TKP:Scara") == 1000 and "Scara trebuie sa fie una din standard" in "".
 
 # ---------------------------------------------------------------- caroiajul fara Civil 3D (linii si texte)
 civil[0] = False
+env[Sym("*TKP:C3DAPP*")] = None                     # legatura Civil 3D se cauta din nou (AutoCAD simplu)
 acad.inputs += [("real", 30.0), ("pt", [545000.0, 458000.0, 0.0]), ("pt", [545210.0, 458160.0, 0.0]), ("kw", "Nu")]
 n_txt0 = len(ents("TEXT", "Caroiaj"))
 n0 = len(ents("LINE", "Caroiaj"))

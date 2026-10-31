@@ -27,7 +27,7 @@
 #include "ui.h"
 
 #ifndef TK_VERSION
-#define TK_VERSION "1.5.1"
+#define TK_VERSION "1.6.0"
 #endif
 #define UI_CLASS L"TopoKitMainWnd"
 #define W_DIP 1000

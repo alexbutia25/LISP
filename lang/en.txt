@@ -748,3 +748,8 @@ Directie	Direction	call:tkp:kwname
 Est	East	call:tkp:kwname
 Nord	North	call:tkp:kwname
 Ambele	Both	call:tkp:kwname
+Civil 3D: eticheta Distance Only: metri, 2 zecimale, pe stratul Dimensiuni.	Civil 3D: Distance Only label: meters, 2 decimals, on layer Dimensiuni.
+Civil 3D: eticheta Distance Only nu a putut fi configurata.	Civil 3D: the Distance Only label could not be configured.
+Stratul Caroiaj era inghetat sau oprit: l-am facut vizibil.	Layer Caroiaj was frozen or off: it is now visible.
+Civil 3D: etichetele mutate raman ca la origine (fara leader, fara text stivuit).	Civil 3D: moved labels stay as composed (no leader, no stacked text).
+Civil 3D: modul de mutare a etichetelor nu a putut fi schimbat.	Civil 3D: the label drag mode could not be changed.

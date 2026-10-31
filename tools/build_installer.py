@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Construieste instalatorul Windows TopoKitSetup.exe.
 
-    python3 tools/build_installer.py [--version 1.5.1] [--out dist]
+    python3 tools/build_installer.py [--version 1.6.0] [--out dist]
 
 Necesita (Linux: apt install nsis mingw-w64; Windows: NSIS 3 + MinGW-w64 in PATH):
     makensis, x86_64-w64-mingw32-gcc, x86_64-w64-mingw32-windres

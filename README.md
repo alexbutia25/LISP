@@ -90,7 +90,7 @@ reîncarcă imediat în desenul curent; celelalte desene deschise trec la prima 
 
 ### Cu instalatorul (recomandat)
 
-1. Descărcați și rulați **[`dist/TopoKitSetup-1.5.1.exe`](dist/TopoKitSetup-1.5.1.exe)** (TopoKit 1.5.1). Nu sunt necesare drepturi
+1. Descărcați și rulați **[`dist/TopoKitSetup-1.6.0.exe`](dist/TopoKitSetup-1.6.0.exe)** (TopoKit 1.6.0). Nu sunt necesare drepturi
    de administrator; instalarea se face pentru utilizatorul curent.
 2. Alegeți opțiunile: scurtătură pe desktop și pornirea în fundal odată cu Windows (ambele bifate implicit).
 3. Deschideți **TopoKit** din meniul Start sau de pe desktop. Atât.
@@ -156,7 +156,7 @@ Ce face instalarea:
     o anulează prin fereastra AutoCAD (WM_COPYDATA) înainte de a trimite modulul.
 - **Dezinstalare:** *Setări → Aplicații → TopoKit* sau meniul Start → *Dezinstalare TopoKit*. Se șterg
   pachetul AutoCAD, lansatorul și setările din registru.
-- **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup-1.5.1.exe /S`; dezinstalare:
+- **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup-1.6.0.exe /S`; dezinstalare:
   `"%LOCALAPPDATA%\Programs\TopoKit\Uninstall.exe" /S`.
 
 Windows SmartScreen poate afișa *„Windows a protejat computerul”*, pentru că instalatorul nu este
@@ -596,9 +596,9 @@ ce se configurează:
 
 - **Se șterg doar straturile goale**, adică cele implicite din șablonul Civil 3D. Un strat cu orice obiect
   (în model, în layout-uri, în definițiile blocurilor sau în atributele lor) nu se atinge. Straturile goale
-  din șablon pe care stilurile Civil 3D încă le folosesc (C-…, V-…, A-…) se șterg cu `LAYMRG` spre stratul 0,
-  deci stilurile trec pe 0. Într-un desen nou din șablonul Civil 3D (metric NCS) dispar toate cele 200 de
-  straturi goale.
+  din șablon pe care stilurile Civil 3D încă le folosesc (C-…, V-…, A-…) se mută pe stratul 0 cu un singur
+  `LAYMRG` pentru toate (în grupuri de 60), deci stilurile trec pe 0. Într-un desen nou din șablonul Civil 3D
+  (metric NCS) dispar toate cele 200 de straturi goale.
 - **Straturile standard**, cu culoarea și grosimea din standard:
 
   | Strat | Culoare | Grosime |
@@ -626,6 +626,10 @@ ce se configurează:
   - eticheta **Point Description** arată descrierea: Arial, 0.75 m la 1:500, albă, Anchor și Attachment *Middle left*,
     gap jumătate din înălțimea textului. Când o muți, rămâne *as composed*, fără leader;
   - punctele noi și grupul *_All Points* folosesc aceste stiluri, pe stratul Puncte;
+  - eticheta de segment **Distance Only** (General Segment Label) arată lungimea în metri cu 2 zecimale și
+    sufixul „ m” (`<[General Segment Length(Um|P2|…)]> m`), Arial alb, 0.75 m la 1:500 (redimensionată de
+    `TKSCARA`), *Bottom center*, gap jumătate din text. Etichetele de segment noi folosesc acest stil și
+    stau pe stratul **Dimensiuni** (nu pe C-ANNO);
   - Drawing Settings: metri; distanțe cu 2 zecimale; coordonate și cote cu 3; suprafețe în mp cu 2;
     unghiuri și direcții (azimut de la nord) în unitatea aleasă;
   - stilurile de caroiaj (vezi mai jos).
@@ -648,7 +652,8 @@ Mărimile din standard, în metri în desen (scara de adnotare rămâne 1:1000):
   micșorate intenționat rămân proporționale.
 
 **`TKCAROIAJ`** cere distanța dintre cruciulițe (Enter = cea din standard, de ex. 25 m la 1:500; se
-poate scrie oricare alta), apoi zona planului, și pune caroiajul pe stratul Caroiaj:
+poate scrie oricare alta), apoi zona planului, și pune caroiajul pe stratul Caroiaj. Stratul curent nu se
+schimbă; dacă stratul Caroiaj e înghețat sau oprit, comanda îl face vizibil și anunță:
 
 - **La colțuri** sunt linii în L de 13 mm, cu `N=` scris orizontal pe linia orizontală și `E=` scris vertical
   lângă linia verticală, ca în stilurile de caroiaj folosite până acum. Se văd doar coordonatele și liniile.

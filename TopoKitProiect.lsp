@@ -65,6 +65,9 @@
              (cons (list -1 -1) "Caroiaj - cruciulita N E stanga jos")))
 (setq *TKP:STCOLT* '(("SS" . "Caroiaj - colt stanga sus") ("SD" . "Caroiaj - colt dreapta sus")
                      ("JS" . "Caroiaj - colt stanga jos") ("JD" . "Caroiaj - colt dreapta jos")))
+;; Eticheta de segment (cote): stilul si continutul (metri, 2 zecimale, " m")
+(setq *TKP:STSEG* "Distance Only"
+      *TKP:FSEG* "<[General Segment Length(Um|P2|RN|AP|GC|UN|Sn|OF)]> m")
 ;; Formatul coordonatelor (ca in stilurile de caroiaj existente: metri, fara zecimale)
 (setq *TKP:FN* "<[Northing(Um|P0|RN|AP|GC|UN|Sn|OF)]>"
       *TKP:FE* "<[Easting(Um|P0|RN|AP|GC|UN|Sn|OF)]>")
@@ -89,6 +92,31 @@
     (while (setq i (vl-string-search "\\U+" s))
       (setq s (strcat (substr s 1 i) (chr (TKP:Hex (substr s (+ i 4) 4))) (substr s (+ i 8))))))
   s)
+
+;; TKP:ShowLayer - stratul NAME dezghetat si pornit (intoarce T daca a trebuit schimbat)
+(defun TKP:ShowLayer (name / e d fl col ch)
+  (if (and (setq e (tblobjname "LAYER" name)) (setq d (entget e)))
+    (progn
+      (setq fl (cond ((cdr (assoc 70 d))) (0)) col (cond ((cdr (assoc 62 d))) (7)))
+      (if (= 1 (logand 1 fl)) (setq d (subst (cons 70 (- fl 1)) (assoc 70 d) d) ch T))
+      (if (minusp col) (setq d (subst (cons 62 (abs col)) (assoc 62 d) d) ch T))
+      (if ch (entmod d))
+      ch)))
+
+;; TKP:SetClayer - stratul curent NAME, fara eroare daca AutoCAD il refuza (de ex. inghetat)
+(defun TKP:SetClayer (name)
+  (and (tblsearch "LAYER" name)
+       (not (vl-catch-all-error-p (vl-catch-all-apply 'setvar (list "CLAYER" name))))))
+
+;; TKP:ToLayer - obiectele create dupa E0 (entlast de dinainte) trec pe stratul LAY
+(defun TKP:ToLayer (e0 lay / e n)
+  (setq e (if e0 (entnext e0) (entnext)) n 0)
+  (while e
+    (if (not (vl-catch-all-error-p
+               (vl-catch-all-apply 'vla-put-layer (list (vlax-ename->vla-object e) lay))))
+      (setq n (1+ n)))
+    (setq e (entnext e)))
+  n)
 
 ;; TKP:Num - numar fara zerouri inutile
 (defun TKP:Num (v / r)
@@ -187,9 +215,9 @@
 ;; Cele goale dar folosite de stilurile Civil 3D (C-..., V-..., A-... din sablon) se
 ;; sterg cu LAYMRG spre stratul 0; straturile cu obiecte nu se ating niciodata.
 ;; Intoarce (sterse ramase-goale)
-(defun TKP:Purge (/ keep used lays n name r left)
+(defun TKP:Purge (/ keep used lays n name r left batch)
   (setq keep (TKP:KeepIds) n 0)
-  (setvar "CLAYER" "0")
+  (TKP:SetClayer "0")
   (setq used (TKP:UsedLayers)
         lays (vla-get-layers (vla-get-activedocument (vlax-get-acad-object))))
   (vlax-for l lays
@@ -197,11 +225,30 @@
     (if (and (not (member (vlax-vla-object->ename l) keep)) (not (member (strcase name) used))
              (not (vl-string-search "|" name)))
       (setq r (cons (cons name l) r))))
+  ;; intai stergerea directa (rapida); cele folosite de stilurile Civil 3D (C-..., V-..., A-...) se
+  ;; aduna si se muta toate pe stratul 0 cu UN singur LAYMRG (inainte: o comanda pe strat, ~30 s)
   (foreach p r
     (cond ((not (vl-catch-all-error-p (vl-catch-all-apply 'vla-delete (list (cdr p))))) (setq n (1+ n)))
-          ((and (wcmatch (strcase (car p)) "?-*") (TKP:Merge (car p))) (setq n (1+ n)))
+          ((wcmatch (strcase (car p)) "?-*") (setq batch (cons (car p) batch)))
+          (T (setq left (1+ (cond (left) (0)))))))
+  (if batch (TKP:MergeAll batch))
+  ;; ce n-a mers in grup se incearca unul cate unul
+  (foreach name batch
+    (cond ((not (tblsearch "LAYER" name)) (setq n (1+ n)))
+          ((TKP:Merge name) (setq n (1+ n)))
           (T (setq left (1+ (cond (left) (0)))))))
   (list n (cond (left) (0))))
+
+;; TKP:MergeAll - LAYMRG cu mai multe straturi deodata (nume fara spatii si separatori), in grupuri
+(defun TKP:MergeAll (names / grp i)
+  (setq names (vl-remove-if '(lambda (x) (wcmatch x "*[ ,;]*")) names))
+  (while names
+    (setq grp nil i 0)
+    (while (and names (< i 60)) (setq grp (cons (car names) grp) names (cdr names) i (1+ i)))
+    (command "_.-LAYMRG")
+    (foreach name grp (command "_N" name))
+    (command "" "_N" "0" "_Y")
+    (if (> (getvar "CMDACTIVE") 0) (command))))
 
 ;; TKP:Arial - fontul Arial in toate stilurile de text (inclusiv cele folosite de
 ;; etichetele Civil 3D); stilurile de forme (simbolurile tipurilor de linie) raman
@@ -212,7 +259,6 @@
              (not (vl-catch-all-error-p (vl-catch-all-apply 'vla-setfont (list s "Arial" :vlax-false :vlax-false 0 34)))))
       (setq n (1+ n))))
   (TK:Style)
-  (vl-catch-all-apply 'vla-regen (list doc acAllViewports))
   n)
 
 ;; TKP:Units - metri, coordonate cu 3 zecimale, unghiuri in grade centesimale (G)
@@ -289,14 +335,18 @@
 
 ;; TKP:C3d - documentul Civil 3D activ (nil in AutoCAD simplu)
 (defun TKP:C3d (/ app r)
-  (foreach v '("13.8" "13.9" "13.10" "13.11" "13.7" "13.6" "13.5" "13.4" "13.3")
-    (if (and (not app)
-             (not (vl-catch-all-error-p
-                    (setq r (vl-catch-all-apply 'vla-getinterfaceobject
-                              (list (vlax-get-acad-object) (strcat "AeccXUiLand.AeccApplication." v)))))))
-      (setq app r)))
-  (if app
-    (if (not (vl-catch-all-error-p (setq r (vl-catch-all-apply 'vlax-get (list app 'ActiveDocument))))) r)))
+  ;; aplicatia Civil 3D se cauta o singura data pe sesiune ("NONE" = AutoCAD fara Civil 3D)
+  (if (null *TKP:C3DAPP*)
+    (progn
+      (foreach v '("13.8" "13.9" "13.10" "13.11" "13.7" "13.6" "13.5" "13.4" "13.3")
+        (if (and (not app)
+                 (not (vl-catch-all-error-p
+                        (setq r (vl-catch-all-apply 'vla-getinterfaceobject
+                                  (list (vlax-get-acad-object) (strcat "AeccXUiLand.AeccApplication." v)))))))
+          (setq app r)))
+      (setq *TKP:C3DAPP* (if app app "NONE"))))
+  (if (/= *TKP:C3DAPP* "NONE")
+    (if (not (vl-catch-all-error-p (setq r (vl-catch-all-apply 'vlax-get (list *TKP:C3DAPP* 'ActiveDocument))))) r)))
 
 ;; TKP:G - proprietatea P a obiectului O, sau un drum de proprietati '(A B C) (nil la eroare)
 (defun TKP:G (o p / r)
@@ -365,6 +415,13 @@
   (TKP:V (TKP:G st 'DraggedComponentStyle) 'StackText :vlax-false)
   (TKP:V (TKP:G st 'DraggedLeaderStyle) 'Visibility :vlax-false))
 
+;; TKP:DragDefaults - "drag mode" oprit pentru stilurile de eticheta noi din desen: o eticheta mutata
+;; ramane "as composed", fara leader (stilurile TopoKit primesc acelasi lucru prin TKP:Label)
+(defun TKP:DragDefaults (cdoc / d)
+  (setq d (TKP:G cdoc '(Settings DrawingSettings LabelStyleDefaults)))
+  (and (TKP:V (TKP:G d 'DraggedComponentStyle) 'StackText :vlax-false)
+       (TKP:V (TKP:G d 'DraggedLeaderStyle) 'Visibility :vlax-false)))
+
 ;; TKP:Hide - ascunde componentele de text pe care nu le-a facut TopoKit (ex. "Note")
 (defun TKP:Hide (st keep)
   (vlax-for c (TKP:G st 'TextComponents)
@@ -398,6 +455,36 @@
   (TKP:P (TKP:G cdoc '(Settings DrawingSettings ObjectLayerSettings PointEntityLayer)) 'Layer "Puncte")
   (TKP:P (TKP:G cdoc '(Settings DrawingSettings ObjectLayerSettings GeneralNoteLabelLayer)) 'Layer "Caroiaj")
   (and ps st))
+
+;; TKP:LineStyles - eticheta de segment (General Segment Label) "Distance Only": lungimea in metri cu
+;; 2 zecimale si sufixul " m", Arial alb, marimea textelor din standard (Dimensiuni: 0.75 m la 1:500),
+;; Bottom center, gap jumatate din text; etichetele noi folosesc acest stil si stau pe stratul Dimensiuni
+(defun TKP:LineStyles (cdoc sc / r st h n)
+  (setq h (TKP:Pm *TKP:TXT* sc) n 0)
+  (if (setq r (TKP:Item (TKP:G cdoc 'GeneralLineLabelStyles) *TKP:STSEG*))
+    (progn
+      (setq st (car r))
+      (TKP:Label st T)
+      ;; componentele existente cu lungimea segmentului (stilul din sablon) sau una noua
+      (vlax-for c (TKP:G st 'TextComponents)
+        (if (wcmatch (strcase (vl-princ-to-string (TKP:G (TKP:G c 'Contents) 'Value))) "*SEGMENT LENGTH*")
+          (progn (TKP:SegText c h) (setq n (1+ n)))))
+      (if (= n 0)
+        (TKP:SegText (car (TKP:Item (TKP:G st 'TextComponents) "Distanta")) h))))
+  (foreach s '(AddSegmentLabelSettings AddSegmentLabelsSettings)
+    (TKP:V (TKP:G cdoc (list 'Settings 'GeneralCommandsSettings s 'StyleSettings)) 'LineLabelStyle *TKP:STSEG*))
+  (TKP:P (TKP:G cdoc '(Settings DrawingSettings ObjectLayerSettings GeneralSegmentLabelLayer)) 'Layer "Dimensiuni")
+  st)
+
+(defun TKP:SegText (c h)
+  (if c
+    (progn
+      (TKP:V c 'Contents *TKP:FSEG*)
+      (TKP:V c 'Height h)
+      (TKP:V c 'Color 7)
+      (TKP:V c 'Attachment 7)            ; Bottom center
+      (TKP:V c 'YOffset (* 0.5 h))       ; gap = jumatate din inaltimea textului
+      (TKP:V c 'Visibility :vlax-true))))
 
 ;; TKP:Ambient - unitatile Civil 3D: metri, distante cu 2 zecimale, coordonate si cote
 ;; cu 3, suprafete in mp cu 2, unghiuri si directii (azimut) in grade centesimale / sexagesimale
@@ -470,9 +557,15 @@
       (setq out (list (if (TKP:Ambient cdoc ang)
                           "Civil 3D: unitati in metri, distante, unghiuri si directii setate."
                           "Civil 3D: setarile de unitati nu au putut fi schimbate.")
+                      (if (TKP:DragDefaults cdoc)
+                          "Civil 3D: etichetele mutate raman ca la origine (fara leader, fara text stivuit)."
+                          "Civil 3D: modul de mutare a etichetelor nu a putut fi schimbat.")
                       (if (TKP:PointStyles cdoc sc)
                           "Civil 3D: punctele pe stilul Basic (AutoCAD POINT, alb) cu eticheta Point Description."
                           "Civil 3D: stilurile de punct nu au putut fi configurate complet.")
+                      (if (TKP:LineStyles cdoc sc)
+                          "Civil 3D: eticheta Distance Only: metri, 2 zecimale, pe stratul Dimensiuni."
+                          "Civil 3D: eticheta Distance Only nu a putut fi configurata.")
                       (if (TKP:GridStyles cdoc sc)
                           "Civil 3D: stilurile de caroiaj (General Note Label) sunt gata; caroiajul: TKCAROIAJ."
                           "Civil 3D: stilurile de caroiaj nu au putut fi create.")))
@@ -553,7 +646,9 @@
                   out))
   (if (= (cdr (assoc "C3D" cfg)) "1")
     (setq out (append (reverse (TKP:Civil ang sc)) out)))
-  (if (tblsearch "LAYER" "Puncte") (setvar "CLAYER" "Puncte"))
+  (TKP:SetClayer "Puncte")
+  (if (/= (cdr (assoc "C3D" cfg)) "1")                ; in Civil 3D regenerarea o face TKP:Civil
+    (vl-catch-all-apply 'vla-regen (list (vla-get-activedocument (vlax-get-acad-object)) acAllViewports)))
   (reverse out))
 
 (defun TKP:CmdProiect (/ cfg)
@@ -580,6 +675,7 @@
   (if (setq cdoc (TKP:C3d))
     (progn
       (TKP:PointStyles cdoc sc)
+      (TKP:LineStyles cdoc sc)
       (if (TKP:Find (TKP:G cdoc 'GeneralNoteLabelStyles) *TKP:STCRUCE*) (TKP:GridStyles cdoc sc))
       (vl-catch-all-apply 'vlax-invoke (list cdoc 'Regen acAllViewports)))))
 
@@ -670,9 +766,11 @@
       n)
     0))
 
-(defun TKP:CmdCaroiaj (/ sc pas k p1 p2 xs ys corners inner cdoc kw n d mode def groups key)
+(defun TKP:CmdCaroiaj (/ sc pas k p1 p2 xs ys corners inner cdoc kw n d mode def groups key e0)
   (setq sc (TKP:Scara) pas (cdr (assoc sc *TKP:PAS*)) k (TKP:K sc))
   (TK:MakeLayer "Caroiaj" 8)
+  ;; caroiajul trebuie sa se vada: stratul Caroiaj inghetat sau oprit se dezgheata / porneste
+  (if (TKP:ShowLayer "Caroiaj") (TKP:Msg "Stratul Caroiaj era inghetat sau oprit: l-am facut vizibil."))
   (TKP:Msg (strcat "Caroiaj la scara 1:" (itoa sc) " (alta scara: TKSCARA)."))
   ;; distanta dintre cruciulite: implicit cea din standard, se poate scrie alta
   (initget 6)
@@ -720,12 +818,14 @@
           (setq cdoc (TKP:C3d) n 0)
           (if (and cdoc (TKP:GridStyles cdoc sc))
             (progn
-              (setvar "CLAYER" "Caroiaj")
+              ;; stratul curent ramane cel al utilizatorului; etichetele noi trec apoi pe Caroiaj
+              (setq e0 (entlast))
               (foreach c corners
                 (setq n (+ n (TKP:NoteLabels cdoc (cdr (assoc (car c) *TKP:STCOLT*)) (list (cdr c))))))
               (foreach g groups
                 (setq n (+ n (TKP:NoteLabels cdoc (if (car g) (cdr (assoc (car g) *TKP:STCRUCEX*)) *TKP:STCRUCE*)
                                              (reverse (cdr g))))))
+              (TKP:ToLayer e0 "Caroiaj")
               (TKP:Msg (strcat "Caroiaj Civil 3D: " (itoa n) " etichete (4 colturi, " (itoa (length inner))
                                " cruciulite). Cand muti o eticheta, coordonatele se actualizeaza singure.")))
             (progn

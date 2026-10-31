@@ -24,7 +24,7 @@
 (vl-load-com)
 
 ;; Versiunea TopoKit (aceeași cu installer/VERSION; verificată de teste)
-(setq *TK:VERSION* "1.5.0")
+(setq *TK:VERSION* "1.5.1")
 
 ;;; --------------------------------------------------------------------------
 ;;;  Setări globale implicite (păstrate pe durata sesiunii AutoCAD).

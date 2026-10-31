@@ -54,9 +54,15 @@
 
 ;; Stilurile Civil 3D create de TopoKit
 (setq *TKP:STPCT* "Basic" *TKP:STLBL* "Point Description" *TKP:STCRUCE* "Caroiaj - cruciulita")
-;; cruciulitele cu coordonate: N= orizontal, E= vertical sau ambele (ca la colturi)
-(setq *TKP:STCRUCEX* '(("N" . "Caroiaj - cruciulita N") ("E" . "Caroiaj - cruciulita E")
-                       ("NE" . "Caroiaj - cruciulita N E")))
+;; cruciulitele cu coordonate, in acelasi design ca liniile in L de la colturi: bratul cu text e lung
+;; (ca linia L), celelalte raman scurte; textul sta pe brat, spre interiorul caroiajului.
+;; Cheia (sens-N sens-E): N= pe bratul est (1) sau vest (-1); E= pe bratul nord (1) sau sud (-1); nil = fara
+(setq *TKP:STCRUCEX*
+       (list (cons (list 1 nil) "Caroiaj - cruciulita N") (cons (list -1 nil) "Caroiaj - cruciulita N stanga")
+             (cons (list nil 1) "Caroiaj - cruciulita E") (cons (list nil -1) "Caroiaj - cruciulita E jos")
+             (cons (list 1 1) "Caroiaj - cruciulita N E") (cons (list -1 1) "Caroiaj - cruciulita N E stanga")
+             (cons (list 1 -1) "Caroiaj - cruciulita N E jos")
+             (cons (list -1 -1) "Caroiaj - cruciulita N E stanga jos")))
 (setq *TKP:STCOLT* '(("SS" . "Caroiaj - colt stanga sus") ("SD" . "Caroiaj - colt dreapta sus")
                      ("JS" . "Caroiaj - colt stanga jos") ("JD" . "Caroiaj - colt dreapta jos")))
 ;; Formatul coordonatelor (ca in stilurile de caroiaj existente: metri, fara zecimale)
@@ -433,21 +439,29 @@
         (TKP:Line st "Linie verticala" (if (> sy 0) (/ pi 2.0) (* 1.5 pi)) L 7)
         ;; textul implicit "Note" al unui stil nou nu se vede: doar coordonatele si liniile
         (TKP:Hide st '("Nord" "Est")))))
-  ;; cruciulitele: simpla, cu N=, cu E=, cu ambele (textele ca la coltul din stanga jos)
-  (foreach cs (list (list *TKP:STCRUCE* nil nil) (list (cdr (assoc "N" *TKP:STCRUCEX*)) T nil)
-                    (list (cdr (assoc "E" *TKP:STCRUCEX*)) nil T) (list (cdr (assoc "NE" *TKP:STCRUCEX*)) T T))
-    (if (setq r (TKP:Item coll (car cs)))
-      (progn
-        (setq st (car r))
-        (TKP:Label st nil)
-        (TKP:Line st "Brat est" 0.0 c 7)
-        (TKP:Line st "Brat nord" (/ pi 2.0) c 7)
-        (TKP:Line st "Brat vest" pi c 7)
-        (TKP:Line st "Brat sud" (* 1.5 pi) c 7)
-        (if (cadr cs) (TKP:Text st "Nord" (strcat "N=" *TKP:FN*) h 7 4 6 ga gp 0.0))
-        (if (caddr cs) (TKP:Text st "Est" (strcat "E=" *TKP:FE*) h 7 4 0 gp ga (/ pi 2.0)))
-        (TKP:Hide st (append (if (cadr cs) '("Nord")) (if (caddr cs) '("Est")))))))
+  ;; cruciulitele: simpla si cele cu coordonate (TKP:CrossStyle)
+  (foreach cs (cons (cons (list nil nil) *TKP:STCRUCE*) *TKP:STCRUCEX*)
+    (if (setq r (TKP:Item coll (cdr cs)))
+      (TKP:CrossStyle (car r) (car (car cs)) (cadr (car cs)) h ga gp L c)))
   (TKP:Find coll *TKP:STCRUCE*))
+
+;; TKP:AttN / TKP:AttE - atasarea textelor N= / E= pentru sensurile SX, SY (ca la colturi)
+(defun TKP:AttN (sx sy) (if (> sy 0) (if (> sx 0) 6 8) (if (> sx 0) 0 2)))
+(defun TKP:AttE (sx sy) (if (> sx 0) (if (> sy 0) 0 2) (if (> sy 0) 6 8)))
+
+;; TKP:CrossStyle - cruciulita: patru brate; bratul cu N= (spre NSX) si cel cu E= (spre ESY) au lungimea
+;; liniilor L de la colturi, cu textul pe ele; celelalte brate sunt scurte. Cu N= si E= e exact un colt L
+;; plus cele doua brate scurte.
+(defun TKP:CrossStyle (st nsx esy h ga gp L c / sx sy)
+  (setq sx (if nsx nsx 1) sy (if esy esy 1))
+  (TKP:Label st nil)
+  (TKP:Line st "Brat est" 0.0 (if (and nsx (> nsx 0)) L c) 7)
+  (TKP:Line st "Brat vest" pi (if (and nsx (< nsx 0)) L c) 7)
+  (TKP:Line st "Brat nord" (/ pi 2.0) (if (and esy (> esy 0)) L c) 7)
+  (TKP:Line st "Brat sud" (* 1.5 pi) (if (and esy (< esy 0)) L c) 7)
+  (if nsx (TKP:Text st "Nord" (strcat "N=" *TKP:FN*) h 7 4 (TKP:AttN sx sy) (* sx ga) (* sy gp) 0.0))
+  (if esy (TKP:Text st "Est" (strcat "E=" *TKP:FE*) h 7 4 (TKP:AttE sx sy) (* sx gp) (* sy ga) (/ pi 2.0)))
+  (TKP:Hide st (append (if nsx '("Nord")) (if esy '("Est")))))
 
 ;; TKP:Civil - toata configurarea Civil 3D; intoarce lista mesajelor
 (defun TKP:Civil (ang sc / cdoc out)
@@ -612,24 +626,33 @@
   (TKP:Txt e (list (+ (car p) (* sx gp)) (+ (cadr p) (* sy ga))) h (/ pi 2.0)
            (strcat (if (> sx 0) "T" "B") (if (> sy 0) "L" "R")) "Caroiaj"))
 
-(defun TKP:DrawCross (p k key / c h ga gp)
-  (setq c (* *TKP:CRUCE* k) h (* *TKP:TXT* k) ga (* 1.5 h) gp (* 0.2 h))
-  (TK:Line (list (- (car p) c) (cadr p)) (list (+ (car p) c) (cadr p)) "Caroiaj" nil)
-  (TK:Line (list (car p) (- (cadr p) c)) (list (car p) (+ (cadr p) c)) "Caroiaj" nil)
-  (if (member key '("N" "NE"))
-    (TKP:Txt (strcat "N=" (rtos (cadr p) 2 0)) (list (+ (car p) ga) (+ (cadr p) gp)) h 0.0 "BL" "Caroiaj"))
-  (if (member key '("E" "NE"))
-    (TKP:Txt (strcat "E=" (rtos (car p) 2 0)) (list (+ (car p) gp) (+ (cadr p) ga)) h (/ pi 2.0) "TL" "Caroiaj")))
+;; TKP:DrawCross - cruciulita desenata cu linii si texte (fara Civil 3D), ca TKP:CrossStyle
+(defun TKP:DrawCross (p k key / c h ga gp L nsx esy sx sy x y)
+  (setq c (* *TKP:CRUCE* k) h (* *TKP:TXT* k) ga (* 1.5 h) gp (* 0.2 h) L (* *TKP:LIN* k)
+        nsx (car key) esy (cadr key) sx (if nsx nsx 1) sy (if esy esy 1) x (car p) y (cadr p))
+  (TK:Line (list (- x (if (and nsx (< nsx 0)) L c)) y) (list (+ x (if (and nsx (> nsx 0)) L c)) y) "Caroiaj" nil)
+  (TK:Line (list x (- y (if (and esy (< esy 0)) L c))) (list x (+ y (if (and esy (> esy 0)) L c))) "Caroiaj" nil)
+  (if nsx
+    (TKP:Txt (strcat "N=" (rtos y 2 0)) (list (+ x (* sx ga)) (+ y (* sy gp))) h 0.0
+             (strcat (if (> sy 0) "B" "T") (if (> sx 0) "L" "R")) "Caroiaj"))
+  (if esy
+    (TKP:Txt (strcat "E=" (rtos x 2 0)) (list (+ x (* sx gp)) (+ y (* sy ga))) h (/ pi 2.0)
+             (strcat (if (> sx 0) "T" "B") (if (> sy 0) "L" "R")) "Caroiaj")))
 
-;; TKP:CrossKey - ce coordonate arata cruciulita P: nil, "N", "E" sau "NE". Cu MODE "Directie" se
-;; scrie coordonata care se schimba pe directia marginii: E= sus si jos, N= stanga si dreapta
-(defun TKP:CrossKey (p mode xs ys)
-  (cond ((= mode "Est") "E")
-        ((= mode "Nord") "N")
-        ((= mode "Ambele") "NE")
+;; TKP:CrossKey - cheia stilului cruciulitei P (vezi *TKP:STCRUCEX*) sau nil (simpla). Textele merg spre
+;; interiorul caroiajului: pe randul de sus E= pe bratul de jos, pe coloana din dreapta N= pe bratul din
+;; stanga. Cu MODE "Directie" se scrie coordonata care se schimba pe directia marginii: E= sus si jos,
+;; N= stanga si dreapta; cruciulitele din interior raman simple.
+(defun TKP:CrossKey (p mode xs ys / top bot lft rgt sx sy)
+  (setq bot (equal (cadr p) (car ys) 1e-6) top (equal (cadr p) (last ys) 1e-6)
+        lft (equal (car p) (car xs) 1e-6) rgt (equal (car p) (last xs) 1e-6)
+        sx (if rgt -1 1) sy (if top -1 1))
+  (cond ((= mode "Est") (list nil sy))
+        ((= mode "Nord") (list sx nil))
+        ((= mode "Ambele") (list sx sy))
         ((/= mode "Directie") nil)
-        ((member (cadr p) (list (car ys) (last ys))) "E")
-        ((member (car p) (list (car xs) (last xs))) "N")))
+        ((or bot top) (list nil sy))
+        ((or lft rgt) (list sx nil))))
 
 ;; TKP:KwName - numele afisat al unei optiuni (in engleza se traduce)
 (defun TKP:KwName (s) s)
@@ -688,7 +711,7 @@
                                                   ">: ")))
                                (def)))
               (TKP:Put "CRUCECOORD" mode)
-              ;; cruciulitele grupate dupa stil: nil (simpla), "N", "E", "NE"
+              ;; cruciulitele grupate dupa stil: nil (simpla) sau cheia din *TKP:STCRUCEX*
               (foreach p inner
                 (setq key (TKP:CrossKey p mode xs ys))
                 (if (assoc key groups)

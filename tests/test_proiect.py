@@ -333,15 +333,14 @@ acad.inputs += [("real", None), ("pt", [545010.0, 458010.0, 0.0]), ("pt", [54509
                 ("kw", None)]                         # cruciulite: Da; coordonate: implicit (Directie)
 fn("c:TKCAROIAJ")
 notes = [c for c in COMMANDS if c and c[0] == "_.AeccAddNoteLabel"]
-check(len(notes) == 5, COMMANDS)                     # 4 colturi + cruciulitele
+check(len(notes) == 6, COMMANDS)                     # 4 colturi + cruciulita de jos (E sus) + cea de sus (E jos)
 pts = [c[1] for c in COMMANDS if len(c) == 2 and c[0] == "_non"]
 corners = pts[:4]
 check(corners == [[545025.0, 458025.0, 0.0], [545075.0, 458025.0, 0.0], [545025.0, 458050.0, 0.0],
                   [545075.0, 458050.0, 0.0]], corners)
 check(len(pts) == 4 + 2, pts)                        # noduri 3 x 2: interiorul are 2 cruciulite
 # cele 2 cruciulite sunt pe marginile de jos si de sus: arata E= (coordonata care se schimba pe margine)
-check(P[("Doc.Settings.GeneralCommandsSettings.AddNoteLabelSettings.StyleSettings.NoteLabelStyle", "Value")]
-      == "Caroiaj - cruciulita E", "cruciulitele de pe margini cu E=")
+check(sorted(v for k, v in STYLE_LOG[4:]) == ["Caroiaj - cruciulita E", "Caroiaj - cruciulita E jos"], STYLE_LOG)
 check(fn("TKP:Get", "CRUCECOORD") == "Directie", "setarea se pastreaza")
 
 # stilurile cruciulitelor cu coordonate: N= orizontal, E= vertical, ca la coltul din stanga jos
@@ -351,6 +350,21 @@ check(abs(P[(cx + ".TextComponents[Est].Angle", "Value")] - math.pi / 2) < 1e-12
 check(P[(cx + ".TextComponents[Nord].Attachment", "Value")] == 6 and P[(cx + ".TextComponents[Est].Attachment", "Value")] == 0, "atasare")
 check(("NoteStyles[Caroiaj - cruciulita N].TextComponents[Est].Contents", "Value") not in P, "stilul N nu are E=")
 check(P[("NoteStyles[Caroiaj - cruciulita E].TextComponents[Est].Visibility", "Value")] == "VLAX-TRUE", "stilul E")
+# design ca la colturi (scara 1:500): bratul cu text = linia L (6.5 mm), celelalte brate scurte (1.25 mm)
+def arm(style, a): return P[(f"NoteStyles[{style}].LineComponents[Brat {a}].Length", "Value")]
+for style, longs in (("Caroiaj - cruciulita E", {"nord"}), ("Caroiaj - cruciulita E jos", {"sud"}),
+                     ("Caroiaj - cruciulita N", {"est"}), ("Caroiaj - cruciulita N stanga", {"vest"}),
+                     ("Caroiaj - cruciulita N E", {"est", "nord"}), ("Caroiaj - cruciulita N E stanga jos", {"vest", "sud"}),
+                     ("Caroiaj - cruciulita", set())):
+    for a in ("est", "vest", "nord", "sud"):
+        check(abs(arm(style, a) - (0.0065 if a in longs else 0.00125)) < 1e-12, (style, a, arm(style, a)))
+# textul pe bratul lung, spre interior (atasare ca la colturi)
+ej = "NoteStyles[Caroiaj - cruciulita E jos].TextComponents[Est]"
+check(P[(ej + ".Attachment", "Value")] == 2 and P[(ej + ".YOffset", "Value")] < 0, "E jos: text pe bratul de jos")
+ns = "NoteStyles[Caroiaj - cruciulita N stanga].TextComponents[Nord]"
+check(P[(ns + ".Attachment", "Value")] == 8 and P[(ns + ".XOffset", "Value")] < 0, "N stanga: text pe bratul din stanga")
+nesj = "NoteStyles[Caroiaj - cruciulita N E stanga jos].TextComponents"
+check(P[(nesj + "[Nord].Attachment", "Value")] == 2 and P[(nesj + "[Est].Attachment", "Value")] == 8, "N E stanga jos = colt SD")
 
 # Directie pe o retea 5 x 5: sus/jos E=, stanga/dreapta N=, interiorul simplu
 def note_groups():
@@ -368,16 +382,24 @@ acad.inputs += [("real", None), ("pt", [545000.0, 458000.0, 0.0]), ("pt", [54510
 fn("c:TKCAROIAJ")
 g = {st: pts for st, pts in note_groups()}
 check(sorted(g) == ["Caroiaj - colt dreapta jos", "Caroiaj - colt dreapta sus", "Caroiaj - colt stanga jos",
-                    "Caroiaj - colt stanga sus", "Caroiaj - cruciulita", "Caroiaj - cruciulita E", "Caroiaj - cruciulita N"], sorted(g))
-check(sorted(g["Caroiaj - cruciulita E"]) == sorted([(x, y) for x in (545025.0, 545050.0, 545075.0) for y in (458000.0, 458100.0)]), "E= sus/jos")
-check(sorted(g["Caroiaj - cruciulita N"]) == sorted([(x, y) for x in (545000.0, 545100.0) for y in (458025.0, 458050.0, 458075.0)]), "N= stanga/dreapta")
+                    "Caroiaj - colt stanga sus", "Caroiaj - cruciulita", "Caroiaj - cruciulita E", "Caroiaj - cruciulita E jos",
+                    "Caroiaj - cruciulita N", "Caroiaj - cruciulita N stanga"], sorted(g))
+# textele spre interior: jos E= in sus, sus E= in jos, stanga N= spre dreapta, dreapta N= spre stanga
+check(sorted(g["Caroiaj - cruciulita E"]) == [(x, 458000.0) for x in (545025.0, 545050.0, 545075.0)], "E= jos")
+check(sorted(g["Caroiaj - cruciulita E jos"]) == [(x, 458100.0) for x in (545025.0, 545050.0, 545075.0)], "E= sus")
+check(sorted(g["Caroiaj - cruciulita N"]) == [(545000.0, y) for y in (458025.0, 458050.0, 458075.0)], "N= stanga")
+check(sorted(g["Caroiaj - cruciulita N stanga"]) == [(545100.0, y) for y in (458025.0, 458050.0, 458075.0)], "N= dreapta")
 check(len(g["Caroiaj - cruciulita"]) == 9, "interiorul fara coordonate")
 # Ambele: toate cruciulitele cu N= si E=
 COMMANDS.clear(); STYLE_LOG.clear()
 acad.inputs += [("real", None), ("pt", [545000.0, 458000.0, 0.0]), ("pt", [545100.0, 458100.0, 0.0]), ("kw", None), ("kw", "Ambele")]
 fn("c:TKCAROIAJ")
 g = {st: pts for st, pts in note_groups()}
-check(len(g["Caroiaj - cruciulita N E"]) == 21 and "Caroiaj - cruciulita" not in g, "Ambele")
+check(sum(len(v) for k, v in g.items() if k.startswith("Caroiaj - cruciulita N E")) == 21 and "Caroiaj - cruciulita" not in g, "Ambele")
+# colturile interioare ale marginilor: sus-dreapta nu exista (e colt); randul de sus -> "jos", coloana din dreapta -> "stanga"
+check(sorted(g["Caroiaj - cruciulita N E jos"]) == [(x, 458100.0) for x in (545025.0, 545050.0, 545075.0)], "Ambele: randul de sus")
+check(sorted(g["Caroiaj - cruciulita N E stanga"]) == [(545100.0, y) for y in (458025.0, 458050.0, 458075.0)], "Ambele: coloana din dreapta")
+check(len(g["Caroiaj - cruciulita N E"]) == 15, "Ambele: restul spre dreapta-sus")
 check(fn("TKP:Get", "CRUCECOORD") == "Ambele", "setarea noua se pastreaza")
 acad.vars["CLAYER"] = "Caroiaj"
 check(acad.vars["CLAYER"] == "Caroiaj", "caroiajul pe stratul Caroiaj")
@@ -417,5 +439,24 @@ for e in ents("TEXT", "Caroiaj"):
 # coltul stanga jos: linia orizontala spre est, cea verticala spre nord, de 13 m (13 mm la 1:1000)
 L = [(grp(acad.db[e], 10), grp(acad.db[e], 11)) for e in lines[:2]]
 check(L == [([545010.0, 458010.0, 0.0], [545023.0, 458010.0, 0.0]), ([545010.0, 458010.0, 0.0], [545010.0, 458023.0, 0.0])], L)
+
+# cruciulitele fara Civil 3D, Directie: pe randul de sus E= pe bratul de jos (lung, 13 m), spre interior
+for e in ents("LINE", "Caroiaj") + ents("TEXT", "Caroiaj"):
+    acad.deleted.add(e)
+acad.inputs += [("real", 50.0), ("pt", [545000.0, 458000.0, 0.0]), ("pt", [545100.0, 458100.0, 0.0]), ("kw", None), ("kw", "Directie")]
+fn("c:TKCAROIAJ")
+segs = {(tuple(grp(acad.db[e], 10)[:2]), tuple(grp(acad.db[e], 11)[:2])) for e in ents("LINE", "Caroiaj")}
+# cruciulita (545050, 458100) de pe randul de sus: brat vertical de la 458087 (13 m in jos) la 458102.5 (2.5 m sus)
+check(((545050.0, 458087.0), (545050.0, 458102.5)) in segs, sorted(s for s in segs if s[0][0] == 545050.0))
+# cruciulita (545100, 458050) de pe coloana din dreapta: brat orizontal lung spre vest
+check(((545087.0, 458050.0), (545102.5, 458050.0)) in segs, sorted(s for s in segs if s[0][1] == 458050.0))
+tx = [acad.db[e] for e in ents("TEXT", "Caroiaj")]
+e_sus = [d for d in tx if grp(d, 1) == "E=545050" and grp(d, 11)[1] > 458050.0]      # randul de sus
+e_jos = [d for d in tx if grp(d, 1) == "E=545050" and grp(d, 11)[1] < 458050.0]      # randul de jos
+n_dr = [d for d in tx if grp(d, 1) == "N=458050" and grp(d, 11)[0] > 545050.0]       # coloana din dreapta
+check(len(e_sus) == len(e_jos) == len(n_dr) == 1, [grp(d, 1) for d in tx])
+check(grp(e_sus[0], 11)[1] < 458100.0 and grp(n_dr[0], 11)[0] < 545100.0, "textele spre interior")
+check((grp(e_sus[0], 72), grp(e_sus[0], 73)) == (2, 3), "sus: E= TR, ca la coltul stanga sus")
+check((grp(e_jos[0], 72), grp(e_jos[0], 73)) == (0, 3) and grp(e_jos[0], 11)[1] > 458000.0, "jos: E= TL, in sus")
 
 print("Toate testele TopoKitProiect au trecut.")

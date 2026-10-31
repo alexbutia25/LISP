@@ -90,7 +90,7 @@ reîncarcă imediat în desenul curent; celelalte desene deschise trec la prima 
 
 ### Cu instalatorul (recomandat)
 
-1. Descărcați și rulați **[`dist/TopoKitSetup-1.4.1.exe`](dist/TopoKitSetup-1.4.1.exe)** (TopoKit 1.4.1). Nu sunt necesare drepturi
+1. Descărcați și rulați **[`dist/TopoKitSetup-1.5.0.exe`](dist/TopoKitSetup-1.5.0.exe)** (TopoKit 1.5.0). Nu sunt necesare drepturi
    de administrator; instalarea se face pentru utilizatorul curent.
 2. Alegeți opțiunile: scurtătură pe desktop și pornirea în fundal odată cu Windows (ambele bifate implicit).
 3. Deschideți **TopoKit** din meniul Start sau de pe desktop. Atât.
@@ -156,7 +156,7 @@ Ce face instalarea:
     o anulează prin fereastra AutoCAD (WM_COPYDATA) înainte de a trimite modulul.
 - **Dezinstalare:** *Setări → Aplicații → TopoKit* sau meniul Start → *Dezinstalare TopoKit*. Se șterg
   pachetul AutoCAD, lansatorul și setările din registru.
-- **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup-1.4.1.exe /S`; dezinstalare:
+- **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup-1.5.0.exe /S`; dezinstalare:
   `"%LOCALAPPDATA%\Programs\TopoKit\Uninstall.exe" /S`.
 
 Windows SmartScreen poate afișa *„Windows a protejat computerul”*, pentru că instalatorul nu este
@@ -652,9 +652,19 @@ poate scrie oricare alta), apoi zona planului, și pune caroiajul pe stratul Car
 
 - **La colțuri** sunt linii în L de 13 mm, cu `N=` scris orizontal pe linia orizontală și `E=` scris vertical
   lângă linia verticală, ca în stilurile de caroiaj folosite până acum. Se văd doar coordonatele și liniile.
-- **În interior** sunt cruciulițe (opțional).
+- **În interior** sunt cruciulițe (opțional), cu sau fără coordonate. Setarea se păstrează în desen și
+  se alege la fiecare caroiaj (`Coordonate pe cruciulite`):
+
+  | Opțiune | Ce se scrie pe cruciulițe |
+  |---|---|
+  | Fara | nimic, doar cruciulița |
+  | Directie | coordonata care se schimbă pe direcția marginii: **E=** pe rândurile de sus și de jos, **N=** pe coloanele din stânga și din dreapta; cruciulițele din interior rămân simple |
+  | Est | **E=** pe toate cruciulițele |
+  | Nord | **N=** pe toate cruciulițele |
+  | Ambele | **N=** și **E=** pe toate cruciulițele, ca la colțuri |
 - **În Civil 3D**, colțurile și cruciulițele sunt **General Note Label**-uri cu stilurile
-  *Caroiaj - colt stanga sus / dreapta sus / stanga jos / dreapta jos* și *Caroiaj - cruciulita*.
+  *Caroiaj - colt stanga sus / dreapta sus / stanga jos / dreapta jos* și *Caroiaj - cruciulita*
+  (simplă, *N*, *E*, *N E*).
   Coordonatele sunt câmpuri `<[Northing]>` / `<[Easting]>`, deci **când muți eticheta, coordonatele
   se actualizează singure**. Stilurile se pot modifica din Toolspace → Settings → General → Label
   Styles → Note: text, linii, culori.

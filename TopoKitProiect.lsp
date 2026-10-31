@@ -54,6 +54,9 @@
 
 ;; Stilurile Civil 3D create de TopoKit
 (setq *TKP:STPCT* "Basic" *TKP:STLBL* "Point Description" *TKP:STCRUCE* "Caroiaj - cruciulita")
+;; cruciulitele cu coordonate: N= orizontal, E= vertical sau ambele (ca la colturi)
+(setq *TKP:STCRUCEX* '(("N" . "Caroiaj - cruciulita N") ("E" . "Caroiaj - cruciulita E")
+                       ("NE" . "Caroiaj - cruciulita N E")))
 (setq *TKP:STCOLT* '(("SS" . "Caroiaj - colt stanga sus") ("SD" . "Caroiaj - colt dreapta sus")
                      ("JS" . "Caroiaj - colt stanga jos") ("JD" . "Caroiaj - colt dreapta jos")))
 ;; Formatul coordonatelor (ca in stilurile de caroiaj existente: metri, fara zecimale)
@@ -88,7 +91,8 @@
   r)
 
 ;; Setarile proiectului (pastrate in desen): ((SCARA . 500) (UNGHI . "G") ...)
-(setq *TKP:DEF* '(("SCARA" . 500) ("UNGHI" . "G") ("STERG" . "1") ("STRAT" . "1") ("FONT" . "1") ("C3D" . "1")))
+(setq *TKP:DEF* '(("SCARA" . 500) ("UNGHI" . "G") ("STERG" . "1") ("STRAT" . "1") ("FONT" . "1") ("C3D" . "1")
+                  ("CRUCECOORD" . "Directie")))
 
 (defun TKP:Cfg (/ r)
   (setq r (vlax-ldata-get "TOPOKIT" "PROIECT"))
@@ -429,15 +433,20 @@
         (TKP:Line st "Linie verticala" (if (> sy 0) (/ pi 2.0) (* 1.5 pi)) L 7)
         ;; textul implicit "Note" al unui stil nou nu se vede: doar coordonatele si liniile
         (TKP:Hide st '("Nord" "Est")))))
-  (if (setq r (TKP:Item coll *TKP:STCRUCE*))
-    (progn
-      (setq st (car r))
-      (TKP:Label st nil)
-      (TKP:Line st "Brat est" 0.0 c 7)
-      (TKP:Line st "Brat nord" (/ pi 2.0) c 7)
-      (TKP:Line st "Brat vest" pi c 7)
-      (TKP:Line st "Brat sud" (* 1.5 pi) c 7)
-      (TKP:Hide st nil)))
+  ;; cruciulitele: simpla, cu N=, cu E=, cu ambele (textele ca la coltul din stanga jos)
+  (foreach cs (list (list *TKP:STCRUCE* nil nil) (list (cdr (assoc "N" *TKP:STCRUCEX*)) T nil)
+                    (list (cdr (assoc "E" *TKP:STCRUCEX*)) nil T) (list (cdr (assoc "NE" *TKP:STCRUCEX*)) T T))
+    (if (setq r (TKP:Item coll (car cs)))
+      (progn
+        (setq st (car r))
+        (TKP:Label st nil)
+        (TKP:Line st "Brat est" 0.0 c 7)
+        (TKP:Line st "Brat nord" (/ pi 2.0) c 7)
+        (TKP:Line st "Brat vest" pi c 7)
+        (TKP:Line st "Brat sud" (* 1.5 pi) c 7)
+        (if (cadr cs) (TKP:Text st "Nord" (strcat "N=" *TKP:FN*) h 7 4 6 ga gp 0.0))
+        (if (caddr cs) (TKP:Text st "Est" (strcat "E=" *TKP:FE*) h 7 4 0 gp ga (/ pi 2.0)))
+        (TKP:Hide st (append (if (cadr cs) '("Nord")) (if (caddr cs) '("Est")))))))
   (TKP:Find coll *TKP:STCRUCE*))
 
 ;; TKP:Civil - toata configurarea Civil 3D; intoarce lista mesajelor
@@ -603,10 +612,27 @@
   (TKP:Txt e (list (+ (car p) (* sx gp)) (+ (cadr p) (* sy ga))) h (/ pi 2.0)
            (strcat (if (> sx 0) "T" "B") (if (> sy 0) "L" "R")) "Caroiaj"))
 
-(defun TKP:DrawCross (p k / c)
-  (setq c (* *TKP:CRUCE* k))
+(defun TKP:DrawCross (p k key / c h ga gp)
+  (setq c (* *TKP:CRUCE* k) h (* *TKP:TXT* k) ga (* 1.5 h) gp (* 0.2 h))
   (TK:Line (list (- (car p) c) (cadr p)) (list (+ (car p) c) (cadr p)) "Caroiaj" nil)
-  (TK:Line (list (car p) (- (cadr p) c)) (list (car p) (+ (cadr p) c)) "Caroiaj" nil))
+  (TK:Line (list (car p) (- (cadr p) c)) (list (car p) (+ (cadr p) c)) "Caroiaj" nil)
+  (if (member key '("N" "NE"))
+    (TKP:Txt (strcat "N=" (rtos (cadr p) 2 0)) (list (+ (car p) ga) (+ (cadr p) gp)) h 0.0 "BL" "Caroiaj"))
+  (if (member key '("E" "NE"))
+    (TKP:Txt (strcat "E=" (rtos (car p) 2 0)) (list (+ (car p) gp) (+ (cadr p) ga)) h (/ pi 2.0) "TL" "Caroiaj")))
+
+;; TKP:CrossKey - ce coordonate arata cruciulita P: nil, "N", "E" sau "NE". Cu MODE "Directie" se
+;; scrie coordonata care se schimba pe directia marginii: E= sus si jos, N= stanga si dreapta
+(defun TKP:CrossKey (p mode xs ys)
+  (cond ((= mode "Est") "E")
+        ((= mode "Nord") "N")
+        ((= mode "Ambele") "NE")
+        ((/= mode "Directie") nil)
+        ((member (cadr p) (list (car ys) (last ys))) "E")
+        ((member (car p) (list (car xs) (last xs))) "N")))
+
+;; TKP:KwName - numele afisat al unei optiuni (in engleza se traduce)
+(defun TKP:KwName (s) s)
 
 ;; TKP:NoteLabels - eticheta Civil 3D (General Note Label) cu stilul STYLE in punctele PTS
 (defun TKP:NoteLabels (cdoc style pts / s n)
@@ -621,7 +647,7 @@
       n)
     0))
 
-(defun TKP:CmdCaroiaj (/ sc pas k p1 p2 xs ys corners inner cdoc kw n d)
+(defun TKP:CmdCaroiaj (/ sc pas k p1 p2 xs ys corners inner cdoc kw n d mode def groups key)
   (setq sc (TKP:Scara) pas (cdr (assoc sc *TKP:PAS*)) k (TKP:K sc))
   (TK:MakeLayer "Caroiaj" 8)
   (TKP:Msg (strcat "Caroiaj la scara 1:" (itoa sc) " (alta scara: TKSCARA)."))
@@ -642,22 +668,46 @@
           (setq corners (list (cons "JS" (list (car xs) (car ys))) (cons "JD" (list (last xs) (car ys)))
                               (cons "SS" (list (car xs) (last ys))) (cons "SD" (list (last xs) (last ys)))))
           (if (/= kw "Nu")
-            (foreach x xs
-              (foreach y ys
-                (if (not (and (member x (list (car xs) (last xs))) (member y (list (car ys) (last ys)))))
-                  (setq inner (cons (list x y) inner))))))
+            (progn
+              (foreach x xs
+                (foreach y ys
+                  (if (not (and (member x (list (car xs) (last xs))) (member y (list (car ys) (last ys)))))
+                    (setq inner (cons (list x y) inner)))))
+              ;; coordonatele pe cruciulite (setare pastrata in desen)
+              (setq def (TKP:Get "CRUCECOORD"))
+              (if (not (member def '("Fara" "Directie" "Est" "Nord" "Ambele"))) (setq def "Directie"))
+              (TKP:Msg "Fara = doar cruciulite; Directie = pe margini coordonata care se schimba (E= sus si jos, N= stanga si dreapta);")
+              (TKP:Msg "Est / Nord = E= / N= pe toate cruciulitele; Ambele = N= si E= pe toate cruciulitele.")
+              (initget "Fara Directie Est Nord Ambele")
+              (setq mode (cond ((getkword (strcat "\nCoordonate pe cruciulite [Fara/Directie/Est/Nord/Ambele] <"
+                                                  (cdr (assoc def (list (cons "Fara" (TKP:KwName "Fara"))
+                                                                        (cons "Directie" (TKP:KwName "Directie"))
+                                                                        (cons "Est" (TKP:KwName "Est"))
+                                                                        (cons "Nord" (TKP:KwName "Nord"))
+                                                                        (cons "Ambele" (TKP:KwName "Ambele")))))
+                                                  ">: ")))
+                               (def)))
+              (TKP:Put "CRUCECOORD" mode)
+              ;; cruciulitele grupate dupa stil: nil (simpla), "N", "E", "NE"
+              (foreach p inner
+                (setq key (TKP:CrossKey p mode xs ys))
+                (if (assoc key groups)
+                  (setq groups (subst (cons key (cons p (cdr (assoc key groups)))) (assoc key groups) groups))
+                  (setq groups (cons (list key p) groups))))))
           (setq cdoc (TKP:C3d) n 0)
           (if (and cdoc (TKP:GridStyles cdoc sc))
             (progn
               (setvar "CLAYER" "Caroiaj")
               (foreach c corners
                 (setq n (+ n (TKP:NoteLabels cdoc (cdr (assoc (car c) *TKP:STCOLT*)) (list (cdr c))))))
-              (setq n (+ n (TKP:NoteLabels cdoc *TKP:STCRUCE* inner)))
+              (foreach g groups
+                (setq n (+ n (TKP:NoteLabels cdoc (if (car g) (cdr (assoc (car g) *TKP:STCRUCEX*)) *TKP:STCRUCE*)
+                                             (reverse (cdr g))))))
               (TKP:Msg (strcat "Caroiaj Civil 3D: " (itoa n) " etichete (4 colturi, " (itoa (length inner))
                                " cruciulite). Cand muti o eticheta, coordonatele se actualizeaza singure.")))
             (progn
               (foreach c corners (TKP:DrawCorner (cdr c) (car c) k))
-              (foreach p inner (TKP:DrawCross p k))
+              (foreach p inner (TKP:DrawCross p k (TKP:CrossKey p mode xs ys)))
               (TKP:Msg (strcat "Caroiaj desenat pe stratul Caroiaj: 4 colturi, " (itoa (length inner)) " cruciulite"
                                " (fara Civil 3D coordonatele nu se actualizeaza la mutare)."))))))))
   (princ))

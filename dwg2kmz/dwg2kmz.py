@@ -37,7 +37,7 @@ except Exception:
     HAS_DND = False
 
 APP_NAME = "DWG to KMZ"
-TOPOKIT = "TopoKit 1.4.1"   # programul face parte din TopoKit
+TOPOKIT = "TopoKit 1.5.0"   # programul face parte din TopoKit
 HELP_FILE = "Instructiuni DWG to KMZ.html"
 FLAT_DIST = 0.05  # metri - precizia aproximarii arcelor / curbelor
 

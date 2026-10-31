@@ -168,7 +168,10 @@ def setfont(o, face, bold, italic, cs, pf):
 
 
 COMMANDS = []
+STYLE_LOG = []
 def command(*args):
+    if args and args[0] == "_.AeccAddNoteLabel":
+        STYLE_LOG.append(("style", PUTS.get(("Doc.Settings.GeneralCommandsSettings.AddNoteLabelSettings.StyleSettings.NoteLabelStyle", "Value"))))
     COMMANDS.append(list(args))
     if args and args[0] == "_.-LAYMRG":            # LAYMRG: stratul gol se muta pe 0 si dispare
         assert list(args[1:2] + args[3:]) == ["_N", "", "_N", "0", "_Y"], args
@@ -326,7 +329,8 @@ check("Civil 3D: stilurile de caroiaj (General Note Label) sunt gata" in out, ou
 
 # ---------------------------------------------------------------- caroiajul (Civil 3D: General Note Label)
 COMMANDS.clear()
-acad.inputs += [("real", None), ("pt", [545010.0, 458010.0, 0.0]), ("pt", [545090.0, 458070.0, 0.0]), ("kw", None)]
+acad.inputs += [("real", None), ("pt", [545010.0, 458010.0, 0.0]), ("pt", [545090.0, 458070.0, 0.0]), ("kw", None),
+                ("kw", None)]                         # cruciulite: Da; coordonate: implicit (Directie)
 fn("c:TKCAROIAJ")
 notes = [c for c in COMMANDS if c and c[0] == "_.AeccAddNoteLabel"]
 check(len(notes) == 5, COMMANDS)                     # 4 colturi + cruciulitele
@@ -335,8 +339,47 @@ corners = pts[:4]
 check(corners == [[545025.0, 458025.0, 0.0], [545075.0, 458025.0, 0.0], [545025.0, 458050.0, 0.0],
                   [545075.0, 458050.0, 0.0]], corners)
 check(len(pts) == 4 + 2, pts)                        # noduri 3 x 2: interiorul are 2 cruciulite
+# cele 2 cruciulite sunt pe marginile de jos si de sus: arata E= (coordonata care se schimba pe margine)
 check(P[("Doc.Settings.GeneralCommandsSettings.AddNoteLabelSettings.StyleSettings.NoteLabelStyle", "Value")]
-      == "Caroiaj - cruciulita", "ultimul stil folosit: cruciulita")
+      == "Caroiaj - cruciulita E", "cruciulitele de pe margini cu E=")
+check(fn("TKP:Get", "CRUCECOORD") == "Directie", "setarea se pastreaza")
+
+# stilurile cruciulitelor cu coordonate: N= orizontal, E= vertical, ca la coltul din stanga jos
+cx = "NoteStyles[Caroiaj - cruciulita N E]"
+check(P[(cx + ".TextComponents[Nord].Contents", "Value")] == "N=<[Northing(Um|P0|RN|AP|GC|UN|Sn|OF)]>", "N E")
+check(abs(P[(cx + ".TextComponents[Est].Angle", "Value")] - math.pi / 2) < 1e-12, "E vertical")
+check(P[(cx + ".TextComponents[Nord].Attachment", "Value")] == 6 and P[(cx + ".TextComponents[Est].Attachment", "Value")] == 0, "atasare")
+check(("NoteStyles[Caroiaj - cruciulita N].TextComponents[Est].Contents", "Value") not in P, "stilul N nu are E=")
+check(P[("NoteStyles[Caroiaj - cruciulita E].TextComponents[Est].Visibility", "Value")] == "VLAX-TRUE", "stilul E")
+
+# Directie pe o retea 5 x 5: sus/jos E=, stanga/dreapta N=, interiorul simplu
+def note_groups():
+    """(stil, puncte) pentru fiecare AeccAddNoteLabel, in ordine"""
+    out, style_seq = [], [v for (k, v) in STYLE_LOG]
+    i = 0
+    for c in COMMANDS:
+        if c and c[0] == "_.AeccAddNoteLabel":
+            out.append([style_seq[i], []]); i += 1
+        elif len(c) == 2 and c[0] == "_non" and out:
+            out[-1][1].append(tuple(c[1][:2]))
+    return out
+COMMANDS.clear(); STYLE_LOG.clear()
+acad.inputs += [("real", None), ("pt", [545000.0, 458000.0, 0.0]), ("pt", [545100.0, 458100.0, 0.0]), ("kw", None), ("kw", "Directie")]
+fn("c:TKCAROIAJ")
+g = {st: pts for st, pts in note_groups()}
+check(sorted(g) == ["Caroiaj - colt dreapta jos", "Caroiaj - colt dreapta sus", "Caroiaj - colt stanga jos",
+                    "Caroiaj - colt stanga sus", "Caroiaj - cruciulita", "Caroiaj - cruciulita E", "Caroiaj - cruciulita N"], sorted(g))
+check(sorted(g["Caroiaj - cruciulita E"]) == sorted([(x, y) for x in (545025.0, 545050.0, 545075.0) for y in (458000.0, 458100.0)]), "E= sus/jos")
+check(sorted(g["Caroiaj - cruciulita N"]) == sorted([(x, y) for x in (545000.0, 545100.0) for y in (458025.0, 458050.0, 458075.0)]), "N= stanga/dreapta")
+check(len(g["Caroiaj - cruciulita"]) == 9, "interiorul fara coordonate")
+# Ambele: toate cruciulitele cu N= si E=
+COMMANDS.clear(); STYLE_LOG.clear()
+acad.inputs += [("real", None), ("pt", [545000.0, 458000.0, 0.0]), ("pt", [545100.0, 458100.0, 0.0]), ("kw", None), ("kw", "Ambele")]
+fn("c:TKCAROIAJ")
+g = {st: pts for st, pts in note_groups()}
+check(len(g["Caroiaj - cruciulita N E"]) == 21 and "Caroiaj - cruciulita" not in g, "Ambele")
+check(fn("TKP:Get", "CRUCECOORD") == "Ambele", "setarea noua se pastreaza")
+acad.vars["CLAYER"] = "Caroiaj"
 check(acad.vars["CLAYER"] == "Caroiaj", "caroiajul pe stratul Caroiaj")
 
 # ---------------------------------------------------------------- TKSCARA: textele se redimensioneaza
@@ -359,6 +402,7 @@ check(fn("TKP:Scara") == 1000 and "Scara trebuie sa fie una din standard" in "".
 # ---------------------------------------------------------------- caroiajul fara Civil 3D (linii si texte)
 civil[0] = False
 acad.inputs += [("real", 30.0), ("pt", [545000.0, 458000.0, 0.0]), ("pt", [545210.0, 458160.0, 0.0]), ("kw", "Nu")]
+n_txt0 = len(ents("TEXT", "Caroiaj"))
 n0 = len(ents("LINE", "Caroiaj"))
 fn("c:TKCAROIAJ")
 lines = ents("LINE", "Caroiaj")[n0:]

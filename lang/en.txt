@@ -739,3 +739,12 @@ Proiect	Project	call:tkc:submenu
  m; scara de adnotare 1:1000.	 m; annotation scale 1:1000.
  (scara de adnotare ramane 1:1000): punctele,	 (the annotation scale stays 1:1000): the points,
  etichetele, tipurile de linie si cotele s-au adaptat; texte redimensionate: 	 labels, linetypes and dimensions were adapted; texts resized: 
+Fara Directie Est Nord Ambele	None Direction East North Both _Fara Directie Est Nord Ambele
+\nCoordonate pe cruciulite [Fara/Directie/Est/Nord/Ambele] <	\nCoordinates on crosses [None/Direction/East/North/Both] <
+Fara = doar cruciulite; Directie = pe margini coordonata care se schimba (E= sus si jos, N= stanga si dreapta);	None = crosses only; Direction = on the edges the coordinate that changes (E= top and bottom, N= left and right);
+Est / Nord = E= / N= pe toate cruciulitele; Ambele = N= si E= pe toate cruciulitele.	East / North = E= / N= on all crosses; Both = N= and E= on all crosses.
+Fara	None	call:tkp:kwname
+Directie	Direction	call:tkp:kwname
+Est	East	call:tkp:kwname
+Nord	North	call:tkp:kwname
+Ambele	Both	call:tkp:kwname

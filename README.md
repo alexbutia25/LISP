@@ -8,6 +8,7 @@ Suită modulară AutoLISP + DCL pentru AutoCAD (în stilul TopoLT):
 | `TOPOKITSET` | Setările modulelor: toleranța corecției topologice, opțiunile KMZ, formatul și cadrul planșei |
 | `MYTOPO` | Meniul cu module direct în AutoCAD (dialog), dacă fereastra TopoKit nu e instalată |
 | `TOPOKITLANG` | **Limba interfeței: română / engleză** (mesaje, întrebări, dialoguri, ribbon, fereastra TopoKit) |
+| `TKPROIECT` / `TKSCARA` / `TKCAROIAJ` | **Proiect nou** după standardul de plan: straturi, Arial, metri și unghiuri, puncte, stilurile Civil 3D; schimbarea scării; caroiajul cu coordonate care se actualizează singure ([detalii](#8-proiect-nou--tkproiect-tkscara-tkcaroiaj)) |
 | `ADDVTX` | Corecție topologică – vertexi la intersecțiile poliliniilor |
 | `EXPKMZ` | Export în KMZ/KML pentru Google Earth Pro: o parcelă sau mai multe obiecte pe straturi, cu transformarea oficială **TransDatRO** (Stereo 70 → ETRS89, ~1 mm) |
 | `INSCADRU` | Format A4…A0 (portrait/landscape), cadru și indicator la scară |
@@ -581,6 +582,74 @@ Corecturi față de CadTopo:
 - la parcele neconvexe, linia de detasare care taie conturul de mai multe ori se desenează pe bucăți corecte (polilinia nu se mai rupe greșit);
 - bara de meniuri nu mai este pornită forțat (`MENUBAR`).
 
+## 8. Proiect nou – `TKPROIECT`, `TKSCARA`, `TKCAROIAJ`
+
+Modulul `TopoKitProiect.lsp` pregătește un desen nou după standardul de plan (scările 1:50 … 1:5000).
+Comenzile sunt în panoul **Proiect** din ribbon și în meniul **TopoKit → Proiect**.
+
+`TKPROIECT` deschide un dialog cu scara, unitatea unghiurilor (grade centesimale sau sexagesimale) și
+ce se configurează:
+
+- **Se șterg doar straturile goale**, adică cele implicite din șablonul Civil 3D. Un strat cu orice obiect
+  (în model, în layout-uri, în definițiile blocurilor sau în atributele lor) nu se atinge. Straturile goale
+  din șablon pe care stilurile Civil 3D încă le folosesc (C-…, V-…, A-…) se șterg cu `LAYMRG` spre stratul 0,
+  deci stilurile trec pe 0. Într-un desen nou din șablonul Civil 3D (metric NCS) dispar toate cele 200 de
+  straturi goale.
+- **Straturile standard**, cu culoarea și grosimea din standard:
+
+  | Strat | Culoare | Grosime |
+  |---|---|---|
+  | Puncte, Puncte Leica / South / Trimble, Puncte noi, Puncte interpolate | alb | 0.00 |
+  | Ascuns - puncte Leica / South / Trimble (stinse) | alb | 0.00 |
+  | Terenuri | magenta | 0.40 |
+  | Vecinătăți | verde | implicită |
+  | Dimensiuni, PAD | alb | implicită |
+  | Construcții | albastru | 0.00 |
+  | Caroiaj | gri (8) | 0.00 |
+
+  Tipul de linie DASHED (pentru parcele) se încarcă din `acad.lin`.
+- **Fontul Arial** în toate stilurile de text, deci și în etichetele Civil 3D. Stilurile de forme ale
+  tipurilor de linie rămân neschimbate.
+- **Unitățile**: metri (`INSUNITS` 6, 3 zecimale), unghiuri în grade centesimale (`AUNITS` 2) sau
+  grade-minute-secunde.
+- **Punctele AutoCAD**, ca la `PTYPE`: cerculeț (`PDMODE` 33) de 1 mm pe hârtie.
+- **Scara**: scara de adnotare (`CANNOSCALE`, după care se dimensionează etichetele Civil 3D),
+  `LTSCALE` = scara / 500 (1 la 1:500, ca în standard) și scara modulului de cadastru și a cadrului.
+- **În Civil 3D**:
+  - stilul de punct **Basic** folosește AutoCAD POINT pentru marker, alb, cu mărimea de 1 mm la scara desenului;
+  - eticheta **Point Description** arată descrierea: Arial 1.5 mm, albă, Anchor și Attachment *Middle left*,
+    gap jumătate din înălțimea textului. Când o muți, rămâne *as composed*, fără leader;
+  - punctele noi și grupul *_All Points* folosesc aceste stiluri, pe stratul Puncte;
+  - Drawing Settings: metri; distanțe cu 2 zecimale; coordonate și cote cu 3; suprafețe în mp cu 2;
+    unghiuri și direcții (azimut de la nord) în unitatea aleasă;
+  - stilurile de caroiaj (vezi mai jos).
+
+Mărimile din standard sunt în mm pe hârtie, deci se potrivesc la orice scară:
+
+| Element | Pe hârtie | 1:50 | 1:100 | 1:200 | 1:500 | 1:1000 | 1:2000 | 1:5000 |
+|---|---|---|---|---|---|---|---|---|
+| Cerculeț punct | 1 mm | 0.05 | 0.1 | 0.2 | 0.5 | 1 | 2 | 5 |
+| Texte | 1.5 mm | 0.075 | 0.15 | 0.3 | 0.75 | 1.5 | 3 | 7.5 |
+| LTSCALE | – | 0.1 | 0.2 | 0.4 | 1 | 2 | 4 | 10 |
+| Cruciulițe caroiaj | – | 2 m | 5 m | 10 m | 25 m | 50 m | 100 m | 250 m |
+
+**`TKSCARA`** aduce desenul la altă scară. Etichetele Civil 3D se adaptează singure prin scara de
+adnotare. Tipurile de linie și punctele se recalculează. Textele de pe straturile standard (TEXT, MTEXT)
+se măresc sau se micșorează în proporție, deci și cele micșorate intenționat rămân proporționale.
+
+**`TKCAROIAJ`** cere zona planului și pune caroiajul la distanța din standard, pe stratul Caroiaj:
+
+- **La colțuri** sunt linii în L de 13 mm, cu `N=` scris orizontal pe linia orizontală și `E=` scris vertical
+  lângă linia verticală, ca în stilurile de caroiaj folosite până acum. Se văd doar coordonatele și liniile.
+- **În interior** sunt cruciulițe (opțional).
+- **În Civil 3D**, colțurile și cruciulițele sunt **General Note Label**-uri cu stilurile
+  *Caroiaj - colt stanga sus / dreapta sus / stanga jos / dreapta jos* și *Caroiaj - cruciulita*.
+  Coordonatele sunt câmpuri `<[Northing]>` / `<[Easting]>`, deci **când muți eticheta, coordonatele
+  se actualizează singure**. Stilurile se pot modifica din Toolspace → Settings → General → Label
+  Styles → Note: text, linii, culori.
+- **Fără Civil 3D**, caroiajul se desenează cu linii și texte, iar coordonatele nu se mai actualizează
+  la mutare.
+
 ## Detalii tehnice
 
 - Fiecare comandă are propriul `*error*`: variabilele de sistem `CMDECHO`, `OSMODE`, `ATTREQ` și
@@ -624,6 +693,9 @@ Corecturi față de CadTopo:
 - `python3 tests/test_lang.py` testează limba și ribbonul: dicționarul `lang/en.txt` (fiecare intrare
   folosită, ghilimele, taste), varianta în engleză (aceeași structură LISP, planurile rămân în română),
   încărcarea în engleză și revenirea la română în simulator și meniul `.cuix` (XML, butoane, iconițe).
+- `python3 tests/test_proiect.py` testează modulul de proiect nou în simulator: straturi, Arial, unități, scară,
+  `TKSCARA`, caroiajul cu și fără Civil 3D. Partea Civil 3D rulează pe un model COM simulat, iar fiecare
+  proprietate folosită trebuie să existe în API-ul Civil 3D 2026 (`tests/data/civil3d_com_names.txt`).
 - `python3 tests/test_dwg.py [desen.dwg ...]` testează citirea DXF-urilor stricate în DWG to KMZ.
   LibreDWG scrie uneori materiale și solide 3D cu text binar și rânduri rupte („Invalid group code”)
   sau intrări de dicționar spre handle 0. `dwg.repair_dxf` scoate doar acele obiecte, iar entitățile

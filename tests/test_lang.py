@@ -192,14 +192,14 @@ def invoke(o, m, *a):
 
 
 M.funcs[Sym("VLAX-INVOKE")] = invoke
-for k in ("TKL:LOAD", "C:TOPOKIT", "TK:START", "TKA:GENERATE", "TKT:MENU", "TKI:RUN", "C:TKDETASARE"):
+for k in ("TKL:LOAD", "C:TOPOKIT", "TK:START", "TKA:GENERATE", "TKT:MENU", "TKI:RUN", "C:TKDETASARE", "C:TKPROIECT"):
     env.pop(Sym(k), None)
 M.load(os.path.join(contents, "TopoKitLoad.lsp"))
 acad.after_load()
 sp = prefs["SupportPath"].split(";")
 assert sp[0] == win(en_dir) and sp[1] == win(contents), sp
 assert loads == ["en/TopoKit.lsp", "en/TopoKitAnexe.lsp", "en/TopoKitTeren.lsp", "en/TopoKitInclinare.lsp",
-                 "en/TopoKitCad.lsp"], loads
+                 "en/TopoKitCad.lsp", "en/TopoKitProiect.lsp"], loads
 assert menus == {"TOPOKIT": win(contents) + "\\TopoKit_EN"}, menus
 assert any("TopoKit Cadastre loaded" in o for o in acad.out), acad.out[-4:]
 assert any("TopoKit Terrain loaded" in o for o in acad.out)
@@ -221,7 +221,7 @@ call(Sym("TKL:SETLANG"), ["RO"])
 assert open(lang_file).read().strip() == "RO" and reg[(REG, "Language")] == "RO"
 sp = prefs["SupportPath"].split(";")
 assert sp[0] == win(contents) and win(en_dir) not in sp, sp
-assert loads == ["TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitTeren.lsp", "TopoKitInclinare.lsp", "TopoKitCad.lsp"], loads
+assert loads == ["TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitTeren.lsp", "TopoKitInclinare.lsp", "TopoKitCad.lsp", "TopoKitProiect.lsp"], loads
 assert menus == {"TOPOKIT": win(contents) + "\\TopoKit"}, menus
 assert any("TopoKit Cadastru incarcat" in o for o in acad.out)
 assert any("interfata in limba romana" in o for o in acad.out)

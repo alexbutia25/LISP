@@ -145,9 +145,11 @@ def ev(x):
         for _ in range(ev(x[1])):
             for e in x[2:]: r=ev(e)
         return r
-    if h=='FOREACH':
+    if h=='FOREACH' or h=='VLAX-FOR':
+        # VLAX-FOR: colectiile simulate au lista elementelor in .items
         s=x[1]; old=env.get(s); r=None
-        for v in lst(ev(x[2])):
+        c=ev(x[2])
+        for v in (list(c.items) if hasattr(c,'items') and not isinstance(c,dict) else lst(c)):
             env[s]=v
             for e in x[3:]: r=ev(e)
         env[s]=old; return r

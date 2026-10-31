@@ -22,7 +22,7 @@ romana - nu se pun in dictionar. Tastele din getkword / initget nu se traduc.
 import pathlib, re, sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-LSP = ["TopoKitLoad.lsp", "TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitTeren.lsp", "TopoKitInclinare.lsp", "TopoKitCad.lsp"]
+LSP = ["TopoKitLoad.lsp", "TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitTeren.lsp", "TopoKitInclinare.lsp", "TopoKitCad.lsp", "TopoKitProiect.lsp"]
 DCL = ["TopoKit.dcl", "TopoKitAnexe.dcl", "TopoKitTeren.dcl", "TopoKitInclinare.dcl"]
 DICT = ROOT / "lang" / "en.txt"
 

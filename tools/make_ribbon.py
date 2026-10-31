@@ -516,6 +516,30 @@ def i_planinclsel(c):
     badge(c, "cursor")
 
 
+def i_proiect(c):                                   # desen nou cu straturile standard
+    paper(c, 3, 2, 22, 29, lines=False)
+    for i, col in enumerate((RD, PU, GR, BL, GY)):
+        y = 9 + i * 3.6
+        c.rect(6, y - 1.1, 8.6, y + 1.1, fill=col)
+        c.line([(10.5, y), (18.5, y)], GY2, 1.3)
+    badge(c, "plus")
+
+
+def i_scara(c):                                     # scara: rigla si 1:500
+    c.rect(1.5, 18, 30.5, 27, fill=YE, out=BR, u=1.2)
+    for i, x in enumerate(range(4, 30, 3)):
+        c.line([(x, 18), (x, 22 if i % 2 else 24)], BR, 1.0)
+    c.text(16, 9.5, "1:500", 9.5, BL)
+
+
+def i_caroiaj(c):                                   # colturi in L cu N= / E= si cruciulite
+    c.rect(1.5, 1.5, 30.5, 30.5, fill=PAPER)
+    for x, y, sx, sy in ((4, 4, 1, 1), (28, 4, -1, 1), (4, 28, 1, -1), (28, 28, -1, -1)):
+        c.line([(x + sx * 8, y), (x, y), (x, y + sy * 8)], GY, 1.6)
+    for x, y in ((12, 12), (20, 12), (12, 20), (20, 20)):
+        c.line([(x - 2.4, y), (x + 2.4, y)], BL, 1.4); c.line([(x, y - 2.4), (x, y + 2.4)], BL, 1.4)
+
+
 def i_lang(c):
     c.rect(1.5, 3, 19, 17, fill=BL, r=2.5)
     c.poly([(5, 16), (5, 21), (10, 16)], fill=BL)
@@ -540,6 +564,17 @@ CMDS = {
                "TopoKit menu", "Module menu inside AutoCAD (dialog)", i_mytopo),
     "TOPOKITRELOAD": ("Reîncarcă TopoKit", "Reîncarcă modulele TopoKit (după o actualizare)",
                       "Reload TopoKit", "Reloads the TopoKit modules (after an update)", i_reload),
+    "TKPROIECT": ("Proiect nou", "Pregătește desenul: șterge straturile implicite Civil 3D, straturile standard, "
+                  "Arial, metri și unghiuri, puncte (PTYPE), stilurile Civil 3D de puncte și caroiaj, scara",
+                  "New project", "Prepares the drawing: removes the default Civil 3D layers, standard layers, "
+                  "Arial, meters and angles, points (PTYPE), Civil 3D point and grid styles, scale", i_proiect),
+    "TKSCARA": ("Scara planului", "Aduce desenul la altă scară (1:50 ... 1:5000): etichete, puncte, linii, texte",
+                "Plan scale", "Brings the drawing to another scale (1:50 ... 1:5000): labels, points, lines, texts",
+                i_scara),
+    "TKCAROIAJ": ("Caroiaj", "Caroiaj de coordonate: colțuri N= / E= și cruciulițe; în Civil 3D etichete care "
+                  "își actualizează coordonatele când le muți",
+                  "Coordinate grid", "Coordinate grid: N= / E= corners and crosses; in Civil 3D, labels that "
+                  "update their coordinates when moved", i_caroiaj),
     "TKCAD": ("Comenzi cadastru", "Lista comenzilor de cadastru în fereastra de text",
               "Cadastre commands", "Lists the cadastre commands in the text window", i_tkcad),
     "TKIMPPCT": ("Raportare puncte", "Raportează puncte din fișier (Nr X Y Z Cod), bloc „Punct” compatibil TopoLT",
@@ -641,6 +676,10 @@ PANELS = [
         (L, "TOPOKIT", "Fereastra\nTopoKit", "TopoKit\nwindow"),
         ("rows", S1, [["TOPOKITSET"], ["TKCADSET"], ["MYTOPO"]]),
         ("rows", S1, [["TOPOKITLANG"], ["TOPOKITRELOAD"], ["TKCAD"]]),
+    ]),
+    ("PROIECT", "Proiect", "Project", "TKPROIECT", [
+        (L, "TKPROIECT", "Proiect\nnou", "New\nproject"),
+        ("rows", S1, [["TKSCARA"], ["TKCAROIAJ"]]),
     ]),
     ("PUNCTE", "Puncte", "Points", None, [
         (L, "TKIMPPCT", "Raportare\npuncte", "Draw\npoints"),

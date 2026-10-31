@@ -680,3 +680,61 @@ Utile	Utilities
  puncte, varf 	 points, top
 fara format, texte pentru scara 1:	no sheet, texts for scale 1:
 Fara format, texte pentru 1:	No sheet, texts for 1:
+
+# ---------------------------------------------------------------- TopoKitProiect (proiect nou, scara, caroiaj)
+TopoKit - Pregatire proiect nou	TopoKit - New project setup
+Scara planului:	Plan scale:
+Unghiuri si directii	Angles and directions
+Grade centesimale (400g)	Grads (400g)
+Grade sexagesimale (360, grade-minute-secunde)	Degrees (360, degrees-minutes-seconds)
+Ce se configureaza	What is set up
+Sterge straturile goale (cele implicite din Civil 3D); cele cu obiecte raman	Delete empty layers (the Civil 3D defaults); layers with objects stay
+Straturile standard (Puncte, Terenuri, Vecinatati, Constructii, Caroiaj...)	Standard layers (Puncte, Terenuri, Vecinatati, Constructii, Caroiaj...)
+Font Arial in toate stilurile de text	Arial font in all text styles
+Civil 3D: puncte, eticheta Point Description, unitati, caroiaj	Civil 3D: points, Point Description label, units, grid
+Mereu: unitati in metri, puncte AutoCAD (PTYPE) cu cerculet de 1 mm, scara planului.	Always: meter units, AutoCAD points (PTYPE) with a 1 mm circle, plan scale.
+Scara se poate schimba oricand cu TKSCARA.	The scale can be changed at any time with TKSCARA.
+Straturi goale sterse: 	Empty layers deleted: 
+ goale raman: sunt folosite de stiluri)	 empty ones remain: they are used by styles)
+; straturile cu obiecte nu se sterg.	; layers with objects are not deleted.
+Straturi standard: 	Standard layers: 
+ noi).	 new).
+Font Arial in 	Arial font in 
+ stiluri de text.	 text styles.
+Unitati: metri; unghiuri in 	Units: meters; angles in 
+grade centesimale.	grads.
+grade sexagesimale.	degrees.
+ m, cerculet punct 	 m, point circle 
+, caroiaj la 	, grid every 
+Pregatire proiect nou...	Setting up the new project...
+Proiectul este pregatit. Caroiajul: TKCAROIAJ; alta scara: TKSCARA.	The project is ready. Grid: TKCAROIAJ; another scale: TKSCARA.
+Scara trebuie sa fie una din standard: 50, 100, 200, 500, 1000, 2000, 5000.	The scale must be one of the standard ones: 50, 100, 200, 500, 1000, 2000, 5000.
+\nScara noua a planului (acum 1:	\nNew plan scale (now 1:
+Desenul este la scara 1:	The drawing is at scale 1:
+: etichetele Civil 3D, punctele si tipurile de linie	: the Civil 3D labels, points and linetypes
+ s-au adaptat; texte redimensionate: 	 were adapted; texts resized: 
+Desenul este deja la scara 1:	The drawing is already at scale 1:
+Caroiaj la scara 1:	Grid at scale 1:
+: cruciulite la 	: crosses every 
+ m (alta scara: TKSCARA).	 m (another scale: TKSCARA).
+\nPrimul colt al zonei caroiajului: 	\nFirst corner of the grid area: 
+\nColtul opus: 	\nOpposite corner: 
+Zona este prea mica: trebuie sa cuprinda cel putin doua linii de caroiaj pe fiecare directie (	The area is too small: it must contain at least two grid lines in each direction (
+\nCruciulite in interiorul caroiajului? [Da/Nu] <Da>: 	\nCrosses inside the grid? [Yes/No] <Yes>: 
+Caroiaj Civil 3D: 	Civil 3D grid: 
+ etichete (4 colturi, 	 labels (4 corners, 
+ cruciulite). Cand muti o eticheta, coordonatele se actualizeaza singure.	 crosses). When you move a label, its coordinates update by themselves.
+Caroiaj desenat pe stratul Caroiaj: 4 colturi, 	Grid drawn on layer Caroiaj: 4 corners, 
+ cruciulite	 crosses
+ (fara Civil 3D coordonatele nu se actualizeaza la mutare).	 (without Civil 3D the coordinates do not update when moved).
+\nTopoKit Proiect incarcat. Comenzi: TKPROIECT (proiect nou), TKSCARA, TKCAROIAJ.	\nTopoKit Project loaded. Commands: TKPROIECT (new project), TKSCARA, TKCAROIAJ.
+Civil 3D: unitati in metri, distante, unghiuri si directii setate.	Civil 3D: meter units, distances, angles and directions set.
+Civil 3D: setarile de unitati nu au putut fi schimbate.	Civil 3D: the unit settings could not be changed.
+Civil 3D: punctele pe stilul Basic (AutoCAD POINT, alb) cu eticheta Point Description.	Civil 3D: points on the Basic style (AutoCAD POINT, white) with the Point Description label.
+Civil 3D: stilurile de punct nu au putut fi configurate complet.	Civil 3D: the point styles could not be fully configured.
+Civil 3D: stilurile de caroiaj (General Note Label) sunt gata; caroiajul: TKCAROIAJ.	Civil 3D: the grid styles (General Note Label) are ready; grid: TKCAROIAJ.
+Civil 3D: stilurile de caroiaj nu au putut fi create.	Civil 3D: the grid styles could not be created.
+Desenul nu este deschis in Civil 3D: stilurile de puncte si etichete au fost sarite.	The drawing is not open in Civil 3D: the point and label styles were skipped.
+Schimba scara planului	Change plan scale
+Caroiaj de coordonate	Coordinate grid
+Proiect	Project	call:tkc:submenu

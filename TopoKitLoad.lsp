@@ -183,7 +183,7 @@
        (progn
          (princ "\nTopoKit: versiune sau limba noua - se reincarca modulele.")
          (setq force T)))
-     (if force (setq TK:Start nil TKA:Generate nil TKT:Menu nil TKI:Run nil c:TKDETASARE nil))
+     (if force (setq TK:Start nil TKA:Generate nil TKT:Menu nil TKI:Run nil c:TKDETASARE nil c:TKPROIECT nil))
      (setq *TKL:DIR* dir ldir (TKL:LangDir dir))
      (if (or force (not TK:Start))
        (setq r (vl-catch-all-apply 'load (list (strcat ldir "\\TopoKit.lsp")))

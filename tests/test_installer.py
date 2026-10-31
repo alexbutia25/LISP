@@ -98,7 +98,7 @@ try:
     bundle = os.path.join(USER, "AppData", "Roaming", "Autodesk", "ApplicationPlugins", "TopoKit.bundle")
     app = os.path.join(USER, "AppData", "Local", "Programs", "TopoKit")
     contents = os.path.join(bundle, "Contents")
-    for f in ("TopoKitLoad.lsp", "TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitTeren.lsp", "TopoKit.dcl",
+    for f in ("TopoKitLoad.lsp", "TopoKit.lsp", "TopoKitAnexe.lsp", "TopoKitTeren.lsp", "TopoKitProiect.lsp", "TopoKit.dcl",
               "TopoKitAnexe.dcl", "TopoKitTeren.dcl", "stereo70_etrs89A.gsb", "anexe/TopoKitDocx.ps1",
               "anexe/catalog.json", "anexe/Anexa_01.docx"):
         src = os.path.join(ROOT, f)

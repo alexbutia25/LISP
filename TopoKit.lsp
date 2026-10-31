@@ -2793,4 +2793,7 @@
 ;; Cadastru: puncte TopoLT, suprafete, detasari, cotari, suma, coordonate
 (if (and (not *TKC:LOADING*) (not c:TKDETASARE) (findfile "TopoKitCad.lsp"))
   (load (findfile "TopoKitCad.lsp")))
+;; Proiect nou: straturi standard, Arial, unitati, scara, caroiaj (si stilurile Civil 3D)
+(if (and (not *TKP:LOADING*) (not c:TKPROIECT) (findfile "TopoKitProiect.lsp"))
+  (load (findfile "TopoKitProiect.lsp")))
 (princ)

@@ -8,7 +8,7 @@ Suită modulară AutoLISP + DCL pentru AutoCAD (în stilul TopoLT):
 | `TOPOKITSET` | Setările modulelor: toleranța corecției topologice, opțiunile KMZ, formatul și cadrul planșei |
 | `MYTOPO` | Meniul cu module direct în AutoCAD (dialog), dacă fereastra TopoKit nu e instalată |
 | `TOPOKITLANG` | **Limba interfeței: română / engleză** (mesaje, întrebări, dialoguri, ribbon, fereastra TopoKit) |
-| `TKPROIECT` / `TKSCARA` / `TKCAROIAJ` | **Proiect nou** după standardul de plan: straturi, Arial, metri și unghiuri, puncte, stilurile Civil 3D; schimbarea scării; caroiajul cu coordonate care se actualizează singure ([detalii](#8-proiect-nou--tkproiect-tkscara-tkcaroiaj)) |
+| `TKPROIECT` / `TKSCARA` / `TKCAROIAJ` / `TKLEGENDA` | **Proiect nou** după standardul de plan: straturi, Arial, metri și unghiuri, puncte, stilurile Civil 3D; schimbarea scării; caroiajul cu coordonate care se actualizează singure; legenda automată ([detalii](#8-proiect-nou--tkproiect-tkscara-tkcaroiaj)) |
 | `ADDVTX` | Corecție topologică – vertexi la intersecțiile poliliniilor |
 | `EXPKMZ` | Export în KMZ/KML pentru Google Earth Pro: o parcelă sau mai multe obiecte pe straturi, cu transformarea oficială **TransDatRO** (Stereo 70 → ETRS89, ~1 mm) |
 | `INSCADRU` | Format A4…A0 (portrait/landscape), cadru și indicator la scară |
@@ -31,7 +31,7 @@ iconiță proprie pentru **fiecare comandă** TopoKit, grupate pe panouri:
 | Panou | Butoane |
 |---|---|
 | Configurare | Fereastra TopoKit, Setări module, Setări cadastru, Meniul TopoKit, **Limba română / engleză**, Reîncarcă, Comenzi cadastru |
-| Proiect | **Proiect nou** (buton mare), Scara planului, Caroiaj |
+| Proiect | **Proiect nou** (buton mare), Scara planului, Caroiaj, Legendă automată |
 | Puncte | **Raportare puncte**, introducere, pe contur, ștergere, renumerotare, selecție și schimbarea codului, fișier coordonate, import puncte teren, tabel |
 | Suprafețe | **Detașare**, **Detașare multiplă** (butoane mari), Suprafețe (S=), Cote laturi, Suma textelor, Vertexi la intersecții |
 | Anexe ANCPI | Anexe ANCPI, Date imobil, Executant, Vecini, Construcții, Anexe Word, Verificare |
@@ -90,7 +90,7 @@ reîncarcă imediat în desenul curent; celelalte desene deschise trec la prima 
 
 ### Cu instalatorul (recomandat)
 
-1. Descărcați și rulați **[`dist/TopoKitSetup-1.6.0.exe`](dist/TopoKitSetup-1.6.0.exe)** (TopoKit 1.6.0). Nu sunt necesare drepturi
+1. Descărcați și rulați **[`dist/TopoKitSetup-1.7.0.exe`](dist/TopoKitSetup-1.7.0.exe)** (TopoKit 1.7.0). Nu sunt necesare drepturi
    de administrator; instalarea se face pentru utilizatorul curent.
 2. Alegeți opțiunile: scurtătură pe desktop și pornirea în fundal odată cu Windows (ambele bifate implicit).
 3. Deschideți **TopoKit** din meniul Start sau de pe desktop. Atât.
@@ -112,7 +112,7 @@ Ce face instalarea:
   `TopoKitTeren.lsp`. Comanda `TOPOKITRELOAD` reîncarcă modulele.
 - **Fereastra TopoKit** se deschide când porniți programul. Arată starea legăturii cu AutoCAD și
   cele 20 de module, pe 5 coloane. Primele sunt *Proiect nou*, *Scara planului* și *Caroiaj*; printre
-  celelalte sunt *Detașare*, *Detașare multiplă*, *Raportare puncte*, *Introducere puncte*, *Cote laturi*
+  celelalte sunt *Detașare*, *Detașare multiplă*, *Raportare puncte*, *Legendă automată*, *Cote laturi*
   și *Setări cadastru*. Fiecare card are iconița, descrierea și comanda AutoCAD:
 
   ![Fereastra TopoKit](docs/lansator_conectat.png)
@@ -156,7 +156,7 @@ Ce face instalarea:
     o anulează prin fereastra AutoCAD (WM_COPYDATA) înainte de a trimite modulul.
 - **Dezinstalare:** *Setări → Aplicații → TopoKit* sau meniul Start → *Dezinstalare TopoKit*. Se șterg
   pachetul AutoCAD, lansatorul și setările din registru.
-- **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup-1.6.0.exe /S`; dezinstalare:
+- **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup-1.7.0.exe /S`; dezinstalare:
   `"%LOCALAPPDATA%\Programs\TopoKit\Uninstall.exe" /S`.
 
 Windows SmartScreen poate afișa *„Windows a protejat computerul”*, pentru că instalatorul nu este
@@ -586,7 +586,7 @@ Corecturi față de CadTopo:
 - la parcele neconvexe, linia de detasare care taie conturul de mai multe ori se desenează pe bucăți corecte (polilinia nu se mai rupe greșit);
 - bara de meniuri nu mai este pornită forțat (`MENUBAR`).
 
-## 8. Proiect nou – `TKPROIECT`, `TKSCARA`, `TKCAROIAJ`
+## 8. Proiect nou – `TKPROIECT`, `TKSCARA`, `TKCAROIAJ`, `TKLEGENDA`
 
 Modulul `TopoKitProiect.lsp` pregătește un desen nou după standardul de plan (scările 1:50 … 1:5000).
 Comenzile sunt în panoul **Proiect** din ribbon și în meniul **TopoKit → Proiect**.
@@ -680,6 +680,22 @@ schimbă; dacă stratul Caroiaj e înghețat sau oprit, comanda îl face vizibil
   Styles → Note: text, linii, culori.
 - **Fără Civil 3D**, caroiajul se desenează cu linii și texte, iar coordonatele nu se mai actualizează
   la mutare.
+
+**`TKLEGENDA`** desenează legenda planului în stilul folosit până acum: chenar, titlul **Legendă:**
+centrat și subliniat, iar pe fiecare rând textul stratului și o linie-mostră. Linia-mostră are tipul de
+linie, culoarea, scara tipului de linie, grosimea și lățimea globală ale poliliniilor de pe strat, deci
+arată ca în plan.
+
+- **Intră automat** straturile vizibile (pornite și dezghețate) care au cel puțin o polilinie în model.
+  Nu intră niciodată 0, Defpoints, LEGENDA, Caroiaj, L_CADRU, PAD_* și straturile din xref-uri.
+- **Un dialog** arată lista. Fiecare strat se poate scoate sau include, iar textul lui se poate schimba
+  (de exemplu „Taluz cap” → „Cap taluz”). Implicit, textul e descrierea stratului sau numele lui.
+- **Textele se păstrează în descrierea straturilor** (opțiune bifată implicit), deci data viitoare
+  legenda iese direct cu ele, la fel în orice desen care folosește aceleași straturi.
+- **Mărimile** sunt cele din legenda din „Plan topo” (la 1:1000: titlu 3 m, text 2 m, rând 3.755 m,
+  linie-mostră 27.8 m) și se adaptează la scara planului; `TKSCARA` redimensionează textele legendei.
+  Într-un desen nepregătit cu `TKPROIECT`, scara se ia din scara de adnotare.
+- Legenda se pune pe stratul **LEGENDA**, cu colțul stânga-sus în punctul indicat.
 
 ## Detalii tehnice
 

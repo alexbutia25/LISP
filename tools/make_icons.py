@@ -240,12 +240,20 @@ def g_pct(d):           # introducere puncte: simbol de punct cu numar si plus
     d.line((152, 188, 228, 188), fill=W, width=14)
 
 
+def g_legenda(d):       # legenda: chenar, titlu subliniat, randuri cu text si linie-mostra
+    d.rounded_rectangle((28, 34, 228, 222), radius=10, outline=W, width=10)
+    d.line((92, 70, 164, 70), fill=W, width=9)
+    for i, y in enumerate((106, 138, 170, 202 - 10)):
+        d.line((52, y, 92, y), fill=W, width=8)
+        d.line((112, y, 204, y), fill=W, width=12 if i == 0 else 8)
+
+
 # aceeasi ordine ca TILES din installer/launcher/ui.c
 MODULES = [("#0F7C6E", g_proiect), ("#B07D12", g_scara), ("#5A6B7C", g_caroiaj),
            ("#1B6A8F", g_menu), ("#6A4FB6", g_doc), ("#2E8B57", g_tin), ("#D08A12", g_check),
            ("#C8443A", g_pdf), ("#1F8FBF", g_globe), ("#0E8C7F", g_dwgkmz), ("#3B5B92", g_frame),
            ("#A3478F", g_vertex), ("#E0662A", g_incl), ("#B5562E", g_det), ("#4F7A2A", g_sup),
-           ("#C0392B", g_detmult), ("#2F6FB5", g_points), ("#D0453A", g_pct), ("#8A6A2E", g_cote),
+           ("#C0392B", g_detmult), ("#2F6FB5", g_points), ("#7A4FA0", g_legenda), ("#8A6A2E", g_cote),
            ("#55657A", g_gear)]
 
 

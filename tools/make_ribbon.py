@@ -540,6 +540,15 @@ def i_caroiaj(c):                                   # colturi in L cu N= / E= si
         c.line([(x - 2.4, y), (x + 2.4, y)], BL, 1.4); c.line([(x, y - 2.4), (x, y + 2.4)], BL, 1.4)
 
 
+def i_legenda(c):                                  # legenda: chenar, titlu subliniat, linii-mostra colorate
+    c.rect(1.5, 2.5, 30.5, 29.5, fill=PAPER, out=GY, u=1.3)
+    c.line([(10, 8), (22, 8)], GY, 1.6)
+    for i, col in enumerate((PU, GR, OR, BL)):
+        y = 13 + i * 4.5
+        c.line([(5, y), (12, y)], GY2, 1.6)
+        c.line([(15, y), (27, y)], col, 2.0)
+
+
 def i_lang(c):
     c.rect(1.5, 3, 19, 17, fill=BL, r=2.5)
     c.poly([(5, 16), (5, 21), (10, 16)], fill=BL)
@@ -575,6 +584,10 @@ CMDS = {
                   "își actualizează coordonatele când le muți",
                   "Coordinate grid", "Coordinate grid: N= / E= corners and crosses; in Civil 3D, labels that "
                   "update their coordinates when moved", i_caroiaj),
+    "TKLEGENDA": ("Legendă automată", "Legenda din straturile cu polilinii: chenar, titlu subliniat, text și linie-mostră "
+                  "cu tipul, culoarea și grosimea liniilor de pe strat",
+                  "Automatic legend", "Legend from the layers with polylines: frame, underlined title, text and sample "
+                  "line with the layer's linetype, color and width", i_legenda),
     "TKCAD": ("Comenzi cadastru", "Lista comenzilor de cadastru în fereastra de text",
               "Cadastre commands", "Lists the cadastre commands in the text window", i_tkcad),
     "TKIMPPCT": ("Raportare puncte", "Raportează puncte din fișier (Nr X Y Z Cod), bloc „Punct” compatibil TopoLT",
@@ -679,7 +692,7 @@ PANELS = [
     ]),
     ("PROIECT", "Proiect", "Project", "TKPROIECT", [
         (L, "TKPROIECT", "Proiect\nnou", "New\nproject"),
-        ("rows", S1, [["TKSCARA"], ["TKCAROIAJ"]]),
+        ("rows", S1, [["TKSCARA"], ["TKCAROIAJ"], ["TKLEGENDA"]]),
     ]),
     ("PUNCTE", "Puncte", "Points", None, [
         (L, "TKIMPPCT", "Raportare\npuncte", "Draw\npoints"),

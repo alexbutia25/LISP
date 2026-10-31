@@ -528,4 +528,66 @@ check(grp(e_sus[0], 11)[1] < 458100.0 and grp(n_dr[0], 11)[0] < 545100.0, "texte
 check((grp(e_sus[0], 72), grp(e_sus[0], 73)) == (2, 3), "sus: E= TR, ca la coltul stanga sus")
 check((grp(e_jos[0], 72), grp(e_jos[0], 73)) == (0, 3) and grp(e_jos[0], 11)[1] > 458000.0, "jos: E= TL, in sus")
 
+# ---------------------------------------------------------------- TKLEGENDA: legenda automata din straturi cu polilinii
+for e in list(acad.order):
+    acad.deleted.add(e)
+DESC = {"GARD LEMN": "Gard de lemn"}
+def layer_item(coll, name):
+    if getattr(coll, "kind", None) == "layers":
+        if name.upper() not in acad.tables["LAYER"]: raise KeyError(name)
+        return Obj("layer", name=grp(acad.tables["LAYER"][name.upper()], 2))
+    return _vla_item(coll, name)
+_vla_item = M.funcs[Sym("VLA-ITEM")]
+M.funcs[Sym("VLA-ITEM")] = layer_item
+M.funcs[Sym("VLA-GET-DESCRIPTION")] = lambda o: DESC.get(o.name.upper(), "")
+M.funcs[Sym("VLA-PUT-DESCRIPTION")] = lambda o, v: DESC.__setitem__(o.name.upper(), v)
+def textbox(d):
+    t, h = grp(d, 1), grp(d, 40)
+    return [[0.0, 0.0, 0.0], [0.6 * h * len(t), h, 0.0]]
+M.funcs[Sym("TEXTBOX")] = textbox
+for name, col, flags in (("terenuri", 6, 0), ("Gard lemn", 3, 0), ("Drum", 250, 0), ("Oprit", -2, 0),
+                         ("Inghetat", 4, 1), ("Plan|xref", 7, 0)):
+    acad.entmake([DP(0, "LAYER"), DP(2, name), DP(70, flags), DP(62, col)])
+def pl(layer, extra=()):
+    acad.entmake([DP(0, "LWPOLYLINE"), DP(100, "AcDbEntity"), DP(410, "Model"), DP(8, layer)] + list(extra) +
+                 [DP(100, "AcDbPolyline"), DP(90, 2), DP(70, 0), [10, 0.0, 0.0], [10, 50.0, 0.0]])
+pl("terenuri", [DP(48, 0.5)]); pl("terenuri")
+acad.db[acad.order[-2]] = [x for x in acad.db[acad.order[-2]]] + [DP(43, 0.4)]     # latime globala pe prima
+pl("Gard lemn", [DP(6, "GARDLEMN"), DP(62, 3)]); pl("Drum")
+for lay in ("Oprit", "Inghetat", "Plan|xref", "LEGENDA", "Caroiaj"):
+    pl(lay)
+# dialogul: randurile sunt Drum, Gard de lemn (din descriere), Terenuri; Terenuri -> "Limita PUZ", Drum scos
+acad.dcl.scripts["tkp_legenda"] = [[("pick", "lst", "2"), ("pick", "txt", "Limita PUZ"), ("pick", "lst", "0"),
+                                    ("click", "inc"), ("click", "accept")]]
+acad.inputs += [("pt", [1000.0, 2000.0, 0.0])]
+n0 = len(acad.order)
+fn("c:TKLEGENDA")
+snap = acad.dcl.snapshots["tkp_legenda"]["lists"]["lst"]
+check([r.split("(")[-1].rstrip(")") for r in snap] == ["Drum", "Gard lemn", "terenuri"], snap)   # fara oprit/inghetat/xref/LEGENDA/Caroiaj
+check(snap[0].startswith("[ ] Drum") and snap[2].startswith("[x] Limita PUZ"), snap)
+new_e = [e for e in acad.order[n0:] if e not in acad.deleted]
+leg = [acad.db[e] for e in new_e]
+texts = [(grp(d, 1), grp(d, 11), grp(d, 40), grp(d, 72), grp(d, 73)) for d in leg if grp(d, 0) == "TEXT"]
+k = fn("TKP:K", fn("TKP:Scara"))
+check(texts[0][0] == "Legend\u0103:" and abs(texts[0][2] - 3.0 * k) < 1e-9 and (texts[0][3], texts[0][4]) == (1, 2), texts[0])
+check([t[0] for t in texts[1:]] == ["Gard de lemn:", "Limita PUZ:"], texts)
+check(abs(texts[1][1][0] - (1000 + 2.015 * k)) < 1e-9 and abs(texts[1][1][1] - (2000 - 15.154 * k)) < 1e-9, texts[1])
+check(abs(texts[2][1][1] - (2000 - (15.154 + 3.755) * k)) < 1e-9 and abs(texts[1][2] - 2.0 * k) < 1e-9, texts[2])
+frame = [d for d in leg if grp(d, 0) == "LWPOLYLINE" and grp(d, 8) == "LEGENDA"]
+check(len(frame) == 1 and grp(frame[0], 70) == 1 and len(grps(frame[0], 10)) == 4, frame)
+ys = [v[1] for v in grps(frame[0], 10)]
+check(abs((max(ys) - min(ys)) - (15.154 + 3.755 + 1.378 + 5.489) * k) < 1e-9, ys)
+under = [d for d in leg if grp(d, 0) == "LINE" and grp(d, 8) == "LEGENDA"]
+check(len(under) == 1 and abs(grp(under[0], 10)[1] - (2000 - (5.654 + 1.94) * k)) < 1e-9, under)
+samples = {grp(d, 8): d for d in leg if grp(d, 0) == "LWPOLYLINE" and grp(d, 8) != "LEGENDA"}
+check(set(samples) == {"Gard lemn", "terenuri"}, set(samples))
+g = samples["Gard lemn"]
+check(grp(g, 6) == "GARDLEMN" and grp(g, 62) == 3, g)                       # tipul si culoarea polilinii
+t = samples["terenuri"]
+check(abs(grp(t, 43) - 0.4) < 1e-12 and abs(grp(t, 48) - 0.5) < 1e-12, t)  # latimea globala si scara liniei
+v = grps(t, 10)
+check(abs((v[1][0] - v[0][0]) - 27.822 * k) < 1e-9 and abs(v[0][1] - (2000 - (15.154 + 3.755 + 1.378) * k)) < 1e-9, v)
+check(DESC.get("TERENURI") == "Limita PUZ" and DESC.get("GARD LEMN") == "Gard de lemn", DESC)   # textele raman in descrieri
+check(any("Legenda cu 2 randuri" in o for o in acad.out), acad.out[-3:])
+
 print("Toate testele TopoKitProiect au trecut.")

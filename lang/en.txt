@@ -723,7 +723,7 @@ Caroiaj Civil 3D: 	Civil 3D grid:
 Caroiaj desenat pe stratul Caroiaj: 4 colturi, 	Grid drawn on layer Caroiaj: 4 corners, 
  cruciulite	 crosses
  (fara Civil 3D coordonatele nu se actualizeaza la mutare).	 (without Civil 3D the coordinates do not update when moved).
-\nTopoKit Proiect incarcat. Comenzi: TKPROIECT (proiect nou), TKSCARA, TKCAROIAJ.	\nTopoKit Project loaded. Commands: TKPROIECT (new project), TKSCARA, TKCAROIAJ.
+\nTopoKit Proiect incarcat. Comenzi: TKPROIECT (proiect nou), TKSCARA, TKCAROIAJ, TKLEGENDA.	\nTopoKit Project loaded. Commands: TKPROIECT (new project), TKSCARA, TKCAROIAJ, TKLEGENDA.
 Civil 3D: unitati in metri, distante, unghiuri si directii setate.	Civil 3D: meter units, distances, angles and directions set.
 Civil 3D: setarile de unitati nu au putut fi schimbate.	Civil 3D: the unit settings could not be changed.
 Civil 3D: punctele pe stilul Basic (AutoCAD POINT, alb) cu eticheta Point Description.	Civil 3D: points on the Basic style (AutoCAD POINT, white) with the Point Description label.
@@ -753,3 +753,13 @@ Civil 3D: eticheta Distance Only nu a putut fi configurata.	Civil 3D: the Distan
 Stratul Caroiaj era inghetat sau oprit: l-am facut vizibil.	Layer Caroiaj was frozen or off: it is now visible.
 Civil 3D: etichetele mutate raman ca la origine (fara leader, fara text stivuit).	Civil 3D: moved labels stay as composed (no leader, no stacked text).
 Civil 3D: modul de mutare a etichetelor nu a putut fi schimbat.	Civil 3D: the label drag mode could not be changed.
+TopoKit - Legenda automata	TopoKit - Automatic legend
+Straturile vizibile cu polilinii. [x] = intra in legenda.	Visible layers with polylines. [x] = in the legend.
+Include / scoate stratul selectat	Include / remove the selected layer
+Textul din legenda:	Legend text:
+Pastreaza textele in descrierea straturilor	Keep the texts in the layer descriptions
+Nu exista straturi vizibile cu polilinii in model (in afara de 0, LEGENDA, Caroiaj, PAD...).	There are no visible layers with polylines in model space (apart from 0, LEGENDA, Caroiaj, PAD...).
+Niciun strat ales pentru legenda.	No layer chosen for the legend.
+ randuri, la scara 1:	 rows, at scale 1:
+ m), pe stratul LEGENDA.	 m), on layer LEGENDA.
+Legenda automata	Automatic legend

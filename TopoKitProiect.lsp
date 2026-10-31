@@ -14,6 +14,8 @@
 ;;;    TKSCARA    - aduce desenul la alta scara (1:50 ... 1:5000): scara de adnotare
 ;;;                 (etichetele Civil 3D), tipurile de linie, punctele si textele de
 ;;;                 pe straturile standard
+;;;    TKLEGENDA  - legenda automata din straturile vizibile cu polilinii: chenar, titlu
+;;;                 subliniat, text + linie-mostra cu proprietatile polilinilor de pe strat
 ;;;    TKCAROIAJ  - caroiaj de coordonate: la colturi eticheta N= / E= cu linii in L,
 ;;;                 in interior cruciulite la distanta din standard (25 m la 1:500).
 ;;;                 In Civil 3D sunt General Note Label-uri: cand muti eticheta,
@@ -50,7 +52,7 @@
 
 ;; Straturile ale caror texte se scaleaza cu TKSCARA (wcmatch)
 ;; (si straturile modulului de cadastru: numerele punctelor, cotele, suprafetele)
-(setq *TKP:LAYTXT* "PUNCTE*,ASCUNS*,TERENURI,VECIN*,DIMENSIUNI,CONSTRUC*,CAROIAJ,PAD,0_PNT_NUMBER,DIMENSIONS,SUPRAFETE")
+(setq *TKP:LAYTXT* "PUNCTE*,ASCUNS*,TERENURI,VECIN*,DIMENSIUNI,CONSTRUC*,CAROIAJ,PAD,0_PNT_NUMBER,DIMENSIONS,SUPRAFETE,LEGENDA")
 
 ;; Stilurile Civil 3D create de TopoKit
 (setq *TKP:STPCT* "Basic" *TKP:STLBL* "Point Description" *TKP:STCRUCE* "Caroiaj - cruciulita")
@@ -140,8 +142,14 @@
   (setq c (TKP:Cfg))
   (TKP:SaveCfg (subst (cons k v) (assoc k c) c)))
 
-;; TKP:Scara - scara curenta a planului (din setarile proiectului)
-(defun TKP:Scara () (TKP:Get "SCARA"))
+;; TKP:Scara - scara curenta a planului: din setarile proiectului; intr-un desen nepregatit cu
+;; TKPROIECT, din scara de adnotare (1:N din standard); altfel 1:500
+(defun TKP:Scara (/ c n)
+  (cond ((vlax-ldata-get "TOPOKIT" "PROIECT") (TKP:Get "SCARA"))
+        ((and (= 'STR (type (setq c (getvar "CANNOSCALE")))) (wcmatch c "1:#*")
+              (member (setq n (atoi (substr c 3))) *TKP:SCARI*))
+         n)
+        (T (TKP:Get "SCARA"))))
 ;; TKP:K - metri in desen pentru 1 mm pe hartie
 ;; TKP:K - metri in desen pentru 1 mm pe hartie la scara planului
 (defun TKP:K (sc) (/ sc 1000.0))
@@ -836,6 +844,189 @@
   (princ))
 
 ;;; ==========================================================================
+;;;  TKLEGENDA - legenda automata din straturile cu polilinii
+;;; ==========================================================================
+;;;  In stilul legendei din "Plan topo": chenar, titlul "Legenda:" subliniat, pe fiecare rand
+;;;  textul stratului si o linie-mostra cu tipul, culoarea, grosimea si scara liniei polilinilor
+;;;  de pe strat. Intra doar straturile vizibile cu cel putin o polilinie. Textul fiecarui rand
+;;;  (implicit descrierea stratului sau numele lui) se poate schimba in dialog si se pastreaza
+;;;  in descrierea stratului, ca data viitoare sa apara direct.
+
+;; Marimi in mm pe hartie (masurate pe legenda din Plan topo, la 1:1000)
+(setq *TKP:LEG* '((TITLU . 3.0) (TEXT . 2.0) (RAND . 3.755) (STANGA . 2.015) (MOSTRA . 27.822)
+                  (DREAPTA . 5.498) (TITLUY . 5.654) (SUBLINIERE . 1.94) (PRIMUL . 15.154)
+                  (LINIEY . 1.378) (JOS . 5.489) (SPATIU . 4.0)))
+;; straturi care nu intra niciodata in legenda
+(setq *TKP:LEGSKIP* "0,DEFPOINTS,LEGENDA,CAROIAJ,L_CADRU,PAD_*,*|*")
+
+(defun TKP:LegV (k) (cdr (assoc k *TKP:LEG*)))
+
+;; TKP:LayerDesc / TKP:SetLayerDesc - descrierea stratului (Layer Properties > Description)
+(defun TKP:LayerObj (name / r)
+  (setq r (vl-catch-all-apply 'vla-item
+            (list (vla-get-layers (vla-get-activedocument (vlax-get-acad-object))) name)))
+  (if (not (vl-catch-all-error-p r)) r))
+(defun TKP:LayerDesc (name / o d)
+  (if (and (setq o (TKP:LayerObj name))
+           (= 'STR (type (setq d (vl-catch-all-apply 'vla-get-description (list o))))))
+    (vl-string-trim " " d) ""))
+(defun TKP:SetLayerDesc (name s / o)
+  (if (setq o (TKP:LayerObj name)) (vl-catch-all-apply 'vla-put-description (list o s))))
+
+;; TKP:LegLabel - textul implicit: descrierea stratului sau numele lui cu majuscula
+(defun TKP:LegLabel (name / d)
+  (if (/= "" (setq d (TKP:LayerDesc name)))
+    d
+    (strcat (strcase (substr name 1 1)) (substr name 2))))
+
+;; TKP:LayerVisible - stratul nu e oprit sau inghetat
+(defun TKP:LayerVisible (name / d)
+  (and (setq d (tblsearch "LAYER" name))
+       (not (minusp (cond ((cdr (assoc 62 d))) (7))))
+       (/= 1 (logand 1 (cond ((cdr (assoc 70 d))) (0))))))
+
+;; TKP:LegItems - (strat polilinie-model text inclus) pentru straturile vizibile cu polilinii din model
+(defun TKP:LegItems (/ ss i e d lay seen out)
+  (if (setq ss (ssget "_X" '((0 . "LWPOLYLINE,POLYLINE") (410 . "Model"))))
+    (progn
+      (setq i 0)
+      (repeat (sslength ss)
+        (setq e (ssname ss i) d (entget e) lay (cdr (assoc 8 d)) i (1+ i))
+        (if (and (not (member (strcase lay) seen))
+                 (not (wcmatch (strcase lay) *TKP:LEGSKIP*))
+                 ;; fara retele 3D (polyface / mesh)
+                 (= 0 (logand 80 (cond ((cdr (assoc 70 d))) (0))))
+                 (TKP:LayerVisible lay))
+          (setq seen (cons (strcase lay) seen)
+                out (cons (list lay e (TKP:LegLabel lay) T) out))))))
+  (vl-sort out '(lambda (a b) (< (strcase (caddr a)) (strcase (caddr b))))))
+
+;; TKP:TextW - latimea unui text (Arial, inaltimea H), din textbox
+(defun TKP:TextW (s h / b)
+  (if (setq b (textbox (list (cons 0 "TEXT") (cons 1 s) (cons 40 h) (cons 7 (TK:Style)))))
+    (- (car (cadr b)) (car (car b)))
+    (* 0.6 h (strlen s))))
+
+;; TKP:Sample - linia-mostra pe stratul LAY, cu proprietatile polilinii model E (culoare, tip,
+;; scara tipului de linie, grosime, latime globala)
+(defun TKP:Sample (p1 p2 lay e / d w)
+  (setq d (entget e)
+        w (cond ((cdr (assoc 43 d))) ((and (= (cdr (assoc 0 d)) "POLYLINE") (cdr (assoc 40 d)))) (0.0)))
+  (entmake (append (list '(0 . "LWPOLYLINE") '(100 . "AcDbEntity") (cons 8 lay))
+                   (vl-remove nil (mapcar '(lambda (c) (assoc c d)) '(62 420 6 48 370)))
+                   (list '(100 . "AcDbPolyline") '(90 . 2) '(70 . 0) (cons 43 w)
+                         (list 10 (car p1) (cadr p1)) (list 10 (car p2) (cadr p2))))))
+
+;; TKP:DrawLegend - legenda cu randurile ITEMS (strat polilinie text), coltul stanga-sus P
+(defun TKP:DrawLegend (items p sc / k ht hl x0 y0 tw lw sx w h cx ty n y i)
+  (setq k (TKP:K sc) ht (* k (TKP:LegV 'TITLU)) hl (* k (TKP:LegV 'TEXT))
+        x0 (car p) y0 (cadr p) n (length items)
+        tw (TKP:TextW (TKP:Uni "Legend\\U+0103:") ht)
+        lw (apply 'max (mapcar '(lambda (it) (TKP:TextW (strcat (caddr it) ":") hl)) items))
+        sx (+ x0 (* k (TKP:LegV 'STANGA)) lw (* k (TKP:LegV 'SPATIU)))
+        w (max (+ (- sx x0) (* k (+ (TKP:LegV 'MOSTRA) (TKP:LegV 'DREAPTA)))) (+ tw (* 4 k (TKP:LegV 'STANGA))))
+        h (* k (+ (TKP:LegV 'PRIMUL) (* (1- n) (TKP:LegV 'RAND)) (TKP:LegV 'LINIEY) (TKP:LegV 'JOS)))
+        cx (+ x0 (/ w 2.0)) ty (- y0 (* k (TKP:LegV 'TITLUY))))
+  (TK:MakeLayer "LEGENDA" 7)
+  ;; chenarul
+  (entmake (list '(0 . "LWPOLYLINE") '(100 . "AcDbEntity") '(8 . "LEGENDA") '(100 . "AcDbPolyline")
+                 '(90 . 4) '(70 . 1) (list 10 x0 y0) (list 10 (+ x0 w) y0) (list 10 (+ x0 w) (- y0 h)) (list 10 x0 (- y0 h))))
+  ;; titlul, centrat si subliniat
+  (TKP:Txt (TKP:Uni "Legend\\U+0103:") (list cx ty) ht 0.0 "MC" "LEGENDA")
+  (TK:Line (list (- cx (/ tw 2.0)) (- ty (* k (TKP:LegV 'SUBLINIERE))))
+           (list (+ cx (/ tw 2.0)) (- ty (* k (TKP:LegV 'SUBLINIERE)))) "LEGENDA" nil)
+  ;; randurile: textul stratului si linia-mostra
+  (setq i 0)
+  (foreach it items
+    (setq y (- y0 (* k (+ (TKP:LegV 'PRIMUL) (* i (TKP:LegV 'RAND))))))
+    (TKP:Txt (strcat (caddr it) ":") (list (+ x0 (* k (TKP:LegV 'STANGA))) y) hl 0.0 "TL" "LEGENDA")
+    (TKP:Sample (list sx (- y (* k (TKP:LegV 'LINIEY))))
+                (list (+ sx (* k (TKP:LegV 'MOSTRA))) (- y (* k (TKP:LegV 'LINIEY))))
+                (car it) (cadr it))
+    (setq i (1+ i)))
+  (list w h))
+
+;; ---------------------------------------------------------------- dialogul
+(defun TKP:LegDcl ()
+  (list "tkp_legenda : dialog {"
+        "  label = \"TopoKit - Legenda automata\";"
+        "  : text { label = \"Straturile vizibile cu polilinii. [x] = intra in legenda.\"; }"
+        "  : list_box { key = \"lst\"; width = 64; height = 16; fixed_width_font = true; }"
+        "  : row {"
+        "    : button { key = \"inc\"; label = \"Include / scoate stratul selectat\"; }"
+        "  }"
+        "  : edit_box { key = \"txt\"; label = \"Textul din legenda:\"; edit_width = 40; }"
+        "  : toggle { key = \"desc\"; label = \"Pastreaza textele in descrierea straturilor\"; }"
+        "  ok_cancel;"
+        "}"))
+
+(defun TKP:LegRow (it)
+  (strcat (if (cadddr it) "[x] " "[ ] ") (caddr it) "   (" (car it) ")"))
+
+(defun TKP:LegFill (/ )
+  (start_list "lst")
+  (foreach it *TKP:LGW* (add_list (TKP:LegRow it)))
+  (end_list)
+  (if *TKP:LGI* (set_tile "lst" (itoa *TKP:LGI*))))
+
+(defun TKP:LegSet (i new / old)
+  (setq old (nth i *TKP:LGW*)
+        *TKP:LGW* (subst new old *TKP:LGW*)))
+
+;; clic pe rand: textul lui in caseta de editare
+(defun TKP:LegPick (v)
+  (setq *TKP:LGI* (atoi v))
+  (set_tile "txt" (caddr (nth *TKP:LGI* *TKP:LGW*))))
+
+;; textul schimbat
+(defun TKP:LegText (v / it)
+  (if (and *TKP:LGI* (/= "" (vl-string-trim " " v)))
+    (progn
+      (setq it (nth *TKP:LGI* *TKP:LGW*))
+      (TKP:LegSet *TKP:LGI* (list (car it) (cadr it) (vl-string-trim " " v) (cadddr it)))
+      (TKP:LegFill))))
+
+;; include / scoate randul selectat
+(defun TKP:LegToggle (/ it)
+  (if *TKP:LGI*
+    (progn
+      (setq it (nth *TKP:LGI* *TKP:LGW*))
+      (TKP:LegSet *TKP:LGI* (list (car it) (cadr it) (caddr it) (not (cadddr it))))
+      (TKP:LegFill))))
+
+;; TKP:LegDialog - intoarce (randuri-incluse . pastreaza-descrieri) sau nil
+(defun TKP:LegDialog (items / fn f id r keep)
+  (setq *TKP:LGW* items *TKP:LGI* 0 fn (vl-filename-mktemp "tklegenda" nil ".dcl") f (open fn "w") r 0)
+  (foreach ln (TKP:LegDcl) (write-line ln f))
+  (close f)
+  (setq id (load_dialog fn))
+  (if (and (>= id 0) (new_dialog "tkp_legenda" id))
+    (progn
+      (TKP:LegFill)
+      (set_tile "txt" (caddr (car *TKP:LGW*)))
+      (set_tile "desc" "1")
+      (action_tile "lst" "(TKP:LegPick $value)")
+      (action_tile "txt" "(TKP:LegText $value)")
+      (action_tile "inc" "(TKP:LegToggle)")
+      (action_tile "accept" "(setq *TKP:LGK* (get_tile \"desc\")) (done_dialog 1)")
+      (setq r (start_dialog))))
+  (if (>= id 0) (unload_dialog id))
+  (vl-file-delete fn)
+  (if (= r 1) (cons (vl-remove-if-not 'cadddr *TKP:LGW*) (= *TKP:LGK* "1"))))
+
+(defun TKP:CmdLegenda (/ items r p sz)
+  (cond
+    ((null (setq items (TKP:LegItems)))
+     (TKP:Msg "Nu exista straturi vizibile cu polilinii in model (in afara de 0, LEGENDA, Caroiaj, PAD...)."))
+    ((null (setq r (TKP:LegDialog items))) nil)
+    ((null (car r)) (TKP:Msg "Niciun strat ales pentru legenda."))
+    ((setq p (getpoint "\nColtul stanga-sus al legendei: "))
+     (if (cdr r) (foreach it (car r) (TKP:SetLayerDesc (car it) (caddr it))))
+     (setq sz (TKP:DrawLegend (car r) p (TKP:Scara)))
+     (TKP:Msg (strcat "Legenda cu " (itoa (length (car r))) " randuri, la scara 1:" (itoa (TKP:Scara))
+                      " (" (TKP:Num (car sz)) " x " (TKP:Num (cadr sz)) " m), pe stratul LEGENDA.")))))
+
+;;; ==========================================================================
 ;;;  COMENZI
 ;;; ==========================================================================
 
@@ -849,7 +1040,8 @@
 (defun c:TKPROIECT () (TKP:Run '(TKP:CmdProiect)) (princ))
 (defun c:TKSCARA () (TKP:Run '(TKP:CmdScara)) (princ))
 (defun c:TKCAROIAJ () (TKP:Run '(TKP:CmdCaroiaj)) (princ))
+(defun c:TKLEGENDA () (TKP:Run '(TKP:CmdLegenda)) (princ))
 
 (setq *TKP:LOADING* nil)
-(princ "\nTopoKit Proiect incarcat. Comenzi: TKPROIECT (proiect nou), TKSCARA, TKCAROIAJ.")
+(princ "\nTopoKit Proiect incarcat. Comenzi: TKPROIECT (proiect nou), TKSCARA, TKCAROIAJ, TKLEGENDA.")
 (princ)

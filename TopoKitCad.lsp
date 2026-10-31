@@ -1201,6 +1201,7 @@
   (TKC:Item s "Pregatire proiect nou..." "TKPROIECT")
   (TKC:Item s "Schimba scara planului" "TKSCARA")
   (TKC:Item s "Caroiaj de coordonate" "TKCAROIAJ")
+  (TKC:Item s "Legenda automata" "TKLEGENDA")
   (setq s (TKC:SubMenu pm "Suprafete"))
   (TKC:Item s "Calculeaza suprafete" "TKSUPRAF")
   (TKC:Item s "Detaseaza o suprafata" "TKDETASARE")

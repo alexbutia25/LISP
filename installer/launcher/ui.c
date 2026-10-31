@@ -27,7 +27,7 @@
 #include "ui.h"
 
 #ifndef TK_VERSION
-#define TK_VERSION "1.6.0"
+#define TK_VERSION "1.7.0"
 #endif
 #define UI_CLASS L"TopoKitMainWnd"
 #define W_DIP 1000
@@ -69,8 +69,8 @@ static const struct { const wchar_t *title, *desc, *title_en, *desc_en, *cmd; AR
       L"Batch detachment", L"Several parcels from a table or from Excel", L"TKDETMULT", 0xFFC0392B },
     { L"Raportare puncte", L"Puncte din fișier: număr, cotă și cod",
       L"Draw points", L"Points from a file: number, elevation, code", L"TKIMPPCT", 0xFF2F6FB5 },
-    { L"Introducere puncte", L"Puncte noi cu număr, cotă și cod (TopoLT)",
-      L"Insert points", L"New points with number, elevation, code (TopoLT)", L"TKPCT", 0xFFD0453A },
+    { L"Legendă automată", L"Din straturile cu polilinii, cu linii-mostră",
+      L"Automatic legend", L"From the polyline layers, with sample lines", L"TKLEGENDA", 0xFF7A4FA0 },
     { L"Cote laturi", L"Lungimile laturilor, spre exteriorul poligonului",
       L"Side lengths", L"Side lengths, outside the polygon", L"TKCOTE", 0xFF8A6A2E },
     { L"Setări cadastru", L"Scara, înălțimi text, zecimale, hașură",

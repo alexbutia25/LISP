@@ -74,7 +74,7 @@ static const struct { const wchar_t *label, *label_en, *cmd; } CMDS[] = {
     { L"Suprafețe (S=, hașură)", L"Areas (S=, hatch)", L"TKSUPRAF" },
     { L"Detașare multiplă", L"Multiple detachment", L"TKDETMULT" },
     { L"Raportare puncte din fișier", L"Draw points from file", L"TKIMPPCT" },
-    { L"Introducere puncte", L"Insert points", L"TKPCT" },
+    { L"Legendă automată", L"Automatic legend", L"TKLEGENDA" },
     { L"Cote laturi", L"Side lengths", L"TKCOTE" },
     { L"Setări cadastru", L"Cadastre settings", L"TKCADSET" },
 };

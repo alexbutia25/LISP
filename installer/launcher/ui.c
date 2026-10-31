@@ -27,7 +27,7 @@
 #include "ui.h"
 
 #ifndef TK_VERSION
-#define TK_VERSION "1.7.0"
+#define TK_VERSION "1.7.1"
 #endif
 #define UI_CLASS L"TopoKitMainWnd"
 #define W_DIP 1000
@@ -93,7 +93,7 @@ static const struct { const wchar_t *title, *desc, *title_en, *desc_en, *cmd; AR
 #define C_WAIT      0xFFE0A030
 
 /* Zonele active */
-enum { HT_NONE = -1, HT_TILE0 = 0, HT_PRIMARY = 32, HT_TOGGLE, HT_FOLDER, HT_HELP, HT_DIAG, HT_LANG };
+enum { HT_NONE = -1, HT_TILE0 = 0, HT_PRIMARY = 32, HT_TOGGLE, HT_FOLDER, HT_HELP, HT_DIAG, HT_LANG, HT_FUNC };
 
 static HINSTANCE g_inst;
 static HWND g_wnd;
@@ -269,15 +269,16 @@ static void Layout(void)
     g_r[HT_HELP] = (R){ W_DIP - 24 - 128, H_DIP - 44, 128, 28 };
     g_r[HT_FOLDER] = (R){ W_DIP - 24 - 128 - 12 - 116, H_DIP - 44, 116, 28 };
     g_r[HT_DIAG] = (R){ W_DIP - 24 - 128 - 12 - 116 - 12 - 84, H_DIP - 44, 84, 28 };
+    g_r[HT_FUNC] = (R){ W_DIP - 24 - 128 - 12 - 116 - 12 - 84 - 12 - 110, H_DIP - 44, 110, 28 };
 }
 
 static int HitTest(int px, int py)
 {
     float x = px / g_s, y = py / g_s;
-    int ids[NTILES + 6] = { HT_PRIMARY, HT_TOGGLE, HT_FOLDER, HT_HELP, HT_DIAG, HT_LANG };
+    int ids[NTILES + 7] = { HT_PRIMARY, HT_TOGGLE, HT_FOLDER, HT_HELP, HT_DIAG, HT_LANG, HT_FUNC };
     unsigned i;
     UiState st;
-    for (i = 0; i < NTILES; i++) ids[6 + i] = HT_TILE0 + (int)i;
+    for (i = 0; i < NTILES; i++) ids[7 + i] = HT_TILE0 + (int)i;
     for (i = 0; i < sizeof ids / sizeof ids[0]; i++) {
         R r = g_r[ids[i]];
         if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) {
@@ -429,6 +430,7 @@ static void Paint(GpGraphics *g, int hover, int pressed)
              fLink, C_TEXT,
              (R){ tg.x + 52, tg.y, tg.w + 40, tg.h }, 0, 1, FALSE);
         Text(g, L"Diagnostic", hover == HT_DIAG ? fLinkU : fLink, C_LINK, g_r[HT_DIAG], 2, 1, FALSE);
+        Text(g, TR(L"Toate funcțiile", L"All functions"), hover == HT_FUNC ? fLinkU : fLink, C_LINK, g_r[HT_FUNC], 2, 1, FALSE);
         Text(g, TR(L"Folder TopoKit", L"TopoKit folder"), hover == HT_FOLDER ? fLinkU : fLink, C_LINK, g_r[HT_FOLDER], 2, 1, FALSE);
         Text(g, TR(L"Ghid de utilizare", L"User guide"), hover == HT_HELP ? fLinkU : fLink, C_LINK, g_r[HT_HELP], 2, 1, FALSE);
     }
@@ -518,6 +520,7 @@ static void Activate(int ht)
     else if (ht == HT_FOLDER) App_Action(ACT_FOLDER, 0);
     else if (ht == HT_HELP) App_Action(ACT_HELP, 0);
     else if (ht == HT_DIAG) App_Action(ACT_DIAG, 0);
+    else if (ht == HT_FUNC) App_Action(ACT_FUNC, 0);
     else if (ht == HT_LANG) App_Action(ACT_LANG, 0);
     InvalidateRect(g_wnd, NULL, FALSE);
 }

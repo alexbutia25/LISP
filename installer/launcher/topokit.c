@@ -1159,6 +1159,11 @@ void App_Action(int act, int arg)
         if (GetFileAttributesW(f) == INVALID_FILE_ATTRIBUTES) swprintf(f, MAX_PATH, L"%ls\\README.md", g_contents);
         ShellExecuteW(NULL, L"open", f, NULL, NULL, SW_SHOWNORMAL);
         break;
+    case ACT_FUNC:                      /* pagina cu toate functiile (in engleza: Functii_EN.html) */
+        GetModuleFileNameW(NULL, f, MAX_PATH);
+        lstrcpyW(wcsrchr(f, L'\\') + 1, g_en ? L"Functii_EN.html" : L"Functii.html");
+        ShellExecuteW(NULL, L"open", f, NULL, NULL, SW_SHOWNORMAL);
+        break;
     case ACT_DIAG:
         Diagnostic();
         break;

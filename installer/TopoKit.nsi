@@ -18,7 +18,7 @@ ManifestDPIAware true
 !include "FileFunc.nsh"
 
 !ifndef VERSION
-  !define VERSION "1.7.0"
+  !define VERSION "1.7.1"
 !endif
 !ifndef STAGE
   !error "Compilati cu tools/build_installer.py (definește STAGE)"
@@ -79,9 +79,9 @@ Nu sunt necesare drepturi de administrator."
 Dacă AutoCAD este deja deschis, alegeți o comandă din iconița ${APP} de lângă ceas sau reporniți AutoCAD."
 !define MUI_FINISHPAGE_RUN "$INSTDIR\TopoKit.exe"
 !define MUI_FINISHPAGE_RUN_TEXT "Deschide ${APP} acum"
-!define MUI_FINISHPAGE_SHOWREADME "$INSTDIR\README.html"
-!define MUI_FINISHPAGE_SHOWREADME_TEXT "Deschide ghidul de utilizare"
-!define MUI_FINISHPAGE_SHOWREADME_NOTCHECKED
+; la final se deschide pagina cu toate functiile programului (bifat implicit)
+!define MUI_FINISHPAGE_SHOWREADME "$INSTDIR\Functii.html"
+!define MUI_FINISHPAGE_SHOWREADME_TEXT "Arată toate funcțiile ${APP}"
 !insertmacro MUI_PAGE_FINISH
 
 !insertmacro MUI_UNPAGE_WELCOME
@@ -113,6 +113,8 @@ Section "${APP} pentru AutoCAD (obligatoriu)" SecMain
   File "${STAGE}\app\TopoKit.exe"
   File "${STAGE}\app\topokit.ico"
   File "${STAGE}\app\README.html"
+  File "${STAGE}\app\Functii.html"
+  File "${STAGE}\app\Functii_EN.html"
   SetOutPath "$INSTDIR\docs"
   File /r "${STAGE}\app\docs\*.*"
   ; programul Plan Inclinare (calcul inclinatie); setarile utilizatorului raman
@@ -152,6 +154,7 @@ Section "${APP} pentru AutoCAD (obligatoriu)" SecMain
   CreateShortCut "$SMPROGRAMS\${APP}\Plan Inclinare.lnk" "$INSTDIR\PlanInclinare\PlanInclinare.exe" "" \
     "$INSTDIR\PlanInclinare\PlanInclinare.exe" 0 SW_SHOWNORMAL "" "Calcul inclinatie (verticalitate)"
   CreateShortCut "$SMPROGRAMS\${APP}\Ghid ${APP}.lnk" "$INSTDIR\README.html"
+  CreateShortCut "$SMPROGRAMS\${APP}\Funcții ${APP}.lnk" "$INSTDIR\Functii.html"
   CreateShortCut "$SMPROGRAMS\${APP}\Dezinstalare ${APP}.lnk" "$INSTDIR\Uninstall.exe"
 
   ; AutoCAD prezent? (instalarea continua oricum: pachetul se activeaza la instalarea AutoCAD)
@@ -191,6 +194,8 @@ Section "Uninstall"
   Delete "$INSTDIR\TopoKit.exe"
   Delete "$INSTDIR\topokit.ico"
   Delete "$INSTDIR\README.html"
+  Delete "$INSTDIR\Functii.html"
+  Delete "$INSTDIR\Functii_EN.html"
   RMDir /r "$INSTDIR\docs"
   RMDir /r "$INSTDIR\PlanInclinare"
   RMDir /r "$INSTDIR\modules"

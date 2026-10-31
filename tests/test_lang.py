@@ -256,5 +256,18 @@ assert call(Sym("TKL:STALE"), []) is not None
 env[Sym("*TK:VERSION*")] = call(Sym("TKL:FILEVERSION"), [win(contents)])
 print("TKL:SetLang RO: calea de suport fara en, meniul TopoKit.cuix, mesajele in romana")
 
+# ---------------------------------------------------------------- pagina cu toate functiile
+import make_functions
+fdir = os.path.join(TMP, "functii")
+ro_f, en_f = make_functions.build(fdir, "9.9.9")
+for f, word in ((ro_f, "Comanda"), (en_f, "Command")):
+    txt = open(f, encoding="utf-8").read()
+    for c in make_ribbon.CMDS:
+        assert f"<code>{c}</code>" in txt, (os.path.basename(f), c)          # fiecare comanda apare
+    assert txt.count("<code>") == len(make_ribbon.CMDS), "fiecare comanda o singura data"
+    assert f"({len(make_ribbon.CMDS)} " in txt and "9.9.9" in txt and word in txt
+assert "Funcțiile TopoKit" in open(ro_f, encoding="utf-8").read() and "TopoKit functions" in open(en_f, encoding="utf-8").read()
+print(f"Pagina cu functiile: {len(make_ribbon.CMDS)} comenzi, romana si engleza")
+
 shutil.rmtree(TMP, ignore_errors=True)
 print("\nToate testele de limba si ribbon au trecut.")

@@ -53,8 +53,8 @@ for c in ("C:TOPOKIT", "C:ANEXE", "C:TOPOTEREN", "C:TOPOKITRELOAD", "C:EXPKMZ"):
     assert defined(c), c
 assert dirs(prefs["SupportPath"])[0] == win_root and len(dirs(prefs["SupportPath"])) == 3, prefs
 assert acad.vars["TRUSTEDPATHS"] == win_root + "\\...", acad.vars["TRUSTEDPATHS"]
-assert any("TopoKit 1.7.0 pregatit" in o for o in acad.out), acad.out[-3:]
-assert "LoadedAt" in written and written["LoadedIn"].startswith("TopoKit 1.7.0 / ") and written["LoadedIn"].endswith("test.dwg"), written
+assert any("TopoKit 1.7.1 pregatit" in o for o in acad.out), acad.out[-3:]
+assert "LoadedAt" in written and written["LoadedIn"].startswith("TopoKit 1.7.1 / ") and written["LoadedIn"].endswith("test.dwg"), written
 print("Prima incarcare: TopoKit, Anexe, Teren; cale de suport si TRUSTEDPATHS actualizate")
 
 # ---------------------------------------------------------------- desen nou: fara dubluri, fara reincarcare

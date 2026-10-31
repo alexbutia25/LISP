@@ -90,7 +90,7 @@ reîncarcă imediat în desenul curent; celelalte desene deschise trec la prima 
 
 ### Cu instalatorul (recomandat)
 
-1. Descărcați și rulați **[`dist/TopoKitSetup-1.7.0.exe`](dist/TopoKitSetup-1.7.0.exe)** (TopoKit 1.7.0). Nu sunt necesare drepturi
+1. Descărcați și rulați **[`dist/TopoKitSetup-1.7.1.exe`](dist/TopoKitSetup-1.7.1.exe)** (TopoKit 1.7.1). Nu sunt necesare drepturi
    de administrator; instalarea se face pentru utilizatorul curent.
 2. Alegeți opțiunile: scurtătură pe desktop și pornirea în fundal odată cu Windows (ambele bifate implicit).
 3. Deschideți **TopoKit** din meniul Start sau de pe desktop. Atât.
@@ -116,6 +116,10 @@ Ce face instalarea:
   și *Setări cadastru*. Fiecare card are iconița, descrierea și comanda AutoCAD:
 
   ![Fereastra TopoKit](docs/lansator_conectat.png)
+- **Toate funcțiile:** la sfârșitul instalării se deschide pagina **Funcțiile TopoKit** (`Functii.html`,
+  în engleză `Functii_EN.html`) cu toate comenzile, grupate ca în ribbon, fiecare cu iconița, descrierea și
+  comanda AutoCAD. O găsiți și în fereastra TopoKit (legătura *Toate funcțiile*) și în meniul Start.
+  Pagina se generează la fiecare build din lista ribbonului (`python3 tools/make_functions.py`).
 
   - **starea conexiunii**: punct verde și *Conectat la AutoCAD 2024* (cu desenul activ), gri când
     AutoCAD nu rulează, portocaliu cât timp AutoCAD pornește. Butonul din dreapta pornește AutoCAD sau
@@ -156,7 +160,7 @@ Ce face instalarea:
     o anulează prin fereastra AutoCAD (WM_COPYDATA) înainte de a trimite modulul.
 - **Dezinstalare:** *Setări → Aplicații → TopoKit* sau meniul Start → *Dezinstalare TopoKit*. Se șterg
   pachetul AutoCAD, lansatorul și setările din registru.
-- **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup-1.7.0.exe /S`; dezinstalare:
+- **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup-1.7.1.exe /S`; dezinstalare:
   `"%LOCALAPPDATA%\Programs\TopoKit\Uninstall.exe" /S`.
 
 Windows SmartScreen poate afișa *„Windows a protejat computerul”*, pentru că instalatorul nu este

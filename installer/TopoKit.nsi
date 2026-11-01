@@ -18,7 +18,7 @@ ManifestDPIAware true
 !include "FileFunc.nsh"
 
 !ifndef VERSION
-  !define VERSION "1.8.0"
+  !define VERSION "1.9.0"
 !endif
 !ifndef STAGE
   !error "Compilati cu tools/build_installer.py (definește STAGE)"

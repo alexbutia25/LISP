@@ -28,7 +28,8 @@ import unicodedata
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-# ca .exe (PyInstaller) setarile si PlanInclinareCogo.dll stau langa executabil
+# ca .exe setarile si PlanInclinareCogo.dll stau langa executabil: PyInstaller (sys.frozen) -> folderul
+# exe-ului; Nuitka standalone -> __file__ e in folderul exe-ului (PlanInclinare.dist), la fel ca din sursa
 APP_DIR = os.path.dirname(os.path.abspath(sys.executable if getattr(sys, "frozen", False) else __file__))
 CONFIG_FILE = os.path.join(APP_DIR, "setari_plan_inclinare.json")
 COGO_DLL = os.path.join(APP_DIR, "PlanInclinareCogo.dll")
@@ -1400,8 +1401,9 @@ def licenta_ok():
 
     Verificarea o face TopoKit.exe /license (cod de iesire 0 = licenta buna sau licentiere
     dezactivata la build), din folderul TopoKit (parintele folderului acestui program).
-    Rulat din sursa (dezvoltare, teste) nu se verifica nimic."""
-    if not getattr(sys, "frozen", False):
+    Rulat din sursa (dezvoltare, teste) nu se verifica nimic. Compilat cu Nuitka nu exista
+    sys.frozen, dar modulul are __compiled__ (PyInstaller: sys.frozen)."""
+    if not (getattr(sys, "frozen", False) or "__compiled__" in globals()):
         return True
     exe = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(sys.executable))), "TopoKit.exe")
     try:

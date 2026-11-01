@@ -10,8 +10,15 @@
 ;;;   - adauga folderul in calea de suport (Support File Search Path), ca
 ;;;     dialogurile .dcl, grila .gsb si sabloanele din "anexe" sa fie gasite;
 ;;;   - adauga folderul in locatiile de incredere (TRUSTEDPATHS), daca lipseste;
-;;;   - incarca TopoKit.lsp (care incarca TopoKitAnexe.lsp, TopoKitTeren.lsp si
-;;;     TopoKitInclinare.lsp).
+;;;   - incarca modulul TopoKit (care incarca TopoKitAnexe, TopoKitTeren,
+;;;     TopoKitInclinare, TopoKitCad si TopoKitProiect).
+;;;
+;;; Pachetul instalat are modulele compilate in doua formate (incarcatorul ramane
+;;; .lsp, pentru ca PackageContents.xml nu poate alege dupa LISPSYS):
+;;;   Contents\fas5\*.fas  - motorul Unicode (LISPSYS=1)
+;;;   Contents\fas4\*.fas  - motorul vechi (LISPSYS=0) si LISPSYS=2
+;;; (la fel Contents\en\fas5, Contents\en\fas4). Versiunea de dezvoltare are
+;;; sursele .lsp langa incarcator. Vezi TKL:Module.
 ;;;
 ;;; (TKL:Load T) reincarca toate modulele (comanda TOPOKITRELOAD).
 ;;; ==========================================================================
@@ -22,12 +29,26 @@
 
 (defun TKL:Slash (p) (vl-string-right-trim "\\/" (vl-string-translate "/" "\\" p)))
 
-;; Folderul care contine TopoKit.lsp
+;; Folderele .fas potrivite motorului AutoLISP: LISPSYS=1 citeste FAS5 (si FAS4);
+;; LISPSYS=0 (motorul vechi) doar FAS4; LISPSYS=2 compileaza FAS4, deci tot fas4.
+;; AutoCAD mai vechi de 2021 nu are LISPSYS (nil) -> fas4.
+(defun TKL:FasDirs ()
+  (if (= (getvar "LISPSYS") 1) '("fas5" "fas4") '("fas4")))
+
+;; Calea modulului name ("TopoKit", "TopoKitAnexe" ...) din dir: dir\fas5|fas4\name.fas
+;; (pachetul compilat), altfel dir\name.lsp (versiunea de dezvoltare); nil daca lipseste
+(defun TKL:Module (dir name)
+  (if dir
+    (vl-some 'findfile
+             (append (mapcar '(lambda (s) (strcat dir "\\" s "\\" name ".fas")) (TKL:FasDirs))
+                     (list (strcat dir "\\" name ".lsp"))))))
+
+;; Folderul care contine modulul TopoKit (Contents)
 (defun TKL:Dir (/ d f)
   (cond
     ((and (setq d (vl-registry-read *TKL:REGKEY* "ContentsDir"))
           (/= d "")
-          (findfile (strcat (TKL:Slash d) "\\TopoKit.lsp")))
+          (TKL:Module (TKL:Slash d) "TopoKit"))
      (TKL:Slash d))
     ((setq f (findfile "TopoKitLoad.lsp")) (TKL:Slash (vl-filename-directory f)))
     ((setq f (findfile "TopoKit.lsp")) (TKL:Slash (vl-filename-directory f)))))
@@ -68,7 +89,7 @@
 ;;;  %LOCALAPPDATA%\TopoKit\language.txt (scris de comanda TOPOKITLANG si de
 ;;;  fereastra TopoKit.exe). Fisierul, nu registrul: unele instalari AutoCAD vad
 ;;;  o copie virtualizata a registrului, diferita de cea a ferestrei TopoKit.
-;;;  Varianta in engleza a modulelor (.lsp, .dcl) se afla in Contents\en; folderul
+;;;  Varianta in engleza a modulelor (.fas / .lsp, .dcl) se afla in Contents\en; folderul
 ;;;  e pus in calea de suport INAINTEA folderului Contents, deci findfile gaseste
 ;;;  intai fisierele traduse. Anexele si planurile raman in romana (Ordinul ANCPI).
 ;;; --------------------------------------------------------------------------
@@ -83,7 +104,7 @@
 
 ;; Folderul din care se incarca modulele pentru limba curenta
 (defun TKL:LangDir (dir)
-  (if (and (= (TKL:Lang) "EN") (findfile (strcat dir "\\en\\TopoKit.lsp")))
+  (if (and (= (TKL:Lang) "EN") (TKL:Module (strcat dir "\\en") "TopoKit"))
     (strcat dir "\\en")
     dir))
 
@@ -159,7 +180,9 @@
 ;; (sau in alta limba decat cea aleasa intre timp cu TOPOKITLANG).
 ;; Versiunea instalata se citeste din TopoKit.lsp de pe disc, nu din registru.
 (defun TKL:FileVersion (dir / fh l n v i)
-  (if (and dir (setq fh (open (strcat dir "\\TopoKit.lsp") "r")))
+  (if (and dir (findfile (strcat dir "\\VERSION")) (setq fh (open (strcat dir "\\VERSION") "r")))
+    (progn (setq v (vl-string-trim " \t\r\n" (read-line fh))) (close fh)))
+  (if (and dir (not v) (setq fh (open (strcat dir "\\TopoKit.lsp") "r")))
     (progn
       (setq n 0)
       (while (and (not v) (< n 80) (setq l (read-line fh)))
@@ -167,8 +190,8 @@
         (if (and (wcmatch l "(setq `*TK:VERSION`* \"*\")*")
                  (setq i (vl-string-search "\"" l 20)))
           (setq v (substr l 21 (- i 20)))))
-      (close fh)
-      v)))
+      (close fh)))
+  v)
 
 (defun TKL:Stale (/ v)
   (and TK:Start
@@ -252,7 +275,7 @@
      (if force (setq TK:Start nil TKA:Generate nil TKT:Menu nil TKI:Run nil c:TKDETASARE nil c:TKPROIECT nil))
      (setq *TKL:DIR* dir ldir (TKL:LangDir dir))
      (if (or force (not TK:Start))
-       (setq r (vl-catch-all-apply 'load (list (strcat ldir "\\TopoKit.lsp")))
+       (setq r (vl-catch-all-apply 'load (list (TKL:Module ldir "TopoKit")))
              *TKL:LANGLOADED* (TKL:Lang)))
      (cond
        ((vl-catch-all-error-p r)

@@ -236,19 +236,27 @@ static void SetAutorun(BOOL on)
     RegCloseKey(h);
 }
 
+/* Incarcatorul din folder: TopoKitLoad.fas (pachetul compilat) sau TopoKitLoad.lsp */
+static BOOL LoaderIn(const wchar_t *dir, wchar_t *out, int cch)
+{
+    swprintf(out, cch, L"%ls\\TopoKitLoad.fas", dir);
+    if (GetFileAttributesW(out) != INVALID_FILE_ATTRIBUTES) return TRUE;
+    swprintf(out, cch, L"%ls\\TopoKitLoad.lsp", dir);
+    return GetFileAttributesW(out) != INVALID_FILE_ATTRIBUTES;
+}
+
 /* Folderul cu fisierele LISP: valoarea scrisa de instalator, altfel pachetul
  * ApplicationPlugins standard, altfel folderul programului. */
 static void FindContents(void)
 {
     wchar_t p[MAX_PATH], f[MAX_PATH];
-    if (RegGetStr(HKEY_CURRENT_USER, REG_APP, L"ContentsDir", p, MAX_PATH)) {
-        swprintf(f, MAX_PATH, L"%ls\\TopoKitLoad.lsp", p);
-        if (GetFileAttributesW(f) != INVALID_FILE_ATTRIBUTES) { wcscpy(g_contents, p); return; }
+    if (RegGetStr(HKEY_CURRENT_USER, REG_APP, L"ContentsDir", p, MAX_PATH) && LoaderIn(p, f, MAX_PATH)) {
+        wcscpy(g_contents, p);
+        return;
     }
     if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, p))) {
         swprintf(f, MAX_PATH, L"%ls\\Autodesk\\ApplicationPlugins\\TopoKit.bundle\\Contents", p);
-        swprintf(p, MAX_PATH, L"%ls\\TopoKitLoad.lsp", f);
-        if (GetFileAttributesW(p) != INVALID_FILE_ATTRIBUTES) { wcscpy(g_contents, f); return; }
+        if (LoaderIn(f, p, MAX_PATH)) { wcscpy(g_contents, f); return; }
     }
     GetModuleFileNameW(NULL, p, MAX_PATH);
     *wcsrchr(p, L'\\') = 0;
@@ -604,7 +612,7 @@ static BOOL Quiescent(IDispatch *app)
 static void LispPath(wchar_t *out, int cch)
 {
     wchar_t *p;
-    swprintf(out, cch, L"%ls\\TopoKitLoad.lsp", g_contents);
+    LoaderIn(g_contents, out, cch);
     for (p = out; *p; p++)
         if (*p == L'\\') *p = L'/';
 }
@@ -1037,10 +1045,12 @@ static void Diagnostic(void)
     fwprintf(f, L"Windows %lu.%lu build %lu; TopoKit ca administrator: %ls\n", os.dwMajorVersion, os.dwMinorVersion,
              os.dwBuildNumber, SelfElevated() == 1 ? L"DA" : L"nu");
     fwprintf(f, L"Fisiere LISP: %ls (%ls)\n", g_contents, PathFileExistsW(g_contents) ? L"exista" : L"LIPSESTE");
-    for (i = 0; i < 3; i++) {
-        static const wchar_t *files[] = { L"TopoKitLoad.lsp", L"TopoKit.lsp", L"anexe\\TopoKitDocx.ps1" };
+    for (i = 0; i < 5; i++) {
+        /* modulele: sursa (build de dezvoltare) sau compilate in ambele formate (fas4 / fas5) */
+        static const wchar_t *files[] = { L"TopoKitLoad.lsp", L"TopoKit.lsp", L"fas4\\TopoKit.fas",
+                                          L"fas5\\TopoKit.fas", L"anexe\\TopoKitDocx.ps1" };
         swprintf(v, MAX_PATH, L"%ls\\%ls", g_contents, files[i]);
-        fwprintf(f, L"  %ls: %ls\n", files[i], PathFileExistsW(v) ? L"da" : L"LIPSESTE");
+        fwprintf(f, L"  %ls: %ls\n", files[i], PathFileExistsW(v) ? L"da" : L"nu");
     }
     fwprintf(f, L"\nProgID-uri AutoCAD.Application inregistrate: %d\n", g_nclsid);
     for (i = 0; i < g_nclsid; i++) {

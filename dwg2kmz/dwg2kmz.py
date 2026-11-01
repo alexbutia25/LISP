@@ -37,7 +37,7 @@ except Exception:
     HAS_DND = False
 
 APP_NAME = "DWG to KMZ"
-TOPOKIT = "TopoKit 1.8.0"   # programul face parte din TopoKit
+TOPOKIT = "TopoKit 1.9.0"   # programul face parte din TopoKit
 HELP_FILE = "Instructiuni DWG to KMZ.html"
 FLAT_DIST = 0.05  # metri - precizia aproximarii arcelor / curbelor
 
@@ -76,7 +76,8 @@ CANVAS_BG = "#F8FAFC"
 
 
 def asset(name):
-    """Fisier din folderul assets (langa script sau inclus in exe)."""
+    """Fisier din folderul assets (langa script, inclus in exe PyInstaller (_MEIPASS) sau langa exe-ul
+    Nuitka standalone, unde __file__ e in folderul programului)."""
     for base in (getattr(sys, "_MEIPASS", None), os.path.dirname(os.path.abspath(__file__))):
         if base:
             p = os.path.join(base, "assets", name)
@@ -706,6 +707,7 @@ class App(BaseTk):
             messagebox.showinfo(APP_NAME, "Nu am găsit fișierul cu instrucțiuni.")
 
     def _set_icon(self):
+        # PyInstaller: _MEIPASS; Nuitka standalone / sursa: folderul de langa __file__ (= langa exe)
         base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
         try:
             self.iconbitmap(asset("topokit.ico") or os.path.join(base, "topokit.ico"))
@@ -1689,8 +1691,9 @@ def licenta_ok():
 
     Verificarea o face TopoKit.exe /license (cod de iesire 0 = licenta buna sau licentiere
     dezactivata la build), din folderul TopoKit (parintele folderului acestui program).
-    Rulat din sursa (dezvoltare, teste) nu se verifica nimic."""
-    if not getattr(sys, "frozen", False):
+    Rulat din sursa (dezvoltare, teste) nu se verifica nimic. Compilat cu Nuitka nu exista
+    sys.frozen, dar modulul are __compiled__ (PyInstaller: sys.frozen)."""
+    if not (getattr(sys, "frozen", False) or "__compiled__" in globals()):
         return True
     exe = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(sys.executable))), "TopoKit.exe")
     try:

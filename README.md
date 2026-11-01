@@ -90,7 +90,7 @@ reîncarcă imediat în desenul curent; celelalte desene deschise trec la prima 
 
 ### Cu instalatorul (recomandat)
 
-1. Descărcați și rulați **[`dist/TopoKitSetup-1.8.0.exe`](dist/TopoKitSetup-1.8.0.exe)** (TopoKit 1.8.0). Nu sunt necesare drepturi
+1. Descărcați și rulați **[`dist/TopoKitSetup-1.9.0.exe`](dist/TopoKitSetup-1.9.0.exe)** (TopoKit 1.9.0). Nu sunt necesare drepturi
    de administrator; instalarea se face pentru utilizatorul curent.
 2. Alegeți opțiunile: scurtătură pe desktop și pornirea în fundal odată cu Windows (ambele bifate implicit).
 3. Deschideți **TopoKit** din meniul Start sau de pe desktop. Atât.
@@ -160,7 +160,7 @@ Ce face instalarea:
     o anulează prin fereastra AutoCAD (WM_COPYDATA) înainte de a trimite modulul.
 - **Dezinstalare:** *Setări → Aplicații → TopoKit* sau meniul Start → *Dezinstalare TopoKit*. Se șterg
   pachetul AutoCAD, lansatorul și setările din registru.
-- **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup-1.8.0.exe /S`; dezinstalare:
+- **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup-1.9.0.exe /S`; dezinstalare:
   `"%LOCALAPPDATA%\Programs\TopoKit\Uninstall.exe" /S`.
 
 Windows SmartScreen poate afișa *„Windows a protejat computerul”*, pentru că instalatorul nu este
@@ -732,6 +732,35 @@ ca înainte, fără activare. Cu fișierul, cheia publică și adresa serverului
   - Licența (`%LOCALAPPDATA%\TopoKit\license.lic`) e semnată ECDSA P-256 și legată de calculator.
   - Secretul dispozitivului (`state.dat`) e protejat cu DPAPI.
 
+### Cod compilat (1.9.0)
+
+- Când licențierea e activă, modulele AutoLISP se livrează compilate, în ambele formate `.fas`:
+  - **FAS5** (Unicode), pentru `LISPSYS=1`;
+  - **FAS4** (formatul clasic ANSI), pentru `LISPSYS=0` – cel folosit implicit de Civil 3D/AutoCAD la
+    noi – și pentru `LISPSYS=2`.
+- Încărcătorul `TopoKitLoad.lsp` alege formatul după variabila `LISPSYS`. Sursele modulelor nu mai
+  intră în pachet; doar încărcătorul rămâne fișier text.
+- Fiecare modul compilat are propria verificare de licență, adăugată la build de `tools/lic_gate.py`,
+  deci încărcarea directă a unui `.fas` nu ocolește licența.
+- Compilarea se face la build, fără interfață, cu `tools/compile_lisp.ps1`, prin `accoreconsole`:
+  - folosește profilul separat **„TopoKitCompilare”** (`LISPSYS=1` pentru FAS5, `LISPSYS=2` pentru
+    FAS4), iar profilul implicit al utilizatorului este restaurat după;
+  - nu deranjează AutoCAD-ul deschis;
+  - calculatorul de build trebuie să aibă AutoCAD instalat.
+- `python tools/build_installer.py --compile auto|yes|no`: `yes` forțează compilarea, `no` o oprește,
+  iar `auto` (implicit) compilează doar când licențierea e activă (există `installer/licensing.json`).
+- Build-ul de dezvoltare / test (fără licențiere sau cu `--compile no`) păstrează fișierele `.lsp`.
+- `--build C:	kb`: folderul de lucru al build-ului. Pe Windows folosiți o cale scurtă – `makensis` nu deschide fișiere cu calea mai lungă de 260 de caractere (unele fișiere din pachetele Nuitka au căi adânci).
+- Programele Python (Plan Înclinare, DWG to KMZ) se compilează cu **Nuitka** în cod nativ, deci nu
+  mai există bytecode ușor de extras:
+  - necesar: `pip install nuitka`; dacă Nuitka lipsește, build-ul cade pe PyInstaller, cu avertisment
+    (doar pentru build-uri de test, nu pentru distribuire);
+  - se folosește `--standalone` (un folder cu `.exe`, DLL-uri și date, copiat în `PlanInclinare\` și
+    `modules\`); dacă `gcc` (MinGW-w64) este în `PATH`, se adaugă `--mingw64`, ca Nuitka să nu
+    descarce alt compilator;
+  - primul build durează cam 15 minute, următoarele cam 2 minute (cache);
+  - folderele rezultate au cam 29 MB (Plan Înclinare) și 205 MB (DWG to KMZ).
+
 ## Detalii tehnice
 
 - Fiecare comandă are propriul `*error*`: variabilele de sistem `CMDECHO`, `OSMODE`, `ATTREQ` și
@@ -752,6 +781,10 @@ ca înainte, fără activare. Cu fișierul, cheia publică și adresa serverului
   SQL-ul serverului, încărcătorul AutoCAD și programele Python.
   - `tests/server_harness.py` rulează testul complet cu serverul real (`server/worker.js`) într-un
     browser.
+- `python tests/test_compile.py` verifică offline pachetul compilat: numele modulelor `.lsp` → `.fas`
+  în surse, alegerea FAS5 / FAS4 după `LISPSYS` în încărcător, verificarea de licență din fiecare
+  modul (`tools/lic_gate.py`), citirea versiunii din fișierul `VERSION` și scriptul de compilare
+  (`accoreconsole`, profilul „TopoKitCompilare” și restaurarea profilului implicit).
 - `python3 tests/run_tests.py` rulează testele offline, fără AutoCAD, printr-un interpretor AutoLISP
   minimal. Testele acoperă conversia Stereo 70 → WGS84 comparată cu PROJ (dacă `pyproj` este instalat),
   comanda `ADDVTX` pe entități simulate (linii, arce, contacte în T, suprapuneri, polilinii 3D),

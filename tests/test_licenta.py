@@ -308,17 +308,22 @@ old_mb, old_sf, old_env = ctypes.windll.user32.MessageBoxW, os.startfile, os.env
 ctypes.windll.user32.MessageBoxW = lambda h, t, c, f: msgs.append(t) or 1
 os.startfile = lambda p: opened.append(p)
 try:
-    def check(frozen, licdir):
+    def check(frozen, licdir, nuitka=False):
+        # frozen = exe PyInstaller (sys.frozen); nuitka = exe Nuitka (fara sys.frozen, cu __compiled__ global)
         ns = {"os": os, "subprocess": subprocess,
               "sys": types.SimpleNamespace(frozen=frozen, executable=str(app / "modules" / "DWGtoKMZ.exe"))}
         if not frozen:
             del ns["sys"].frozen
+        if nuitka:
+            ns["__compiled__"] = types.SimpleNamespace(standalone=True)
         exec(funcs[0], ns)
         os.environ["TOPOKIT_LICDIR"] = str(licdir)
         return ns["licenta_ok"]()
     assert check(False, folder("gol")) is True and not msgs                   # din sursa: fara verificare
     assert check(True, okdir) is True and not msgs
     assert check(True, folder("gol")) is False and len(msgs) == 1 and opened == [str(app / "TopoKit.exe")]
+    assert check(False, okdir, nuitka=True) is True and len(msgs) == 1        # Nuitka: se verifica si aici
+    assert check(False, folder("gol"), nuitka=True) is False and len(msgs) == 2 and len(opened) == 2
 finally:
     ctypes.windll.user32.MessageBoxW, os.startfile = old_mb, old_sf
     if old_env is None:

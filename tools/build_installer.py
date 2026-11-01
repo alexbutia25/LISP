@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Construieste instalatorul Windows TopoKitSetup.exe.
 
-    python3 tools/build_installer.py [--version 1.8.0] [--out dist]
+    python3 tools/build_installer.py [--version 1.9.0] [--out dist]
 
 Necesita (Linux: apt install nsis mingw-w64; Windows: NSIS 3 + MinGW-w64 in PATH):
     makensis, x86_64-w64-mingw32-gcc, x86_64-w64-mingw32-windres
@@ -12,11 +12,24 @@ server), cheia publica si adresa serverului se compileaza in TopoKit.exe, iar To
 din pachet primeste *TKL:LICENTA* = T si lista comenzilor modulelor (fara licenta valabila
 comenzile doar trimit la activare). Fara fisier, build-ul ramane fara licentiere (ca inainte).
 
+Compilare: modulele AutoLISP (si varianta en/) se compileaza cu tools/compile_lisp.ps1 (accoreconsole,
+fara fereastra) in ambele formate .fas, iar sursele modulelor nu mai intra in pachet:
+    Contents/fas5/TopoKit*.fas     (FAS5, motorul Unicode, LISPSYS=1)
+    Contents/fas4/TopoKit*.fas     (FAS4, motorul vechi LISPSYS=0 si LISPSYS=2)
+    Contents/en/fas5/..., Contents/en/fas4/...
+Incarcatorul ramane Contents/TopoKitLoad.lsp (PackageContents.xml nu poate alege dupa LISPSYS) si
+alege folderul dupa (getvar "LISPSYS") - TKL:Module. In sursa fiecarui format, referintele intre
+module devin relative la folderul formatului ("TopoKitAnexe.lsp" -> "fas4\\\\TopoKitAnexe.fas" in
+textul LISP), gasite prin calea de suport (Contents/en inaintea Contents). Implicit (--compile auto) se compileaza
+cand licentierea e activa - altfel verificarea licentei din .lsp s-ar putea sterge; --compile yes / no
+forteaza alegerea.
+
 Pasi:
   1. compileaza lansatorul installer/launcher/topokit.c + ui.c + license.c -> TopoKit.exe;
   2. pregateste build/stage:
        bundle/TopoKit.bundle/PackageContents.xml   (versiunea completata)
-       bundle/TopoKit.bundle/Contents/             *.lsp, *.dcl, grila .gsb, anexe/, README,
+       bundle/TopoKit.bundle/Contents/             TopoKitLoad.lsp, module (*.lsp sau fas5/ + fas4/),
+                                                   *.dcl, grila .gsb, anexe/, README, VERSION,
                                                    TopoKit.cuix / TopoKit_EN.cuix (ribbon), en/ (engleza)
        app/                                        TopoKit.exe, README.html, Functii(_EN).html, docs/,
                                                    PlanInclinare/ (PlanInclinare.exe, PyInstaller),
@@ -79,6 +92,75 @@ def licensed_loader(text, cmds):
                 .replace("(setq *TKL:CMDS* nil)", f"(setq *TKL:CMDS* '({lst}))"))
 
 
+FAS_FORMATS = ("fas5", "fas4")                       # folderele din Contents (si Contents\en)
+FAS_HEADER = {"fas5": b"FAS5-FILE", "fas4": b"FAS4-FILE"}
+MODULES = [pathlib.Path(f).stem for f in LSP if f != "TopoKitLoad.lsp"]   # incarcatorul nu se compileaza
+
+
+def compiled_source(text, fmt):
+    """Sursa unui modul pentru formatul fmt (fas5 / fas4): fisierele celorlalte module se cauta
+    compilate, in folderul formatului ("TopoKitAnexe.lsp" -> "fas4\\\\TopoKitAnexe.fas"); findfile
+    le gaseste prin calea de suport (Contents\\en, apoi Contents)."""
+    assert fmt in FAS_FORMATS, fmt
+    names = "|".join(sorted(MODULES, key=len, reverse=True))
+    return re.sub(rf'"({names})\.lsp"', rf'"{fmt}\\\\\1.fas"', text)
+
+
+def module_source(text, module, fmt):
+    """Textul compilat pentru modulul module ("TopoKit", "TopoKitAnexe" ...) in formatul fmt.
+    Singurul loc in care se pregateste sursa inainte de compilare."""
+    # poarta de licenta (tools/lic_gate.py): fiecare modul compilat isi verifica singur licenta,
+    # pentru ambele formate si en/ ("en/TopoKit" -> mesaj in engleza)
+    sys.path.insert(0, str(ROOT / "tools"))
+    import lic_gate
+    text = lic_gate.inject(text, module)
+    return compiled_source(text, fmt)
+
+
+def compile_lisp(files, fmt):
+    """Compileaza .lsp -> <dir>/<fmt>/<nume>.fas cu tools/compile_lisp.ps1; opreste build-ul la eroare."""
+    r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                        str(ROOT / "tools" / "compile_lisp.ps1"), "-Format", fmt,
+                        "-Files", ",".join(str(f) for f in files)],
+                       capture_output=True, text=True)
+    print(r.stdout.strip())
+    outs = [f.parent / fmt / (f.stem + ".fas") for f in files]
+    bad = [o for o in outs if not o.exists() or FAS_HEADER[fmt] not in o.read_bytes()[:64]]
+    if r.returncode or bad:
+        sys.exit(f"Compilarea modulelor AutoLISP ({fmt}) a esuat" + (": " + r.stderr.strip() if r.stderr.strip() else "") +
+                 "\n(trebuie sa existe AutoCAD instalat; sau --compile no pentru un build de test)")
+    return outs
+
+
+def compile_modules(contents, work):
+    """Modulele din contents (si contents/en) -> contents[/en]/fas5|fas4/*.fas; sursele lor se sterg.
+    Incarcatorul TopoKitLoad.lsp ramane necompilat. work = folder temporar pentru sursele pregatite."""
+    langs = [d for d in (contents, contents / "en") if (d / "TopoKit.lsp").exists()]
+    srcs = {d: [d / f"{m}.lsp" for m in MODULES if (d / f"{m}.lsp").exists()] for d in langs}
+    n = 0
+    for fmt in FAS_FORMATS:
+        if work.exists():
+            shutil.rmtree(work)
+        files = []
+        for d in langs:
+            wd = work / fmt / d.relative_to(contents)
+            wd.mkdir(parents=True, exist_ok=True)
+            for f in srcs[d]:
+                w = wd / f.name
+                w.write_text(module_source(f.read_text(encoding="utf-8"), f.relative_to(contents).with_suffix("").as_posix(), fmt), encoding="utf-8")
+                files.append(w)
+        for o in compile_lisp(files, fmt):
+            dst = contents / o.parent.parent.relative_to(work / fmt) / fmt / o.name
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(o, dst)
+            n += 1
+    shutil.rmtree(work, ignore_errors=True)
+    for d in langs:
+        for f in srcs[d]:
+            f.unlink()
+    return n
+
+
 def readme_html(md_text):
     """README.md -> README.html (modulul markdown daca exista, altfel text preformatat)."""
     try:
@@ -102,12 +184,16 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--version", default=(INST / "VERSION").read_text().strip())
     ap.add_argument("--out", default=str(ROOT / "dist"))
+    ap.add_argument("--compile", choices=["auto", "yes", "no"], default="auto",
+                    help="modulele AutoLISP in .fas (auto = cand licentierea e activa)")
+    ap.add_argument("--build", default=str(ROOT / "build"),
+                    help="folderul de lucru (pe Windows o cale scurta: makensis nu deschide cai > 260 caractere)")
     a = ap.parse_args()
     if not re.fullmatch(r"\d+\.\d+\.\d+", a.version):
         sys.exit("Versiunea trebuie sa fie de forma X.Y.Z")
     ver_comma = a.version.replace(".", ",") + ",0"
 
-    build = ROOT / "build"
+    build = pathlib.Path(a.build).resolve()
     stage = build / "stage"
     if stage.exists():
         shutil.rmtree(stage)
@@ -154,6 +240,15 @@ def main():
     for name, en in (("TopoKit.cuix", False), ("TopoKit_EN.cuix", True)):
         make_ribbon.build(contents / name, None, en)
     i18n.build(contents / "en")
+    (contents / "VERSION").write_text(a.version + "\n", encoding="ascii")
+    if a.compile == "yes" or (a.compile == "auto" and lic):
+        if os.name != "nt":
+            sys.exit("Compilarea .fas are nevoie de Windows si AutoCAD")
+        n = compile_modules(contents, build / "fas_src")
+        print(f"Module compilate: {n} fisiere .fas in {' / '.join(FAS_FORMATS)} (sursele modulelor nu intra "
+              "in pachet; incarcatorul ramane TopoKitLoad.lsp)")
+    else:
+        print("Module necompilate (.lsp) - build de dezvoltare / test")
     import make_functions                                      # toate functiile (RO / EN)
     make_functions.build(app, a.version)
     (app / "README.html").write_text(readme_html((ROOT / "README.md").read_text(encoding="utf-8")),
@@ -162,33 +257,74 @@ def main():
     shutil.copy2(INST / "launcher" / "topokit.ico", app / "topokit.ico")
     shutil.copytree(INST / "art", stage / "art")
 
-    # 2b. programul Plan Inclinare (calcul inclinatie) ca executabil, fara Python pe calculatorul tinta
+    # 2b. programele Python (Plan Inclinare, DWG to KMZ) ca executabile, fara Python pe calculatorul tinta.
+    # Nuitka --standalone: codul Python devine C compilat (fara bytecode .pyc de decompilat); rezulta un
+    # folder <nume>.dist cu exe + DLL-uri + date, copiat intreg in PlanInclinare\ si modules\.
+    # Fara Nuitka: PyInstaller --onefile (bytecode decompilabil) - doar avertisment, pentru build-uri de test.
+    ico = INST / "launcher" / "topokit.ico"
     try:
-        import PyInstaller  # noqa: F401
+        import nuitka  # noqa: F401
+        use_nuitka = True
     except ImportError:
-        sys.exit("Lipseste PyInstaller (pip install pyinstaller) - necesar pentru PlanInclinare.exe")
+        use_nuitka = False
+        print("ATENTIE: lipseste Nuitka (pip install nuitka) - programele Python se fac cu PyInstaller, "
+              "iar bytecode-ul lor se poate decompila. Nu distribui acest build.")
+        try:
+            import PyInstaller  # noqa: F401
+        except ImportError:
+            sys.exit("Lipseste Nuitka (pip install nuitka) si PyInstaller - necesare pentru PlanInclinare.exe / DWGtoKMZ.exe")
+
+    def python_app(script, name, dest, data_dirs=(), raw_dirs=(), packages=(), extra=()):
+        """Compileaza script (GUI tkinter, fara consola) in folderul dest (dest/<name>.exe + dependinte)."""
+        out = build / f"{name}_nuitka" if use_nuitka else build / f"{name}_pyi"
+        if use_nuitka:
+            cmd = [sys.executable, "-m", "nuitka", "--standalone", "--enable-plugin=tk-inter",
+                   "--windows-console-mode=disable", f"--windows-icon-from-ico={ico}",
+                   f"--output-dir={out}", f"--output-filename={name}.exe", "--remove-output",
+                   "--product-name=TopoKit", f"--file-description={name}",
+                   f"--product-version={re.match(r'[0-9.]*', a.version).group().strip('.') or '0'}",
+                   "--progress-bar=none"]
+            if os.name == "nt":
+                # fara descarcari: depends.exe inlocuit cu pefile (inclus in Nuitka), iar daca e gcc
+                # (MinGW-w64 / winlibs) in PATH il folosim pe acela in locul gcc-ului descarcat de Nuitka
+                cmd.append("--experimental=force-dependencies-pefile")
+                if shutil.which("gcc"):
+                    cmd += ["--mingw64", "--experimental=force-accept-windows-gcc"]
+            cmd += [f"--include-data-dir={d}={d.name}" for d in data_dirs]
+            cmd += [f"--include-raw-dir={d}={d.name}" for d in raw_dirs]
+            # packages: datele lor (customtkinter/assets, tkinterdnd2/tkdnd, pyproj/proj_dir) le adauga
+            # configuratia de pachete din Nuitka; --include-package-data ar copia si sursele .c/.pxd
+            cmd += list(extra) + [script]
+            # stdin=DEVNULL: daca Nuitka tot vrea sa descarce ceva (compilator etc.) raspunde "no" si se opreste
+            run(cmd, stdin=subprocess.DEVNULL)
+            dist = out / f"{script.stem}.dist"
+            if not (dist / f"{name}.exe").exists():
+                sys.exit(f"Nuitka nu a produs {dist / (name + '.exe')}")
+            shutil.copytree(dist, dest, dirs_exist_ok=True)
+        else:
+            sep = ";" if os.name == "nt" else ":"
+            cmd = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--onefile", "--windowed", "--name", name,
+                   "--icon", ico, "--distpath", out / "dist", "--workpath", out / "work", "--specpath", out]
+            for d in list(data_dirs) + list(raw_dirs):
+                cmd += ["--add-data", f"{d}{sep}{d.name}"]
+            for pk in packages:
+                cmd += ["--collect-all" if pk in ("customtkinter", "tkinterdnd2") else "--collect-data", pk]
+            run(cmd + [script])
+            dest.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(out / "dist" / f"{name}.exe", dest / f"{name}.exe")
+
+    # Plan Inclinare (calcul inclinatie): doar biblioteca standard + tkinter
     pi = app / "PlanInclinare"
-    pi.mkdir()
-    run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--onefile", "--windowed", "--name", "PlanInclinare",
-         "--icon", INST / "launcher" / "topokit.ico", "--distpath", build / "pi_dist", "--workpath", build / "pi_work",
-         "--specpath", build, ROOT / "inclinare" / "plan_inclinare.py"])
-    shutil.copy2(build / "pi_dist" / "PlanInclinare.exe", pi / "PlanInclinare.exe")
+    python_app(ROOT / "inclinare" / "plan_inclinare.py", "PlanInclinare", pi)
     for f in ("PlanInclinareCogo.dll", "exemplu_siloz.csv"):
         shutil.copy2(ROOT / "inclinare" / f, pi / f)
 
-    # 2c. convertorul DXF/DWG -> KMZ "DWG to KMZ" (dwg2kmz/), compilat cu PyInstaller
+    # 2c. convertorul DXF/DWG -> KMZ "DWG to KMZ" (dwg2kmz/): customtkinter, tkinterdnd2, pyproj (cu
+    # datele PROJ), ezdxf; assets/ si grids/ ca date, tools/ (LibreDWG dwg2dxf.exe + DLL-uri) copiat ca atare
     d2k = ROOT / "dwg2kmz"
-    sep = ";" if os.name == "nt" else ":"
-    run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--onefile", "--windowed", "--name", "DWGtoKMZ",
-         "--icon", INST / "launcher" / "topokit.ico",
-         "--add-data", f"{d2k / 'assets'}{sep}assets", "--add-data", f"{d2k / 'grids'}{sep}grids",
-         "--add-data", f"{d2k / 'tools'}{sep}tools",
-         "--collect-all", "customtkinter", "--collect-all", "tkinterdnd2",
-         "--collect-data", "pyproj", "--collect-data", "ezdxf",
-         "--distpath", build / "d2k_dist", "--workpath", build / "d2k_work", "--specpath", build,
-         d2k / "dwg2kmz.py"])
-    (app / "modules").mkdir()
-    shutil.copy2(build / "d2k_dist" / "DWGtoKMZ.exe", app / "modules" / "DWGtoKMZ.exe")
+    python_app(d2k / "dwg2kmz.py", "DWGtoKMZ", app / "modules",
+               data_dirs=(d2k / "assets", d2k / "grids"), raw_dirs=(d2k / "tools",),
+               packages=("customtkinter", "tkinterdnd2", "pyproj", "ezdxf"))
     shutil.copy2(d2k / "Instructiuni DWG to KMZ.html", app / "modules" / "Instructiuni DWG to KMZ.html")
 
     # 3. instalatorul

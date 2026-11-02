@@ -17,7 +17,9 @@ Scenariul: activare, cod refolosit, prea multe calculatoare, reinstalare pe acel
 reinnoire, acces oprit, calculator scos, dezactivare, limitarea incercarilor (si prin IPv6 /64, si cu
 antete X-Forwarded-For falsificate), activari simultane (cod folosit o singura data, limita de
 calculatoare), cereri stricate, campurile licentei, antetele de securitate, curatarea jurnalului,
-posibila copiere a unei activari. Codul de iesire 0 = toate verificarile au trecut.
+posibila copiere a unei activari; cererea de acces (1.11.0): TopoKit.exe /request si /request-status,
+aprobare (coleg nou / existent, limita de calculatoare), respingere, raspuns idempotent, token / calculator
+gresit, curse, limite, expirare. Codul de iesire 0 = toate verificarile au trecut.
 """
 import argparse, base64, concurrent.futures, json, os, pathlib, queue, shutil, sqlite3, subprocess, sys, tempfile
 import threading, time, urllib.error, urllib.request
@@ -284,6 +286,8 @@ class Scenario:
         self.basics()
         if self.exe:
             self.with_launcher()
+            self.launcher_requests()
+        self.access_requests()
         self.races()
         self.rate_limits()
         self.bad_requests()
@@ -377,6 +381,263 @@ class Scenario:
         self.exe_run(a, "/deactivate")
         print("calculator scos din pagina de administrare; dezactivare din TopoKit (locul se elibereaza);")
         print("  nume lung (diacritice) taiat la 150 de octeti, cat incape in TopoKit.exe")
+
+    # ------------------------------------------------------------ cererea de acces cu TopoKit.exe (1.11.0)
+    def pending(self, machine):
+        return [r for r in self.state()["requests"] if r["machine"] == machine and r["status"] == "pending"]
+
+    def launcher_requests(self):
+        mid = licenta.machine_id()
+        a = self.folder("q1")
+        name = 'Maria Cerere ăîșț "x"'
+        code, out = self.exe_run(a, "/request", name)
+        self.check(code == 0 and os.path.exists(os.path.join(a, "request.dat")) and self.lic_text(a) is None,
+                   f"/request {code} {out}")
+        code, out = self.exe_run(a, "/request-status")
+        self.check(code == 4, f"/request-status in asteptare {code} {out}")
+        p = self.pending(mid)
+        self.check(len(p) == 1 and p[0]["name"] == name and p[0]["winuser"] and p[0]["pc"] and p[0]["version"] == "9.9.9",
+                   f"cererea in /admin {p}")
+        self.check(p[0]["polled_at"], f"verificarea cererii se vede in /admin {p}")
+        st, r = self.api(f"/api/admin/requests/{p[0]['id']}/approve", {})           # coleg nou, cu numele din cerere
+        self.check(st == 200 and r["ok"], f"aprobare {st} {r}")
+        code, out = self.exe_run(a, "/request-status")
+        self.check(code == 0 and self.lic_text(a) and os.path.exists(os.path.join(a, "state.dat")) and
+                   not os.path.exists(os.path.join(a, "request.dat")), f"aprobata -> licenta instalata {code} {out}")
+        code, out = self.exe_run(a, "/license")
+        self.check(code == 0 and name in out, f"/license dupa aprobare {code} {out}")
+        time.sleep(1.1)
+        before = self.lic_text(a)
+        code, out = self.exe_run(a, "/refresh")                                   # secretul = tokenul cererii
+        self.check(code == 0 and self.lic_text(a) != before, f"reinnoire dupa aprobare {code} {out}")
+        self.check(self.exe_run(a, "/request-status")[0] == 0, "/request-status cu licenta activa")
+        self.check(self.exe_run(a, "/request", "Altcineva")[0] == 3, "/request cu licenta activa -> 3, nimic trimis")
+        self.check(not self.pending(mid), "nicio cerere noua cu licenta activa")
+        devs = [d for u in self.state()["users"] if u["id"] == r["user_id"] for d in u["devices"] if not d["revoked"]]
+        self.check(len(devs) == 1 and devs[0]["machine"] == mid, f"dispozitivul aprobat {devs}")
+        self.api(f"/api/admin/devices/{devs[0]['id']}/revoke", {})                # „Anuleaza licenta”
+        code, out = self.exe_run(a, "/refresh")
+        self.check(code == 2 and self.lic_text(a) is None, f"licenta anulata din /admin -> stearsa {code} {out}")
+        print("cerere de acces cu TopoKit.exe: /request -> /admin -> aprobare (coleg nou) -> /request-status instaleaza")
+        print("  licenta; reinnoirea merge cu tokenul cererii ca secret; „Anuleaza licenta” o opreste la reinnoire")
+
+        b = self.folder("q2")
+        self.check(self.exe_run(b, "/request", "Ion Respins")[0] == 0, "a doua cerere")
+        p = self.pending(mid)
+        self.check(len(p) == 1 and p[0]["name"] == "Ion Respins", f"cerere noua dupa anulare {p}")
+        st, r = self.api(f"/api/admin/requests/{p[0]['id']}/deny", {})
+        self.check(st == 200, f"respingere {st} {r}")
+        code, out = self.exe_run(b, "/request-status")
+        self.check(code == 2 and os.path.exists(os.path.join(b, "request.dat")) and self.lic_text(b) is None,
+                   f"respinsa {code} {out}")
+        n0 = len(self.h.query("SELECT 1 FROM events WHERE kind = 'request_fail'"))
+        self.check(self.exe_run(b, "/request-status")[0] == 2, "respinsa ramane respinsa (fara retea)")
+        code, out = self.exe_run(b, "/request", "Ion Retrimis")
+        self.check(code == 0 and self.pending(mid)[0]["id"] != p[0]["id"], f"cerere noua dupa respingere {code} {out}")
+        self.check(self.exe_run(b, "/request-status")[0] == 4, "noua cerere in asteptare")
+        # cerere inlocuita de pe acelasi calculator (alt folder = alt utilizator Windows): cea veche nu mai e valabila
+        c = self.folder("q3")
+        self.check(self.exe_run(c, "/request", "Ion Inlocuit")[0] == 0, "cerere de pe acelasi calculator")
+        code, out = self.exe_run(b, "/request-status")
+        self.check(code == 3 and not os.path.exists(os.path.join(b, "request.dat")), f"cerere inlocuita {code} {out}")
+        self.check(len(self.h.query("SELECT 1 FROM events WHERE kind = 'request_fail'")) == n0 + 1, "token vechi in jurnal")
+        self.api(f"/api/admin/requests/{self.pending(mid)[0]['id']}/deny", {})
+        print("  respinsa -> /request-status 2, se poate cere din nou; cererea repetata de pe acelasi calculator o")
+        print("  inlocuieste pe cea veche (token nou)")
+
+    # ------------------------------------------------------------ cererea de acces: API
+    def access_requests(self):
+        ip = "10.0.5.1"
+        M = {k: f"{k}" * 12 for k in ("A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8")}
+
+        def req(m, name="Vasile Ionescu", ip=ip, **kw):
+            body = {"machine": m, "pc": "PC-" + m[:2], "name": name, "winuser": "vasile", "version": "1.11.0", **kw}
+            return self.api("/api/request", body, token=None, ip=ip)
+
+        def status(r, m, ip=ip, **kw):
+            return self.api("/api/request/status", {"request": r["request"], "token": r["token"], "machine": m, **kw},
+                            token=None, ip=ip)
+
+        def approve(rid, body=None, **kw):
+            return self.api(f"/api/admin/requests/{rid}/approve", body or {}, **kw)
+
+        st, r1 = req(M["A1"])
+        self.check(st == 200 and set(r1) == {"request", "token", "status"} and r1["status"] == "pending" and
+                   len(r1["request"]) == 18 and r1["request"].startswith("r_") and len(r1["token"]) == 43, f"cerere {st} {r1}")
+        st, s = status(r1, M["A1"])
+        self.check(st == 200 and s == {"status": "pending"}, f"in asteptare {st} {s}")
+        st, r1b = req(M["A1"], name="Vasile I.")                     # acelasi calculator: aceeasi cerere, token nou
+        self.check(st == 200 and r1b["request"] == r1["request"] and r1b["token"] != r1["token"], f"cerere repetata {r1b}")
+        rows = self.h.query("SELECT * FROM requests WHERE machine = ?", M["A1"])
+        self.check(len(rows) == 1 and rows[0]["name"] == "Vasile I." and rows[0]["status"] == "pending" and
+                   rows[0]["token_hash"] != r1b["token"] and len(rows[0]["token_hash"]) == 64, f"o cerere / calculator {rows}")
+        st, s = status(r1, M["A1"])
+        self.check(st == 403 and s["error"] == "unknown_request", f"token vechi {st} {s}")
+        st, s = status({**r1b, "token": "x" * 43}, M["A1"])
+        self.check(st == 403 and s["error"] == "unknown_request", f"token gresit {st} {s}")
+        st, s = status(r1b, M["A2"])
+        self.check(st == 403 and s["error"] == "machine", f"alt calculator {st} {s}")
+        for body, want in (({"request": "r_' OR 1=1", "token": "a", "machine": M["A1"]}, "unknown_request"),
+                           ({"request": {"a": 1}, "token": r1b["token"], "machine": M["A1"]}, "unknown_request"),
+                           ({"request": r1b["request"], "token": None, "machine": M["A1"]}, "unknown_request")):
+            st, s = self.api("/api/request/status", body, token=None, ip=ip)
+            self.check(st == 403 and s == {"error": want}, f"stare cu {body}: {st} {s}")
+        for raw, want_st, want in ((b"{stricat", 400, "bad_request"), (json.dumps({"machine": "nu", "name": "x"}).encode(), 400, "bad_request"),
+                                   (json.dumps({"machine": M["A8"], "name": " ", "winuser": ""}).encode(), 400, "name_required"),
+                                   (json.dumps({"machine": M["A8"], "name": {"x": 1}}).encode(), 400, "name_required")):
+            st, s = self.api("/api/request", token=None, ip=ip, raw=raw)
+            self.check(st == want_st and s == {"error": want}, f"cerere stricata {raw[:40]}: {st} {s}")
+        st, s = self.api("/api/request", {"machine": M["A8"], "winuser": "doar.login", "pc": "<b>P</b>‮"}, token=None, ip=ip)
+        row = self.h.query("SELECT name, pc FROM requests WHERE id = ?", s.get("request"))
+        self.check(st == 200 and row and row[0]["name"] == "doar.login" and row[0]["pc"] == "<b>P</b>", f"fara nume -> login {row}")
+        self.h.query("DELETE FROM requests WHERE machine = ?", M["A8"])
+        # pagina de administrare: doar cu parola
+        aip = "10.0.5.9"
+        for path, body, tok in (("/api/admin/requests", None, None), (f"/api/admin/requests/{r1b['request']}/approve", {}, "gresit"),
+                                (f"/api/admin/requests/{r1b['request']}/deny", {}, None)):
+            st, s = self.api(path, body, token=tok, ip=aip)
+            self.check(st == 401, f"{path} fara parola {st} {s}")
+        self.check(self.h.query("SELECT status FROM requests WHERE id = ?", r1b["request"])[0]["status"] == "pending",
+                   "cererea neschimbata fara parola")
+        st, s = self.api("/api/admin/requests")
+        self.check(st == 200 and any(x["id"] == r1b["request"] and x["status"] == "pending" for x in s["requests"]), f"lista {st}")
+        flat = json.dumps(self.state())
+        self.check("token_hash" not in flat and r1b["token"] not in flat and rows[0]["token_hash"] not in flat,
+                   "starea admin nu contine tokenuri")
+        # aprobare -> coleg nou; raspunsul se poate cere de mai multe ori (acelasi dispozitiv)
+        st, a = approve(r1b["request"], {"new_name": "Vasile Ionescu", "max_devices": 2})
+        self.check(st == 200 and a["ok"] and a["device"].startswith("d_"), f"aprobare coleg nou {st} {a}")
+        st, s1 = status(r1b, M["A1"])
+        self.check(st == 200 and s1["status"] == "approved" and s1["device"] == a["device"] and set(s1) == {"status", "device", "license"},
+                   f"aprobata {st} {s1}")
+        p, why = licenta.read_license(s1["license"], self.pub, self.kid)
+        self.check(why is None and p["machine"] == M["A1"] and p["name"] == "Vasile Ionescu" and p["lid"] == a["device"] and
+                   p["uid"] == a["user_id"] and p["exp"] - p["iat"] == 14 * 86400, f"licenta din aprobare {why} {p}")
+        st, s2 = status(r1b, M["A1"])
+        self.check(st == 200 and s2["device"] == s1["device"], f"idempotent {st} {s2}")
+        devs = self.h.query("SELECT * FROM devices WHERE machine = ?", M["A1"])
+        self.check(len(devs) == 1 and devs[0]["user_id"] == a["user_id"] and devs[0]["last_ip"] == ip, f"un singur dispozitiv {devs}")
+        row = self.h.query("SELECT * FROM requests WHERE id = ?", r1b["request"])[0]
+        self.check(row["delivered_at"] and row["user_id"] == a["user_id"] and row["device_id"] == a["device"], f"preluata {row}")
+        self.check(len(self.h.query("SELECT 1 FROM events WHERE kind = 'request_delivered' AND device_id = ?", a["device"])) == 1,
+                   "preluarea apare o singura data in jurnal")
+        st, s = self.api("/api/refresh", {"device": a["device"], "secret": r1b["token"], "machine": M["A1"]}, token=None, ip=ip)
+        self.check(st == 200, f"reinnoire cu tokenul cererii {st} {s}")
+        for path in ("approve", "deny"):
+            st, s = self.api(f"/api/admin/requests/{r1b['request']}/{path}", {})
+            self.check(st == 409 and s["error"] == "not_pending", f"{path} dupa aprobare {st} {s}")
+        st, s = approve("r_0000000000000000")
+        self.check(st == 404, f"cerere inexistenta {st} {s}")
+        print("cerere de acces (API): una pe calculator (repetata = token nou), token / calculator gresit, cereri")
+        print("  stricate, /admin doar cu parola; aprobare -> coleg nou, licenta semnata, raspuns idempotent")
+
+        # coleg existent, limita de calculatoare
+        u = self.user("Coleg Existent", 1)
+        st, r2 = req(M["A2"], name="coleg existent")
+        st, a2 = approve(r2["request"], {"user_id": u["user_id"]})
+        self.check(st == 200 and a2["user_id"] == u["user_id"], f"aprobare coleg existent {st} {a2}")
+        st, s = status(r2, M["A2"])
+        self.check(st == 200 and s["status"] == "approved" and licenta.read_license(s["license"], self.pub, self.kid)[0]["uid"] == u["user_id"],
+                   f"licenta colegului existent {st} {s}")
+        st, r3 = req(M["A3"])
+        st, s = approve(r3["request"], {"user_id": u["user_id"]})
+        self.check(st == 409 and s["error"] == "too_many_devices", f"limita de calculatoare {st} {s}")
+        st, s = status(r3, M["A3"])
+        self.check(st == 200 and s["status"] == "pending", f"refuzata la limita -> ramane in asteptare {st} {s}")
+        st, s = approve(r3["request"], {"user_id": u["user_id"], "max_devices": 2})
+        self.check(st == 200, f"aprobare cu limita marita {st} {s}")
+        self.check([x for x in self.state()["users"] if x["id"] == u["user_id"]][0]["max_devices"] == 2, "limita marita la 2")
+        st, r2b = req(M["A2"])                                       # reinstalare pe acelasi calculator: acelasi loc
+        self.check(st == 200 and r2b["request"] != r2["request"], f"cerere noua dupa aprobare {r2b}")
+        st, s = approve(r2b["request"], {"user_id": u["user_id"]})
+        self.check(st == 200, f"aprobare pe acelasi calculator peste limita {st} {s}")
+        st, s = self.api("/api/refresh", {"device": a2["device"], "secret": r2["token"], "machine": M["A2"]}, token=None, ip=ip)
+        self.check(st == 403 and s["error"] == "revoked", f"activarea veche a calculatorului oprita {st} {s}")
+        self.check(len(self.active(u["user_id"])) == 2, f"tot 2 calculatoare {self.active(u['user_id'])}")
+        st, s = approve(req(M["A6"])[1]["request"], {"user_id": 999999})
+        self.check(st == 404, f"coleg inexistent {st} {s}")
+        self.api(f"/api/admin/users/{u['user_id']}/disable", {})
+        st, s = approve(self.pending(M["A6"])[0]["id"], {"user_id": u["user_id"]})
+        self.check(st == 409 and s["error"] == "user_disabled", f"coleg cu acces oprit {st} {s}")
+        self.api(f"/api/admin/users/{u['user_id']}/enable", {})
+        print("  coleg existent; limita de calculatoare respectata (sau marita la aprobare); acelasi calculator")
+        print("  aprobat din nou inlocuieste activarea veche; coleg inexistent / oprit refuzat")
+
+        # respingere
+        st, r4 = req(M["A4"])
+        st, s = self.api(f"/api/admin/requests/{r4['request']}/deny", {})
+        self.check(st == 200 and s == {"ok": True}, f"respingere {st} {s}")
+        st, s = status(r4, M["A4"])
+        self.check(st == 200 and s == {"status": "denied"}, f"respinsa {st} {s}")
+        for path in ("deny", "approve"):
+            st, s = self.api(f"/api/admin/requests/{r4['request']}/{path}", {})
+            self.check(st == 409 and s["error"] == "not_pending", f"{path} dupa respingere {st} {s}")
+        st, r4b = req(M["A4"])
+        self.check(st == 200 and r4b["request"] != r4["request"], f"cerere noua dupa respingere {r4b}")
+        # aprobata, apoi licenta anulata inainte de preluare
+        st, r5 = req(M["A5"])
+        st, a5 = approve(r5["request"])
+        self.api(f"/api/admin/devices/{a5['device']}/revoke", {})
+        st, s = status(r5, M["A5"])
+        self.check(st == 403 and s["error"] == "revoked", f"anulata inainte de preluare {st} {s}")
+        st, s = status(r5, M["A5"], ip="10.0.5.2")
+        self.check(st == 403, "acelasi raspuns de la alt IP")
+        print("  respingere (definitiva; se poate cere din nou); licenta anulata inainte de preluare -> revoked")
+
+        # curse: aprobari simultane ale aceleiasi cereri, cereri simultane de pe acelasi calculator
+        st, r6 = req(M["A7"])
+        nu0 = len(self.state()["users"])
+        res = self.parallel([(("/api/admin/requests/" + r6["request"] + "/approve", {"new_name": f"Cursa {i}"}), {}) for i in range(4)])
+        ok = [r for st, r in res if st == 200]
+        self.check(len(ok) == 1 and all(st == 409 for st, _ in res if st != 200), f"aprobari simultane {res}")
+        self.check(len(self.state()["users"]) == nu0 + 1, "un singur coleg nou la aprobari simultane")
+        self.check(len(self.h.query("SELECT 1 FROM devices WHERE machine = ? AND revoked = 0", M["A7"])) == 1, "un dispozitiv")
+        m9 = "C9" * 12
+        res = self.parallel([(("/api/request", {"machine": m9, "name": f"N{i}"}), {"token": None, "ip": "10.0.5.3"}) for i in range(5)])
+        ids = {r["request"] for st, r in res if st == 200}
+        self.check(all(st == 200 for st, _ in res) and len(ids) == 1, f"cereri simultane, acelasi calculator {res}")
+        self.check(len(self.h.query("SELECT 1 FROM requests WHERE machine = ? AND status = 'pending'", m9)) == 1, "o cerere")
+        print("  curse: 4 aprobari simultane -> 1 (un coleg, un dispozitiv); 5 cereri simultane -> o cerere")
+
+        # limita pe ora / IP (si IPv6 /64)
+        for i in range(20):
+            st, s = req(f"{0xD000 + i:024X}", ip="10.0.6.1")
+            self.check(st == 200, f"cererea {i} {st} {s}")
+        st, s = req(f"{0xD100:024X}", ip="10.0.6.1")
+        self.check(st == 429 and s["error"] == "rate_limited", f"limita cereri {st} {s}")
+        st, s = self.api("/api/request", {"machine": f"{0xD100:024X}", "name": "x"}, token=None, ip="10.0.6.1",
+                         headers={"X-Forwarded-For": "1.2.3.4"})
+        self.check(st == 429, f"limita ocolita cu X-Forwarded-For {st}")
+        for i in range(20):
+            st, s = req(f"{0xE000 + i:024X}", ip=f"2001:db8:77:1::{i + 1:x}")
+            self.check(st == 200, f"IPv6 {i} {st}")
+        st, s = req(f"{0xE100:024X}", ip="2001:db8:77:1:ffff::9")
+        self.check(st == 429, f"IPv6 /64 rotit {st} {s}")
+        st, s = req(f"{0xE100:024X}", ip="10.0.6.2")
+        self.check(st == 200, f"alt IP {st} {s}")
+        # cel mult 200 de cereri in asteptare; o cerere repetata merge si atunci
+        n = self.h.query("SELECT COUNT(*) AS n FROM requests WHERE status = 'pending'")[0]["n"]
+        t = int(time.time())
+        for i in range(200 - n):
+            self.h.query("INSERT INTO requests (id, machine, name, token_hash, status, created_at, updated_at) "
+                         "VALUES (?, ?, 'umplutura', 'x', 'pending', ?, ?)", f"r_f{i:015x}", f"{0xF0000 + i:024X}", t, t)
+        st, s = req(f"{0xE200:024X}", ip="10.0.6.3")
+        self.check(st == 503 and s["error"] == "requests_full", f"prea multe cereri {st} {s}")
+        st, s = req(M["A4"], ip="10.0.6.3")
+        self.check(st == 200 and s["request"] == r4b["request"], f"cerere repetata cu lista plina {st} {s}")
+        self.h.query("DELETE FROM requests WHERE name = 'umplutura'")
+        # cererile nerezolvate expira dupa 30 de zile, cele rezolvate dupa 180
+        old = t - 31 * 86400
+        self.h.query("UPDATE requests SET updated_at = ? WHERE id = ?", old, r4b["request"])
+        self.h.query("UPDATE requests SET decided_at = ? WHERE id = ?", t - 181 * 86400, r4["request"])
+        st, s = req(f"{0xE300:024X}", ip="10.0.6.3")
+        self.check(st == 200, f"cerere noua {st} {s}")
+        self.check(not self.h.query("SELECT 1 FROM requests WHERE id IN (?, ?)", r4b["request"], r4["request"]), "cereri vechi sterse")
+        st, s = status(r4b, M["A4"])
+        self.check(st == 403 and s["error"] == "unknown_request", f"cerere expirata {st} {s}")
+        kinds = {e["kind"] for e in self.h.query("SELECT DISTINCT kind FROM events")}
+        self.check({"request", "request_fail", "request_approve", "request_deny", "request_delivered"} <= kinds, f"evenimente {kinds}")
+        print("  limita: 20 de cereri pe ora / IP (si /64), cel mult 200 in asteptare; expirare 30 / 180 de zile")
 
     # ------------------------------------------------------------ curse (cereri simultane)
     def races(self):
@@ -585,6 +846,7 @@ class Scenario:
         self.check(st == 200 and len(nonce) >= 16 and f'<script nonce="{nonce}">' in page and
                    script_src.strip() == f"'nonce-{nonce}'", f"CSP cu nonce {csp}")
         self.check(page.count("<script") == 1, "un singur script in /admin")
+        self.check("Cereri de acces" in page and "Anulează licența" in page, "/admin: cererile de acces si anularea licentei")
         self.check(hdr.get("x-frame-options") == "DENY" and "frame-ancestors 'none'" in csp and
                    hdr.get("x-content-type-options") == "nosniff", f"antete /admin {hdr}")
         _, page2, hdr2 = self.call("/admin", token=None)
@@ -630,7 +892,7 @@ class Scenario:
         fails = self.h.query("SELECT ip FROM events WHERE kind IN ('activate_fail', 'admin_fail') AND ip LIKE '%:%'")
         self.check(fails and all(e["ip"].endswith("::/64") for e in fails), f"IPv6 in jurnal ca /64 {fails[:2]}")
         print("jurnal: evenimentele si codurile expirate de peste 180 de zile se sterg; reinnoiri din retele")
-        print("  diferite la mai putin de 6 ore -> 'posibila copiere' in jurnal")
+        print("  diferite la mai putin de 4 ore -> 'posibila copiere' in jurnal")
 
 
 # ---------------------------------------------------------------- lansator si browser

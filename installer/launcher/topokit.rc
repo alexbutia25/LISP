@@ -6,22 +6,25 @@ IDI_ON  ICON "tray_on.ico"
 IDI_OFF ICON "tray_off.ico"
 IDR_LOGO      RCDATA "logo.png"
 
-/* Licenta TopoKit: textele se pun din program (romana / engleza) */
-IDD_LICENSE DIALOGEX 0, 0, 290, 156
+/* Licenta TopoKit: textele se pun din program (romana / engleza). 1.11.0: "Cere acces" (nume) */
+IDD_LICENSE DIALOGEX 0, 0, 320, 188
 STYLE DS_MODALFRAME | DS_CENTER | DS_SHELLFONT | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "TopoKit"
 FONT 9, "Segoe UI", 400, 0, 1
 BEGIN
-    LTEXT           "", IDC_LIC_INFO, 10, 10, 270, 34
-    LTEXT           "", IDC_LIC_CODELBL, 10, 48, 270, 10
-    EDITTEXT        IDC_LIC_CODE, 10, 60, 270, 14, ES_UPPERCASE | ES_AUTOHSCROLL
-    LTEXT           "", IDC_LIC_MACHINE, 10, 84, 206, 10
-    PUSHBUTTON      "", IDC_LIC_COPY, 222, 81, 58, 14
-    LTEXT           "", IDC_LIC_STATUS, 10, 101, 270, 26
-    PUSHBUTTON      "", IDC_LIC_IMPORT, 10, 134, 78, 15
-    PUSHBUTTON      "", IDC_LIC_DEACT, 92, 134, 66, 15
-    DEFPUSHBUTTON   "", IDOK, 162, 134, 58, 15
-    PUSHBUTTON      "", IDCANCEL, 224, 134, 56, 15
+    LTEXT           "", IDC_LIC_INFO, 10, 8, 300, 44
+    LTEXT           "", IDC_LIC_NAMELBL, 10, 55, 300, 9
+    EDITTEXT        IDC_LIC_NAME, 10, 65, 300, 13, ES_AUTOHSCROLL
+    LTEXT           "", IDC_LIC_CODELBL, 10, 82, 300, 9
+    EDITTEXT        IDC_LIC_CODE, 10, 92, 300, 13, ES_UPPERCASE | ES_AUTOHSCROLL
+    LTEXT           "", IDC_LIC_MACHINE, 10, 112, 236, 10
+    PUSHBUTTON      "", IDC_LIC_COPY, 252, 109, 58, 14
+    LTEXT           "", IDC_LIC_STATUS, 10, 128, 300, 28
+    PUSHBUTTON      "", IDC_LIC_IMPORT, 10, 164, 64, 16
+    PUSHBUTTON      "", IDC_LIC_DEACT, 78, 164, 56, 16
+    DEFPUSHBUTTON   "", IDC_LIC_REQUEST, 138, 164, 66, 16
+    PUSHBUTTON      "", IDOK, 208, 164, 50, 16
+    PUSHBUTTON      "", IDCANCEL, 262, 164, 48, 16
 END
 IDR_ICON1     RCDATA "icons/m1.png"
 IDR_ICON1 + 1 RCDATA "icons/m2.png"

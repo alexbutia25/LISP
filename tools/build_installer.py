@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Construieste instalatorul Windows TopoKitSetup.exe.
 
-    python3 tools/build_installer.py [--version 1.10.0] [--out dist]
+    python3 tools/build_installer.py [--version 1.11.0] [--out dist]
 
 Necesita (Linux: apt install nsis mingw-w64; Windows: NSIS 3 + MinGW-w64 in PATH):
     makensis, x86_64-w64-mingw32-gcc, x86_64-w64-mingw32-windres
@@ -168,10 +168,17 @@ def module_source(text, module, fmt, key):
     """Textul compilat pentru modulul module ("TopoKit", "TopoKitAnexe" ...) in formatul fmt.
     Singurul loc in care se pregateste sursa inainte de compilare. key = secretul build-ului
     (32 de octeti; vezi tools/lic_gate.py) sau None pentru un build fara licentiere (fara poarta)."""
+    # ordinea: ofuscare -> poarta de licenta -> referinte compilate. Doar la build-urile licentiate
+    # (key != None); la dezvoltare textul ramane neschimbat.
+    sys.path.insert(0, str(ROOT / "tools"))
+    import lic_gate, obfuscate
+    # ofuscarea (tools/obfuscate.py): redenumeste simbolurile interne (defun / globale *...*) in nume
+    # fara inteles, consecvent peste toate modulele si variantele en/ (seed = secretul build-ului key),
+    # ca .fas-ul sa nu mai pastreze numele lizibile. Inainte de poarta, ca poarta sa pazeasca numele noi.
+    if key is not None:
+        text = obfuscate.apply(text, key)
     # poarta de licenta (tools/lic_gate.py): fiecare modul compilat isi verifica singur licenta prin
     # provocare-raspuns cu TopoKit.exe (HMAC pe secretul build-ului), pentru ambele formate si en/
-    sys.path.insert(0, str(ROOT / "tools"))
-    import lic_gate
     text = lic_gate.inject(text, module, key)
     return compiled_source(text, fmt)
 

@@ -6,7 +6,9 @@
  *    (formatul complet in tools/licenta.py); verificat cu cheia publica compilata (TK_LIC_PUB);
  *  - activarea si reinnoirea prin serverul de licente (server/worker.js), cu WinHTTP;
  *  - state.dat: ID-ul dispozitivului si secretul lui, protejate cu DPAPI (doar acest utilizator
- *    Windows le poate citi).
+ *    Windows le poate citi);
+ *  - request.dat (1.11.0): cererea de acces trimisa cu "Cere acces" (ID + token, DPAPI), pana cand
+ *    administratorul o aproba (devine state.dat + license.lic) sau o respinge.
  *
  * Fara TK_LIC_PUB la compilare licentierea e dezactivata (build de dezvoltare): Lic_Enabled() = FALSE
  * si "TopoKit.exe /license" iese cu 0. Criptografia este cea din Windows (CNG) - fara biblioteci.
@@ -925,6 +927,15 @@ static void ErrorText(DWORD status, const char *resp, wchar_t *msg, int cch)
     else if (!strcmp(e, "revoked") || !strcmp(e, "unknown_device") || !strcmp(e, "machine"))
         lstrcpynW(msg, TR(L"Activarea de pe acest calculator a fost anulată.",
                           L"The activation on this computer was cancelled."), cch);
+    else if (!strcmp(e, "requests_full"))
+        lstrcpynW(msg, TR(L"Prea multe cereri în așteptare la server – încercați mai târziu sau cereți un cod "
+                          L"administratorului.",
+                          L"Too many pending requests on the server – try later or ask the administrator for a code."), cch);
+    else if (!strcmp(e, "name_required"))
+        lstrcpynW(msg, TR(L"Scrieți numele dumneavoastră.", L"Enter your name."), cch);
+    else if (!strcmp(e, "unknown_request"))
+        lstrcpynW(msg, TR(L"Cererea nu mai este valabilă (a expirat sau a fost înlocuită) – trimiteți una nouă.",
+                          L"The request is no longer valid (expired or replaced) – send a new one."), cch);
     else
         swprintf(msg, cch, TR(L"Eroare la serverul de licențe (%lu %hs).", L"Licence server error (%lu %hs)."),
                  (unsigned long)status, e);
@@ -981,6 +992,8 @@ static void SeenFromServer(const LicInfo *li)
     if (SeenGet() > li->iat + LIC_SEEN_TOL) SeenPut(li->iat);
 }
 
+static void ReqDelete(void);
+
 int Lic_Activate(const wchar_t *code, wchar_t *msg, int cch)
 {
     char c[64], body[512], resp[MAX_LIC + 512], dev[128], sec[160], pc[64], lic[MAX_LIC];
@@ -995,8 +1008,8 @@ int Lic_Activate(const wchar_t *code, wchar_t *msg, int cch)
         if (iswalnum(code[i]) && code[i] < 128) c[n++] = (char)towupper(code[i]);
     c[n] = 0;
     if (n < 8) {
-        lstrcpynW(msg, TR(L"Introduceți codul de activare primit de la administrator.",
-                          L"Enter the activation code you received from the administrator."), cch);
+        lstrcpynW(msg, TR(L"Introduceți codul de activare primit de la administrator (sau folosiți „Cere acces”).",
+                          L"Enter the activation code you received from the administrator (or use \"Request access\")."), cch);
         return LIC_NONE;
     }
     if (!(lk = LicLock(LIC_LOCK_MS))) {
@@ -1028,6 +1041,7 @@ int Lic_Activate(const wchar_t *code, wchar_t *msg, int cch)
         } else {
             SeenFromServer(&li);
             FailClear();
+            ReqDelete();                        /* activat cu cod: o cerere de acces nu mai e urmarita */
             if (!saved)
                 lstrcpynW(msg, TR(L"Licența e salvată, dar nu se va putea reînnoi automat.",
                                   L"The licence is saved but cannot be renewed automatically."), cch);
@@ -1173,4 +1187,308 @@ BOOL Lic_Import(const wchar_t *file, wchar_t *msg, int cch)
     ok = SaveLicense(text, msg, cch);
     LicUnlock(lk);
     return ok;
+}
+
+/* ------------------------------------------------------------------ cererea de acces (1.11.0)
+ * request.dat, protejat cu DPAPI: "TKQ1\n<P|D>\n<id>\n<token>\n<ora trimiterii>\n<nume UTF-8>\n"
+ * (P = in asteptare, D = respinsa). Tokenul (32 de octeti aleatori dati de server, care pastreaza doar
+ * hash-ul lui) devine la aprobare secretul dispozitivului din state.dat: serverul nu are niciun secret
+ * in clar, iar raspunsul "approved" se poate cere din nou (acelasi dispozitiv) daca salvarea a esuat. */
+static const BYTE REQ_ENT[] = "TopoKit cerere";
+
+typedef struct {
+    char state;                 /* 'P' / 'D' */
+    char id[48], token[160], name[400];
+    long long t;
+} ReqFile;
+
+static BOOL ReqSave(const ReqFile *q)
+{
+    char plain[800];
+    DATA_BLOB in, out, ent = { sizeof REQ_ENT - 1, (BYTE *)REQ_ENT };
+    wchar_t p[MAX_PATH];
+    BOOL ok = FALSE;
+    int n = snprintf(plain, sizeof plain, "TKQ1\n%c\n%s\n%s\n%lld\n%s\n", q->state, q->id, q->token, q->t, q->name);
+    if (n <= 0 || n >= (int)sizeof plain || !LicPath(L"request.dat", p)) return FALSE;
+    in.pbData = (BYTE *)plain;
+    in.cbData = (DWORD)n;
+    if (CryptProtectData(&in, L"TopoKit", &ent, NULL, NULL, CRYPTPROTECT_UI_FORBIDDEN, &out)) {
+        ok = WriteAll(p, out.pbData, out.cbData);
+        LocalFree(out.pbData);
+    }
+    SecureZeroMemory(plain, sizeof plain);
+    return ok;
+}
+
+/* linia urmatoare din s (terminata cu \n) in out; NULL daca lipseste */
+static char *NextLine(char *s, char *out, int cap)
+{
+    char *nl;
+    if (!s || !(nl = strchr(s, '\n'))) return NULL;
+    *nl = 0;
+    lstrcpynA(out, s, cap);
+    return nl + 1;
+}
+
+static BOOL ReqLoad(ReqFile *q)
+{
+    BYTE buf[2048];
+    DATA_BLOB in, out, ent = { sizeof REQ_ENT - 1, (BYTE *)REQ_ENT };
+    wchar_t p[MAX_PATH];
+    char plain[800], *s, magic[8] = "", st[4] = "", t[24] = "";
+    int n;
+    BOOL ok = FALSE;
+    memset(q, 0, sizeof *q);
+    if (!LicPath(L"request.dat", p) || (n = ReadAll(p, (char *)buf, sizeof buf)) <= 0) return FALSE;
+    in.pbData = buf;
+    in.cbData = (DWORD)n;
+    if (!CryptUnprotectData(&in, NULL, &ent, NULL, NULL, CRYPTPROTECT_UI_FORBIDDEN, &out)) return FALSE;
+    if (out.cbData < sizeof plain) {
+        memcpy(plain, out.pbData, out.cbData);
+        plain[out.cbData] = 0;
+        s = NextLine(plain, magic, sizeof magic);
+        s = NextLine(s, st, sizeof st);
+        s = NextLine(s, q->id, sizeof q->id);
+        s = NextLine(s, q->token, sizeof q->token);
+        s = NextLine(s, t, sizeof t);
+        s = NextLine(s, q->name, sizeof q->name);
+        ok = s && !strcmp(magic, "TKQ1") && (st[0] == 'P' || st[0] == 'D') && !st[1] && Token(q->id) && Token(q->token);
+        q->state = st[0];
+        q->t = strtoll(t, NULL, 10);
+        SecureZeroMemory(plain, sizeof plain);
+    }
+    SecureZeroMemory(out.pbData, out.cbData);
+    LocalFree(out.pbData);
+    if (!ok) SecureZeroMemory(q, sizeof *q);
+    return ok;
+}
+
+static void ReqDelete(void)
+{
+    wchar_t p[MAX_PATH];
+    if (LicPath(L"request.dat", p)) DeleteFileW(p);
+}
+
+int Lic_RequestInfo(wchar_t *name, int cch, long long *since)
+{
+    ReqFile q;
+    int r;
+    if (!ReqLoad(&q)) return LIC_RQ_NONE;
+    if (name) U8ToW(q.name, name, cch);
+    if (since) *since = q.t;
+    r = q.state == 'D' ? LIC_RQ_DENIED : LIC_RQ_PENDING;
+    SecureZeroMemory(&q, sizeof q);
+    return r;
+}
+
+/* text UTF-8 intr-un sir JSON: ghilimelele si "\" escapate, caracterele de control omise */
+static void JsonEsc(const char *in, char *out, int cap)
+{
+    int n = 0;
+    for (; *in && n + 2 < cap; in++) {
+        unsigned char c = (unsigned char)*in;
+        if (c < 0x20) continue;
+        if (c == '"' || c == '\\') out[n++] = '\\';
+        out[n++] = (char)c;
+    }
+    out[n] = 0;
+}
+
+#ifndef LOAD_LIBRARY_SEARCH_SYSTEM32
+#define LOAD_LIBRARY_SEARCH_SYSTEM32 0x00000800
+#endif
+typedef BOOLEAN(WINAPI *GetUserNameExW_t)(int, LPWSTR, PULONG);
+typedef DWORD(WINAPI *NetUserGetInfo_t)(LPCWSTR, LPCWSTR, DWORD, LPBYTE *);
+typedef DWORD(WINAPI *NetApiBufferFree_t)(LPVOID);
+
+/* Numele complet: contul local (NetUserGetInfo, nivelul 10: usri10_full_name), apoi contul de domeniu
+ * (GetUserNameExW, NameDisplay). Bibliotecile se incarca doar din System32, la nevoie (fara alte
+ * biblioteci la link). */
+void Lic_UserName(wchar_t *login, int lcch, wchar_t *full, int fcch)
+{
+    DWORD n = (DWORD)lcch;
+    HMODULE m;
+    int i, k;
+    login[0] = full[0] = 0;
+    if (!GetUserNameW(login, &n)) login[0] = 0;
+    if (login[0] && (m = LoadLibraryExW(L"netapi32.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32)) != NULL) {
+        NetUserGetInfo_t get = (NetUserGetInfo_t)(void *)GetProcAddress(m, "NetUserGetInfo");
+        NetApiBufferFree_t fr = (NetApiBufferFree_t)(void *)GetProcAddress(m, "NetApiBufferFree");
+        BYTE *buf = NULL;
+        if (get && fr && !get(NULL, login, 10, &buf) && buf) {
+            LPWSTR *ui = (LPWSTR *)buf;         /* USER_INFO_10: name, comment, usr_comment, full_name */
+            if (ui[3]) lstrcpynW(full, ui[3], fcch);
+            fr(buf);
+        }
+        FreeLibrary(m);
+    }
+    if (!full[0] && (m = LoadLibraryExW(L"secur32.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32)) != NULL) {
+        GetUserNameExW_t ex = (GetUserNameExW_t)(void *)GetProcAddress(m, "GetUserNameExW");
+        ULONG k2 = (ULONG)fcch;
+        if (!ex || !ex(3 /* NameDisplay */, full, &k2)) full[0] = 0;
+        FreeLibrary(m);
+    }
+    for (i = 0; full[i] == L' '; i++) ;
+    for (k = 0; full[i]; i++)
+        if (full[i] >= 32) full[k++] = full[i];
+    while (k && full[k - 1] == L' ') k--;
+    full[k] = 0;
+    if (!full[0]) lstrcpynW(full, login, fcch);
+}
+
+static void Denied(wchar_t *msg, int cch)
+{
+    lstrcpynW(msg, TR(L"Cererea de acces a fost respinsă de administrator.",
+                      L"The access request was denied by the administrator."), cch);
+}
+
+int Lic_Request(const wchar_t *name, wchar_t *msg, int cch)
+{
+    wchar_t m[32], login[128], full[128], nm[96];
+    char n8[400], u8[400], nj[820], uj[820], pc[64], body[2200], resp[1024], id[64], tok[160], e[64] = "";
+    ReqFile q;
+    HANDLE lk;
+    DWORD status;
+    int i = 0, k = 0, r;
+    msg[0] = 0;
+    Lic_UserName(login, 128, full, 128);
+    /* numele: fara spatii la capete si caractere de control, cel mult 80 de caractere */
+    while (name && (name[i] == L' ' || name[i] == L'\t')) i++;
+    for (; name && name[i] && k < 80; i++)
+        if (name[i] >= 32) nm[k++] = name[i];
+    while (k && nm[k - 1] == L' ') k--;
+    nm[k] = 0;
+    if (!nm[0]) lstrcpynW(nm, full, 81);
+    if (!nm[0]) {
+        lstrcpynW(msg, TR(L"Scrieți numele dumneavoastră.", L"Enter your name."), cch);
+        return LIC_Q_REFUSED;
+    }
+    if (!WideCharToMultiByte(CP_UTF8, 0, nm, -1, n8, sizeof n8, NULL, NULL)) n8[0] = 0;
+    if (!WideCharToMultiByte(CP_UTF8, 0, login, -1, u8, sizeof u8, NULL, NULL)) u8[0] = 0;
+    JsonEsc(n8, nj, sizeof nj);
+    JsonEsc(u8, uj, sizeof uj);
+    if (!(lk = LicLock(LIC_LOCK_MS))) {
+        Busy(msg, cch);
+        return LIC_Q_NET;
+    }
+    Lic_Machine(m, FALSE);
+    ComputerName(pc, sizeof pc);
+    snprintf(body, sizeof body, "{\"machine\":\"%ls\",\"pc\":\"%s\",\"name\":\"%s\",\"winuser\":\"%s\",\"version\":\"%s\"}",
+             m, pc, nj, uj, TK_VERSION);
+    status = HttpPost(L"/api/request", body, resp, sizeof resp, 0);
+    JsonStr(resp, "error", e, sizeof e);
+    if (status != 200) {
+        ErrorText(status, resp, msg, cch);
+        /* fara raspuns sau server cazut: se poate reincerca; refuzat (limita, nume, prea multe cereri): nu */
+        r = !status || (status >= 500 && strcmp(e, "requests_full")) ? LIC_Q_NET : LIC_Q_REFUSED;
+    } else if (!JsonStr(resp, "request", id, sizeof id) || !JsonStr(resp, "token", tok, sizeof tok) || !Token(id) ||
+               !Token(tok) || strlen(id) >= sizeof q.id) {
+        WrongAnswer(msg, cch);
+        r = LIC_Q_NET;
+    } else {
+        memset(&q, 0, sizeof q);
+        q.state = 'P';
+        lstrcpynA(q.id, id, sizeof q.id);
+        lstrcpynA(q.token, tok, sizeof q.token);
+        lstrcpynA(q.name, n8, sizeof q.name);
+        q.t = Lic_Now();
+        if (!ReqSave(&q)) {
+            lstrcpynW(msg, TR(L"Nu pot salva cererea.", L"Cannot save the request."), cch);
+            r = LIC_Q_NET;
+        } else {
+            lstrcpynW(msg, TR(L"Cererea a fost trimisă – așteptați aprobarea administratorului.",
+                              L"The request was sent – wait for the administrator's approval."), cch);
+            r = LIC_Q_PENDING;
+        }
+        SecureZeroMemory(&q, sizeof q);
+    }
+    SecureZeroMemory(tok, sizeof tok);
+    SecureZeroMemory(resp, sizeof resp);
+    LicUnlock(lk);
+    return r;
+}
+
+int Lic_RequestStatus(wchar_t *msg, int cch)
+{
+    char body[640], resp[MAX_LIC + 512], s[32] = "", e[64] = "", dev[128], lic[MAX_LIC];
+    wchar_t m[32];
+    ReqFile q;
+    LicInfo li;
+    HANDLE lk;
+    DWORD status;
+    int st, r;
+    BOOL saved;
+    msg[0] = 0;
+    if (!(lk = LicLock(LIC_LOCK_MS))) {
+        Busy(msg, cch);
+        return LIC_Q_NET;
+    }
+    if (!ReqLoad(&q)) {
+        LicUnlock(lk);
+        return LIC_Q_NONE;
+    }
+    if (q.state == 'D') {                       /* respinsa: fara retea, pana la o cerere noua */
+        SecureZeroMemory(&q, sizeof q);
+        LicUnlock(lk);
+        Denied(msg, cch);
+        return LIC_Q_DENIED;
+    }
+    Lic_Machine(m, FALSE);
+    snprintf(body, sizeof body, "{\"request\":\"%s\",\"token\":\"%s\",\"machine\":\"%ls\"}", q.id, q.token, m);
+    status = HttpPost(L"/api/request/status", body, resp, sizeof resp, 0);
+    SecureZeroMemory(body, sizeof body);
+    JsonStr(resp, "error", e, sizeof e);
+    if (status == 200) JsonStr(resp, "status", s, sizeof s);
+    if (status == 200 && !strcmp(s, "pending")) {
+        lstrcpynW(msg, TR(L"Cererea așteaptă aprobarea administratorului.",
+                          L"The request is waiting for the administrator's approval."), cch);
+        r = LIC_Q_PENDING;
+    } else if (status == 200 && !strcmp(s, "denied")) {
+        q.state = 'D';
+        ReqSave(&q);
+        Denied(msg, cch);
+        r = LIC_Q_DENIED;
+    } else if (status == 200 && !strcmp(s, "approved")) {
+        /* aceeasi verificare completa ca la activare (semnatura, calculator, date); secretul
+         * dispozitivului este tokenul cererii */
+        if (!JsonStr(resp, "device", dev, sizeof dev) || !Token(dev) || (st = ServerLicense(resp, lic, sizeof lic, &li)) < 0) {
+            WrongAnswer(msg, cch);
+            r = LIC_Q_NET;
+        } else {
+            saved = (st == LIC_OK || st == LIC_CLOCK) && SaveState(dev, q.token);
+            if (saved) ReqDelete();             /* altfel: raspunsul se cere din nou (acelasi dispozitiv) */
+            if (st != LIC_OK) {
+                lstrcpynW(msg, Lic_StatusText(st), cch);
+                r = LIC_Q_NET;
+            } else if (!SaveLicense(lic, msg, cch)) {
+                r = LIC_Q_NET;
+            } else {
+                SeenFromServer(&li);
+                FailClear();
+                lstrcpynW(msg, saved ? TR(L"Licența TopoKit a fost aprobată de administrator.",
+                                          L"The TopoKit licence was approved by the administrator.")
+                                     : TR(L"Licența e salvată, dar nu se va putea reînnoi automat.",
+                                          L"The licence is saved but cannot be renewed automatically."), cch);
+                r = LIC_Q_APPROVED;
+            }
+        }
+    } else if ((status == 403 || status == 404) && (!strcmp(e, "unknown_request") || !strcmp(e, "machine"))) {
+        ReqDelete();                            /* expirata, inlocuita sau de pe alt calculator */
+        lstrcpynW(msg, TR(L"Cererea nu mai este valabilă (a expirat sau a fost înlocuită) – trimiteți una nouă.",
+                          L"The request is no longer valid (expired or replaced) – send a new one."), cch);
+        r = LIC_Q_NONE;
+    } else if (status == 403 && (!strcmp(e, "revoked") || !strcmp(e, "user_disabled"))) {
+        q.state = 'D';                          /* aprobata, apoi anulata inainte de preluare */
+        ReqSave(&q);
+        lstrcpynW(msg, TR(L"Cererea de acces a fost anulată de administrator.",
+                          L"The access request was cancelled by the administrator."), cch);
+        r = LIC_Q_DENIED;
+    } else {
+        ErrorText(status, resp, msg, cch);
+        r = LIC_Q_NET;
+    }
+    SecureZeroMemory(&q, sizeof q);
+    SecureZeroMemory(resp, sizeof resp);
+    LicUnlock(lk);
+    return r;
 }

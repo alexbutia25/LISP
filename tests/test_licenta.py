@@ -10,6 +10,8 @@ Verifica:
     fara cheie (build de dezvoltare) /license iese cu 0;
   - activare, reinnoire, acces oprit, server care nu raspunde, dezactivare - contra unui server
     simulat aici (serverul adevarat, server/worker.js, are testul complet tests/server_harness.py);
+  - cererea de acces (1.11.0): /request, /request-status (in asteptare / aprobata / respinsa / expirata),
+    lansatorul in fundal care verifica singur cererea si instaleaza licenta;
   - server/worker.js: fiecare interogare SQL e valida pe schema (SQLite = D1);
   - TopoKitLoad.lsp din pachetul cu licentiere: fara licenta modulele nu se incarca si comenzile
     trimit la activare; cu licenta se incarca, iar verificarea ruleaza o data pe sesiune;
@@ -89,11 +91,15 @@ PROOFDEFS = (f'-DTK_PROOF_FILE="{PROOF_H.as_posix()}"',)
 compile_exe(EXE, *LICDEFS, *PROOFDEFS, "-DTK_LIC_TESTENV")   # build de test: TOPOKIT_LICDIR / LICSERVER / LICREG
 compile_exe(DEV)
 compile_exe(REL, *LICDEFS, *PROOFDEFS)               # ca build-ul de livrare: variabilele de mediu ignorate
+# lansatorul in fundal pentru testul cererii de acces: alt mutex / alta clasa de fereastra (nu se
+# confunda cu un TopoKit.exe pornit pe acest calculator)
+BG = TMP / "bg.exe"
+compile_exe(BG, *LICDEFS, "-DTK_LIC_TESTENV", '-DMUTEX_NAME=L"Local\\\\TopoKitLicTest"', '-DWND_CLASS=L"TopoKitLicTestWnd"')
 # REL nu se ruleaza cu /license (ar citi licenta adevarata a utilizatorului): doar se verifica
 # ca variabilele de test nu exista in program
 for exe, present in ((EXE, True), (REL, False)):
     data = exe.read_bytes()
-    for var in ("TOPOKIT_LICDIR", "TOPOKIT_LICSERVER", "TOPOKIT_LICREG"):
+    for var in ("TOPOKIT_LICDIR", "TOPOKIT_LICSERVER", "TOPOKIT_LICREG", "TOPOKIT_TESTGUI", "TOPOKIT_LICTICK_MS"):
         assert (var.encode("utf-16-le") in data) == present, (exe.name, var)
     # secretul /proof nu apare in program: nici octetii, nici hex-ul (B7 / C2)
     assert not B.secret_in(exe, PROOF_KEY), exe.name
@@ -285,6 +291,29 @@ class Stub(BaseHTTPRequestHandler):
     def do_POST(self):
         b = json.loads(self.rfile.read(int(self.headers["Content-Length"])) or b"{}")
         SRV["calls"].append((self.path, b))
+        if self.path == "/api/request":                 # cererea de acces (1.11.0)
+            if SRV.get("req") == "full":
+                return self.reply(503, {"error": "requests_full"})
+            n = len(SRV["calls"])
+            SRV["rid"], SRV["token"] = f"r_{n:016x}", f"tok{n}-ABCdef_0123456789abcdefghijklmnopqrstu"
+            return self.reply(200, {"request": SRV["rid"], "token": SRV["token"], "status": "pending"})
+        if self.path == "/api/request/status":
+            if b.get("request") != SRV.get("rid") or b.get("token") != SRV.get("token"):
+                return self.reply(403, {"error": "unknown_request"})
+            q = SRV.get("req", "pending")
+            if q == "after":                            # intai in asteptare, la urmatoarea intrebare aprobata
+                SRV["req"], q = "approve", "pending"
+            if q == "pending":
+                return self.reply(200, {"status": "pending"})
+            if q == "deny":
+                return self.reply(200, {"status": "denied"})
+            if q == "revoked":
+                return self.reply(403, {"error": "revoked"})
+            if q == "500":
+                return self.reply(500, {"error": "server"})
+            machine = "0" * 24 if q == "altpc" else b["machine"]
+            return self.reply(200, {"status": "approved", "device": "d_2",
+                                    "license": lic(machine=machine, name=SRV.get("reqname", "Ana Pop"), lid="d_2")})
         if SRV["mode"] == "slow":                       # server care tace (retea proasta / proxy blocat)
             time.sleep(25)
             return self.reply(500, {"error": "slow"})
@@ -299,7 +328,8 @@ class Stub(BaseHTTPRequestHandler):
             return self.reply(200, {"license": lic(machine=b["machine"], name="Maria Ionescu", iat=iat), "device": "d_1",
                                     "secret": "secret-de-test"})
         if self.path == "/api/refresh":
-            if b.get("device") != "d_1" or b.get("secret") != "secret-de-test":
+            # d_2 = dispozitivul aprobat prin cererea de acces: secretul lui e tokenul cererii
+            if (b.get("device"), b.get("secret")) not in (("d_1", "secret-de-test"), ("d_2", SRV.get("token"))):
                 return self.reply(403, {"error": "unknown_device"})
             if SRV["mode"] == "revoked":
                 return self.reply(403, {"error": "revoked"})
@@ -455,6 +485,123 @@ t0 = time.time()
 assert proof(EXE, NONCE, bo, server=URL)[0] == 0 and time.time() - t0 < 10
 SRV["mode"] = "ok"
 print(f"  linia de comanda: dupa mutex verifica din nou pauza / licenta; server tacut -> {dt:.1f} s (limita 8 s)")
+
+# ---------------------------------------------------------------- cererea de acces (1.11.0)
+def calls(path):
+    return sum(1 for p, _ in SRV["calls"] if p == path)
+
+
+q = folder("req")
+SRV["req"] = "pending"
+code, out = run(EXE, "/request", 'Ana Pop ăș "x"', licdir=q, server=URL)
+assert code == 0 and (q / "request.dat").exists() and not (q / "license.lic").exists(), (code, out)
+path, sent = SRV["calls"][-1]
+assert path == "/api/request" and sent["name"] == 'Ana Pop ăș "x"' and sent["machine"] == mid and sent["winuser"] and \
+    sent["pc"] and sent["version"] == "9.9.9" and set(sent) == {"machine", "pc", "name", "winuser", "version"}, sent
+assert SRV["token"].encode() not in (q / "request.dat").read_bytes() and SRV["rid"].encode() not in (q / "request.dat").read_bytes()
+code, out = run(EXE, "/request-status", licdir=q, server=URL)
+assert code == 4 and SRV["calls"][-1] == ("/api/request/status", {"request": SRV["rid"], "token": SRV["token"], "machine": mid}), \
+    (code, out, SRV["calls"][-1])
+assert run(EXE, "/license", licdir=q)[0] == 10                          # in asteptare: tot fara licenta
+for mode in ("500", "altpc"):                                           # server cazut / licenta pentru alt calculator
+    SRV["req"] = mode
+    code, out = run(EXE, "/request-status", licdir=q, server=URL)
+    assert code == 1 and (q / "request.dat").exists() and not (q / "license.lic").exists() and not (q / "state.dat").exists(), (mode, code, out)
+assert run(EXE, "/request-status", licdir=q)[0] == 1                    # fara retea (https://licente.invalid)
+SRV["req"] = "approve"
+code, out = run(EXE, "/request-status", licdir=q, server=URL)
+assert code == 0 and (q / "license.lic").exists() and (q / "state.dat").exists() and not (q / "request.dat").exists(), (code, out)
+assert SRV["token"].encode() not in (q / "state.dat").read_bytes()
+assert run(EXE, "/license", licdir=q)[1].startswith("0 Ana Pop")
+assert run(EXE, "/refresh", licdir=q, server=URL)[0] == 0 and SRV["calls"][-1][1]["device"] == "d_2" and \
+    SRV["calls"][-1][1]["secret"] == SRV["token"]                       # secretul dispozitivului = tokenul cererii
+n = len(SRV["calls"])
+assert run(EXE, "/request", "Altcineva", licdir=q, server=URL)[0] == 3 and len(SRV["calls"]) == n   # licenta activa
+assert run(EXE, "/request-status", licdir=q, server=URL)[0] == 0 and len(SRV["calls"]) == n
+# respinsa: ramane respinsa local (fara alte intrebari), apoi o cerere noua
+q2 = folder("req2")
+SRV["req"] = "pending"
+assert run(EXE, "/request", "Ion", licdir=q2, server=URL)[0] == 0
+SRV["req"] = "deny"
+code, out = run(EXE, "/request-status", licdir=q2, server=URL)
+assert code == 2 and "respins" in out and (q2 / "request.dat").exists() and not (q2 / "license.lic").exists(), (code, out)
+n = len(SRV["calls"])
+assert run(EXE, "/request-status", licdir=q2, server=URL)[0] == 2 and len(SRV["calls"]) == n
+SRV["req"] = "pending"
+assert run(EXE, "/request", "Ion", licdir=q2, server=URL)[0] == 0
+assert run(EXE, "/request-status", licdir=q2, server=URL)[0] == 4
+# cererea inlocuita / expirata pe server: se sterge, /request-status -> 3
+SRV["token"] = "alt-token"
+code, out = run(EXE, "/request-status", licdir=q2, server=URL)
+assert code == 3 and not (q2 / "request.dat").exists(), (code, out)
+n = len(SRV["calls"])
+assert run(EXE, "/request-status", licdir=q2, server=URL)[0] == 3 and len(SRV["calls"]) == n      # nicio cerere: fara retea
+# aprobata, apoi anulata inainte de preluare -> respinsa
+assert run(EXE, "/request", "Ion", licdir=q2, server=URL)[0] == 0
+SRV["req"] = "revoked"
+assert run(EXE, "/request-status", licdir=q2, server=URL)[0] == 2 and (q2 / "request.dat").exists()
+# refuzata de server (prea multe cereri), fara server, fara nume (= numele din Windows)
+SRV["req"] = "full"
+q3 = folder("req3")
+code, out = run(EXE, "/request", "Ion", licdir=q3, server=URL)
+assert code == 2 and not (q3 / "request.dat").exists(), (code, out)
+assert run(EXE, "/request", "Ion", licdir=q3)[0] == 1 and not (q3 / "request.dat").exists()
+SRV["req"] = "pending"
+assert run(EXE, "/request", licdir=q3, server=URL)[0] == 0 and SRV["calls"][-1][1]["name"].strip()
+# activarea cu cod renunta la cererea in asteptare
+assert run(EXE, "/activate", "TKITABCDE12345FGHJK", licdir=q3, server=URL)[0] == 0 and not (q3 / "request.dat").exists()
+print("cerere de acces: /request (DPAPI), /request-status in asteptare / aprobata (licenta + secretul = token) /")
+print("  respinsa (fara alte intrebari) / inlocuita / anulata / server cazut / licenta falsa; activarea cu cod o inchide")
+
+# lansatorul in fundal (fara iconita, fara AutoCAD, jurnalul in folderul de test): verifica singur cererea
+# la pornire si apoi periodic; aprobata -> licenta instalata + notificare; respinsa -> notificare
+g = folder("gui")
+SRV["req"] = "pending"
+SRV["reqname"] = "Gui Test"
+assert run(EXE, "/request", "Gui Test", licdir=g, server=URL)[0] == 0
+SRV["req"] = "after"
+genv = {k: v for k, v in os.environ.items() if k not in ("TOPOKIT_LICDIR", "TOPOKIT_LICSERVER", "TOPOKIT_LICREG")}
+genv.update(TOPOKIT_LICDIR=str(g), TOPOKIT_LICSERVER=URL, TOPOKIT_TESTGUI="1", TOPOKIT_LICTICK_MS="700")
+s0 = calls("/api/request/status")
+bg = subprocess.Popen([str(BG), "/background"], env=genv)
+
+
+def wait_for(cond, secs=30):
+    t0 = time.time()
+    while time.time() - t0 < secs:
+        if cond():
+            return True
+        time.sleep(0.2)
+    return False
+
+
+def glog():
+    f = g / "TopoKit.log"
+    return f.read_text(encoding="utf-8-sig", errors="replace") if f.exists() else ""
+
+
+try:
+    assert wait_for(lambda: (g / "license.lic").exists()), glog()
+    assert calls("/api/request/status") - s0 >= 2                          # pornire (in asteptare), apoi aprobata
+    assert wait_for(lambda: "aprobat" in glog()), glog()                    # notificarea „Licenta ... a fost aprobata”
+    assert run(EXE, "/license", licdir=g)[1].startswith("0 Gui Test")
+    for f in ("license.lic", "state.dat"):                                 # alt coleg pe acelasi cont (licenta stearsa)
+        (g / f).unlink()
+    SRV["req"] = "pending"
+    assert run(EXE, "/request", "Gui Doi", licdir=g, server=URL)[0] == 0
+    SRV["req"] = "deny"
+    assert wait_for(lambda: "respins" in glog()), glog()
+    assert run(EXE, "/request-status", licdir=g, server=URL)[0] == 2
+finally:
+    subprocess.run([str(BG), "/quit"], env=genv, timeout=30)
+    try:
+        bg.wait(timeout=20)
+    except subprocess.TimeoutExpired:
+        bg.kill()
+        raise AssertionError("lansatorul de test nu s-a oprit la /quit")
+assert "TopoKit.log" in os.listdir(g)                                     # jurnalul in folderul de test, nu in %LOCALAPPDATA%
+print("lansatorul in fundal: cererea in asteptare verificata la pornire si periodic -> licenta instalata,")
+print("  notificare la aprobare / respingere")
 srv.shutdown()
 print("activare, cod refolosit, reinnoire, server cazut / fara retea (licenta ramane), acces oprit (licenta stearsa),")
 print("  reinnoire automata la /license, dezactivare; secretul dispozitivului e protejat cu DPAPI;")

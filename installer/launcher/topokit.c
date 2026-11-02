@@ -19,6 +19,8 @@
  *   TopoKit.exe /diag         raportul de diagnostic (diagnostic.txt, in Notepad)
  *   TopoKit.exe /snapshot F.png [on|off|starting] [hover] [scara]
  *                             salveaza imaginea ferestrei (documentatie, teste)
+ *   TopoKit.exe /license, /machine, /activate COD, /refresh, /deactivate,
+ *               /request ["Nume"], /request-status        licenta (vezi LicenseCli)
  *
  * Compilare (MinGW-w64): vezi tools/build_installer.py
  */
@@ -57,8 +59,15 @@
 #define WM_REMOTE   (WM_APP + 2)    /* cererea altei instante, procesata dupa WM_COPYDATA */
 #define WM_LICDONE  (WM_APP + 3)    /* reinnoirea licentei (fir separat) s-a terminat */
 #define WM_LICDLG   (WM_APP + 4)    /* deschide fereastra licentei */
+#define WM_REQDONE  (WM_APP + 5)    /* verificarea cererii de acces (fir separat) s-a terminat */
 #define TIMER_LIC   2
-#define LIC_TICK_MS (20 * 60 * 1000)
+/* Licenta: ceasul la 1 minut; reinnoirea cand licenta e mai veche de 6 h (o licenta anulata in /admin
+ * dispare in cel mult ~6 h cu internet; fara internet licenta tine 14 zile); cererea de acces in
+ * asteptare se verifica la 2 min cu fereastra licentei deschisa, altfel la 20 min. */
+#define LIC_TICK_MS (60 * 1000)
+#define LIC_RENEW_S (6 * 3600)
+#define REQ_POLL_OPEN_MS (2 * 60 * 1000)
+#define REQ_POLL_MS (20 * 60 * 1000)
 #define TIMER_POLL  1
 #define POLL_MS     3000
 #define START_WAIT_MS (240 * 1000)
@@ -119,6 +128,36 @@ static HRESULT g_lastHr;                /* ultimul rezultat COM (diagnostic) */
 static wchar_t g_excep[256];            /* ultima eroare raportata de AutoCAD (EXCEPINFO) */
 static wchar_t g_logPath[MAX_PATH];
 
+/* Build de test (-DTK_LIC_TESTENV) cu TOPOKIT_TESTGUI=1: lansatorul ruleaza fara iconita, fara tasta
+ * rapida si fara AutoCAD, cu jurnalul si limba in TOPOKIT_LICDIR (testele nu ating instalarea reala);
+ * TOPOKIT_LICTICK_MS = alt pas pentru ceasul licentei si verificarea cererii de acces. */
+static BOOL g_testGui;
+static DWORD g_tickMs = LIC_TICK_MS, g_reqOpenMs = REQ_POLL_OPEN_MS, g_reqMs = REQ_POLL_MS;
+
+static void InitTestGui(void)
+{
+#ifdef TK_LIC_TESTENV
+    wchar_t v[32];
+    DWORD n = GetEnvironmentVariableW(L"TOPOKIT_TESTGUI", v, 32);
+    g_testGui = n && n < 32 && v[0] == L'1';
+    n = GetEnvironmentVariableW(L"TOPOKIT_LICTICK_MS", v, 32);
+    if (g_testGui && n && n < 32 && _wtoi(v) >= 200) g_tickMs = g_reqOpenMs = g_reqMs = (DWORD)_wtoi(v);
+#endif
+}
+
+/* folderul de date: %LOCALAPPDATA%\TopoKit (in modul de test: TOPOKIT_LICDIR) */
+static BOOL DataDir(wchar_t *dir)
+{
+#ifdef TK_LIC_TESTENV
+    DWORD n;
+    if (g_testGui && (n = GetEnvironmentVariableW(L"TOPOKIT_LICDIR", dir, MAX_PATH)) > 0 && n < MAX_PATH) return TRUE;
+#endif
+    if (FAILED(SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA | CSIDL_FLAG_CREATE, NULL, 0, dir))) return FALSE;
+    wcscat(dir, L"\\TopoKit");
+    CreateDirectoryW(dir, NULL);
+    return TRUE;
+}
+
 /* ------------------------------------------------------------------ jurnal */
 static void Log(const wchar_t *fmt, ...)
 {
@@ -142,9 +181,7 @@ static void InitLog(void)
 {
     wchar_t dir[MAX_PATH];
     WIN32_FILE_ATTRIBUTE_DATA fa;
-    if (FAILED(SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA | CSIDL_FLAG_CREATE, NULL, 0, dir))) return;
-    wcscat(dir, L"\\TopoKit");
-    CreateDirectoryW(dir, NULL);
+    if (!DataDir(dir)) return;
     swprintf(g_logPath, MAX_PATH, L"%ls\\TopoKit.log", dir);
     if (GetFileAttributesExW(g_logPath, GetFileExInfoStandard, &fa) && fa.nFileSizeLow > 256 * 1024)
         DeleteFileW(g_logPath);
@@ -181,10 +218,7 @@ static void RegSetStr(const wchar_t *name, const wchar_t *v)
  * registrului, iar fereastra si AutoCAD trebuie sa aiba aceeasi limba. */
 static BOOL LangFile(wchar_t *path)
 {
-    wchar_t dir[MAX_PATH];
-    if (FAILED(SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA | CSIDL_FLAG_CREATE, NULL, 0, dir))) return FALSE;
-    swprintf(path, MAX_PATH, L"%ls\\TopoKit", dir);
-    CreateDirectoryW(path, NULL);
+    if (!DataDir(path)) return FALSE;
     lstrcatW(path, L"\\language.txt");
     return TRUE;
 }
@@ -692,6 +726,8 @@ static DWORD SendViaWindow(const AcadWin *w, const wchar_t *cmd, BOOL reload)
 /* ------------------------------------------------------------------ tray */
 static void Balloon(const wchar_t *title, const wchar_t *text)
 {
+    Log(L"Notificare: %ls", text);
+    if (g_testGui) return;
     g_nid.uFlags = NIF_INFO;
     lstrcpynW(g_nid.szInfoTitle, title, 64);
     lstrcpynW(g_nid.szInfo, text, 256);
@@ -710,7 +746,7 @@ static void UpdateTray(void)
         swprintf(g_nid.szTip, 128, TR(L"TopoKit - se pornește AutoCAD...", L"TopoKit - starting AutoCAD..."));
     else
         swprintf(g_nid.szTip, 128, TR(L"TopoKit - AutoCAD nu rulează", L"TopoKit - AutoCAD is not running"));
-    Shell_NotifyIconW(NIM_MODIFY, &g_nid);
+    if (!g_testGui) Shell_NotifyIconW(NIM_MODIFY, &g_nid);
     Ui_Refresh();
 }
 
@@ -724,6 +760,7 @@ static void AddTray(void)
     g_nid.uCallbackMessage = WM_TRAY;
     g_nid.hIcon = g_icoOff;
     lstrcpyW(g_nid.szTip, APP_TITLE);
+    if (g_testGui) return;                      /* testele: fara iconita langa ceas */
     Shell_NotifyIconW(NIM_ADD, &g_nid);
     g_nid.uVersion = NOTIFYICON_VERSION;
     Shell_NotifyIconW(NIM_SETVERSION, &g_nid);
@@ -930,12 +967,19 @@ static void RunCommand(const wchar_t *cmd, BOOL reload)
 /* Sondajul periodic: starea conexiunii si comenzile in asteptare */
 static void Poll(void)
 {
-    IDispatch *app = Connect();
+    IDispatch *app;
     AcadWin w;
-    BOOL haveWin = FindAcadWindow(&w);
+    BOOL haveWin;
     BOOL was = g_connected;
     int wasMode = g_mode;
     wchar_t name[64];
+    if (g_testGui) {                            /* testele nu se leaga de AutoCAD */
+        g_connected = FALSE;
+        g_mode = 0;
+        return;
+    }
+    app = Connect();
+    haveWin = FindAcadWindow(&w);
     if (haveWin && w.product[0]) {
         wchar_t last[64];
         if (!RegGetStr(HKEY_CURRENT_USER, REG_APP, L"LastProduct", last, 64) || wcscmp(last, w.product)) {
@@ -1113,6 +1157,7 @@ static void Diagnostic(void)
 }
 
 static LicInfo g_lic;                   /* licenta (vezi mai jos, "licenta") */
+static int g_reqState;                  /* cererea de acces: LIC_RQ_* (request.dat) */
 static void LicUpdate(void);
 
 static void ShowMain(void)
@@ -1127,14 +1172,50 @@ static void ShowMain(void)
 }
 
 /* ------------------------------------------------------------------ licenta (license.c) */
-static BOOL g_licChecked, g_licBusy, g_licTried;
-static DWORD g_licTry;
+static BOOL g_licChecked, g_licBusy, g_licTried, g_reqBusy, g_reqPolled;
+static DWORD g_licTry, g_reqLast;
+static HWND g_licDlg;                   /* fereastra licentei, cat timp e deschisa */
 
 static void LicUpdate(void)
 {
     if (!Lic_Enabled()) return;
     Lic_Check(NULL, &g_lic);
+    g_reqState = Lic_RequestInfo(NULL, 0, NULL);
     g_licChecked = TRUE;
+}
+
+/* verificarea cererii de acces, pe alt fir; rezultatul (si mesajul) vine in WM_REQDONE */
+typedef struct {
+    int r;
+    wchar_t msg[256];
+} ReqResult;
+
+static DWORD WINAPI ReqStatusThread(LPVOID p)
+{
+    ReqResult *q = (ReqResult *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(ReqResult));
+    (void)p;
+    if (!q) {
+        PostMessageW(g_hwnd, WM_REQDONE, LIC_Q_NET, 0);
+        return 0;
+    }
+    q->r = Lic_RequestStatus(q->msg, 256);
+    if (!PostMessageW(g_hwnd, WM_REQDONE, (WPARAM)q->r, (LPARAM)q)) HeapFree(GetProcessHeap(), 0, q);
+    return 0;
+}
+
+/* Cererea de acces in asteptare: la pornire, apoi la 2 min cat timp fereastra licentei e deschisa,
+ * altfel la 20 min (now = imediat). Aprobarea instaleaza licenta ca la activare (license.c). */
+static void ReqTick(BOOL now)
+{
+    HANDLE t;
+    DWORD every = g_licDlg ? g_reqOpenMs : g_reqMs;
+    if (!Lic_Enabled() || g_reqBusy || g_reqState != LIC_RQ_PENDING) return;
+    if (!now && g_reqPolled && GetTickCount() - g_reqLast + 5000 < every) return;
+    g_reqPolled = TRUE;
+    g_reqLast = GetTickCount();
+    g_reqBusy = TRUE;
+    if ((t = CreateThread(NULL, 0, ReqStatusThread, NULL, 0, NULL)) != NULL) CloseHandle(t);
+    else g_reqBusy = FALSE;
 }
 
 static DWORD WINAPI LicRefreshThread(LPVOID p)
@@ -1146,14 +1227,16 @@ static DWORD WINAPI LicRefreshThread(LPVOID p)
     return 0;
 }
 
-/* reinnoire in fundal: o data pe zi (licenta are 14 zile), reincercare la o ora dupa o eroare */
+/* reinnoire in fundal: la 6 h (licenta are 14 zile; o licenta anulata din /admin se opreste in cateva
+ * ore), reincercare la o ora dupa o eroare; si verificarea cererii de acces in asteptare */
 static void LicTick(void)
 {
     HANDLE t;
-    if (!Lic_Enabled() || g_licBusy) return;
+    if (!Lic_Enabled()) return;
     LicUpdate();
-    if (!g_lic.device) return;
-    if (g_lic.status == LIC_OK && Lic_Now() - g_lic.iat < 20 * 3600) return;
+    ReqTick(FALSE);
+    if (g_licBusy || !g_lic.device) return;
+    if (g_lic.status == LIC_OK && Lic_Now() - g_lic.iat < LIC_RENEW_S) return;
     if (g_licTried && GetTickCount() - g_licTry < 60 * 60 * 1000) return;
     g_licTried = TRUE;
     g_licTry = GetTickCount();
@@ -1162,14 +1245,48 @@ static void LicTick(void)
     else g_licBusy = FALSE;
 }
 
+/* butonul implicit (Enter): "Cere acces" fara cod, "Activeaza" / "Reinnoieste" cu cod sau licenta */
+static void SetDefButton(HWND d, int id)
+{
+    int other = id == IDOK ? IDC_LIC_REQUEST : IDOK;
+    SendDlgItemMessageW(d, other, BM_SETSTYLE, BS_PUSHBUTTON, TRUE);
+    SendDlgItemMessageW(d, id, BM_SETSTYLE, BS_DEFPUSHBUTTON, TRUE);
+    SendMessageW(d, DM_SETDEFID, (WPARAM)id, 0);
+}
+
+/* cererea de acces se poate trimite fara licenta si fara o activare online existenta (aceea se reinnoieste) */
+static BOOL LicCanRequest(void)
+{
+    return g_lic.status != LIC_OK && !g_lic.device;
+}
+
 static void LicDlgFill(HWND d, const wchar_t *status)
 {
-    wchar_t t[600], m[32], date[32];
-    BOOL ok;
+    static const int reqIds[] = { IDC_LIC_NAMELBL, IDC_LIC_NAME, IDC_LIC_REQUEST };
+    wchar_t t[700], m[32], date[32], rname[128] = L"", code[8] = L"";
+    long long since = 0;
+    BOOL ok, req, pend, den;
+    int rq;
+    unsigned i;
     LicUpdate();
     ok = g_lic.status == LIC_OK;
+    req = LicCanRequest();
+    rq = Lic_RequestInfo(rname, 128, &since);
+    pend = req && rq == LIC_RQ_PENDING;
+    den = req && rq == LIC_RQ_DENIED;
     SetWindowTextW(d, TR(L"Licență TopoKit", L"TopoKit licence"));
-    if (ok) {
+    if (pend) {
+        Lic_FormatDate(since, date, 32);
+        swprintf(t, 700, TR(L"Cererea de acces pentru %ls a fost trimisă (%ls).\nAșteptați aprobarea administratorului – "
+                            L"TopoKit verifică singur la câteva minute, și cu fereastra închisă.",
+                            L"The access request for %ls was sent (%ls).\nWait for the administrator's approval – "
+                            L"TopoKit checks by itself every few minutes, even with this window closed."), rname, date);
+    } else if (den) {
+        swprintf(t, 700, L"%ls\n%ls", TR(L"Cererea de acces a fost respinsă de administrator.",
+                                         L"The access request was denied by the administrator."),
+                 TR(L"Puteți trimite o cerere nouă (Cere acces) sau introduce un cod de activare.",
+                    L"You can send a new request (Request access) or enter an activation code."));
+    } else if (ok) {
         Lic_FormatDate(g_lic.exp, date, 32);
         swprintf(t, 600, TR(L"Licență activă pentru %ls.\nValabilă până la %ls%ls.", L"Active licence for %ls.\nValid until %ls%ls."),
                  g_lic.name, date, g_lic.device ? TR(L" – se reînnoiește singură când există internet",
@@ -1183,12 +1300,21 @@ static void LicDlgFill(HWND d, const wchar_t *status)
                  TR(L"Apăsați Activează fără cod pentru a reînnoi activarea existentă sau introduceți un cod nou.",
                     L"Press Activate without a code to renew the existing activation, or enter a new code."));
     } else {
-        swprintf(t, 600, L"%ls.\n%ls", Lic_StatusText(g_lic.status),
-                 TR(L"Introduceți codul de activare primit de la administrator și apăsați Activează.",
-                    L"Enter the activation code you received from the administrator and press Activate."));
+        swprintf(t, 700, L"%ls.\n%ls", Lic_StatusText(g_lic.status),
+                 TR(L"Scrieți-vă numele și apăsați „Cere acces” – administratorul vă aprobă licența de la distanță. "
+                    L"Sau, cu un cod de activare: scrieți-l mai jos și apăsați Activează.",
+                    L"Enter your name and press \"Request access\" – the administrator approves your licence remotely. "
+                    L"Or, with an activation code: enter it below and press Activate."));
     }
     SetDlgItemTextW(d, IDC_LIC_INFO, t);
-    SetDlgItemTextW(d, IDC_LIC_CODELBL, TR(L"Cod de activare:", L"Activation code:"));
+    SetDlgItemTextW(d, IDC_LIC_NAMELBL, TR(L"Numele dumneavoastră (îl vede administratorul):",
+                                           L"Your name (shown to the administrator):"));
+    if (pend) SetDlgItemTextW(d, IDC_LIC_NAME, rname);
+    EnableWindow(GetDlgItem(d, IDC_LIC_NAME), !pend);
+    SetDlgItemTextW(d, IDC_LIC_REQUEST, pend ? TR(L"Verifică", L"Check") : TR(L"Cere acces", L"Request access"));
+    for (i = 0; i < sizeof reqIds / sizeof reqIds[0]; i++) ShowWindow(GetDlgItem(d, reqIds[i]), req ? SW_SHOW : SW_HIDE);
+    SetDlgItemTextW(d, IDC_LIC_CODELBL, req ? TR(L"Sau, dacă aveți un cod de activare:", L"Or, if you have an activation code:")
+                                            : TR(L"Cod de activare:", L"Activation code:"));
     ShowWindow(GetDlgItem(d, IDC_LIC_CODELBL), ok ? SW_HIDE : SW_SHOW);
     ShowWindow(GetDlgItem(d, IDC_LIC_CODE), ok ? SW_HIDE : SW_SHOW);
     Lic_Machine(m, TRUE);
@@ -1202,6 +1328,8 @@ static void LicDlgFill(HWND d, const wchar_t *status)
     SetDlgItemTextW(d, IDOK, ok ? TR(L"Reînnoiește", L"Renew") : TR(L"Activează", L"Activate"));
     EnableWindow(GetDlgItem(d, IDOK), !ok || g_lic.device);
     SetDlgItemTextW(d, IDCANCEL, TR(L"Închide", L"Close"));
+    if (!ok) GetDlgItemTextW(d, IDC_LIC_CODE, code, 8);
+    SetDefButton(d, req && !code[0] ? IDC_LIC_REQUEST : IDOK);
     if (status) SetDlgItemTextW(d, IDC_LIC_STATUS, status);
 }
 
@@ -1226,13 +1354,56 @@ static INT_PTR CALLBACK LicDlgProc(HWND d, UINT msg, WPARAM wp, LPARAM lp)
     (void)lp;
     switch (msg) {
     case WM_INITDIALOG:
+        g_licDlg = d;
         SendMessageW(d, WM_SETICON, ICON_BIG, (LPARAM)LoadIconW(g_inst, MAKEINTRESOURCEW(IDI_APP)));
         SendDlgItemMessageW(d, IDC_LIC_CODE, EM_LIMITTEXT, 40, 0);
+        SendDlgItemMessageW(d, IDC_LIC_NAME, EM_LIMITTEXT, 80, 0);
+        LicUpdate();
+        if (LicCanRequest() && g_reqState != LIC_RQ_PENDING) {   /* numele propus: utilizatorul Windows */
+            wchar_t login[128], full[128];
+            Lic_UserName(login, 128, full, 128);
+            SetDlgItemTextW(d, IDC_LIC_NAME, full);
+        }
         LicDlgFill(d, L"");
-        if (g_lic.status != LIC_OK) { SetFocus(GetDlgItem(d, IDC_LIC_CODE)); return FALSE; }
+        /* cererea in asteptare: verificata la deschidere (daca nu chiar acum), apoi la 2 minute */
+        if (g_reqState == LIC_RQ_PENDING && (!g_reqPolled || GetTickCount() - g_reqLast > 30000)) ReqTick(TRUE);
+        if (g_lic.status != LIC_OK) {
+            SetFocus(GetDlgItem(d, LicCanRequest() && g_reqState != LIC_RQ_PENDING ? IDC_LIC_NAME : IDC_LIC_CODE));
+            return FALSE;
+        }
         return TRUE;
+    case WM_DESTROY:
+        g_licDlg = NULL;
+        break;
     case WM_COMMAND:
+        if (LOWORD(wp) == IDC_LIC_CODE && HIWORD(wp) == EN_CHANGE && LicCanRequest()) {
+            GetDlgItemTextW(d, IDC_LIC_CODE, code, 8);         /* cu cod: Enter = Activeaza */
+            SetDefButton(d, code[0] ? IDOK : IDC_LIC_REQUEST);
+            return TRUE;
+        }
         switch (LOWORD(wp)) {
+        case IDC_LIC_REQUEST: {
+            wchar_t nm[96];
+            int r;
+            old = SetCursor(LoadCursorW(NULL, IDC_WAIT));
+            SetDlgItemTextW(d, IDC_LIC_STATUS, TR(L"Se contactează serverul de licențe...", L"Contacting the licence server..."));
+            UpdateWindow(d);
+            if (Lic_RequestInfo(NULL, 0, NULL) == LIC_RQ_PENDING) {
+                r = Lic_RequestStatus(msgt, 512);                   /* "Verifica" */
+            } else {
+                GetDlgItemTextW(d, IDC_LIC_NAME, nm, 96);
+                r = Lic_Request(nm, msgt, 512);
+            }
+            if (r == LIC_Q_PENDING) {
+                g_reqPolled = TRUE;
+                g_reqLast = GetTickCount();
+            }
+            SetCursor(old);
+            Log(L"Cerere de acces: %ls", msgt);
+            LicDlgFill(d, msgt);
+            Ui_Refresh();
+            return TRUE;
+        }
         case IDOK:
             old = SetCursor(LoadCursorW(NULL, IDC_WAIT));
             SetDlgItemTextW(d, IDC_LIC_STATUS, TR(L"Se contactează serverul de licențe...", L"Contacting the licence server..."));
@@ -1313,6 +1484,12 @@ static void LicenseDialog(void)
  *                  o licenta care expira in mai putin de 3 zile se reinnoieste intai, daca e internet
  *   /machine       codul calculatorului
  *   /activate COD, /refresh, /deactivate   (teste si administrare)
+ *   /request ["Nume"]   trimite cererea de acces (instalari automate; fara nume: numele din Windows)
+ *                  0 = trimisa, asteapta aprobarea; 1 = serverul nu raspunde; 2 = refuzata de server
+ *                  (prea multe cereri, nume lipsa); 3 = licenta e deja activa (nimic trimis)
+ *   /request-status     intreaba serverul de cererea trimisa
+ *                  0 = aprobata (licenta instalata acum) sau licenta deja activa; 1 = serverul nu raspunde;
+ *                  2 = respinsa; 3 = nicio cerere (sau cererea a expirat); 4 = in asteptare
  * Textul merge la iesirea standard, daca procesul care ne-a pornit a redirectat-o. */
 static void Out(const wchar_t *fmt, ...)
 {
@@ -1413,6 +1590,29 @@ static BOOL LicenseCli(void)
     } else if (!_wcsicmp(argv[1], L"/deactivate")) {
         code = Lic_Deactivate(msg, 512);
         Out(L"%d %ls\n", code, msg);
+    } else if (!_wcsicmp(argv[1], L"/request")) {
+        if (!Lic_Enabled()) Out(L"0 licentiere dezactivata\n");
+        else if (Lic_Check(NULL, &li) == LIC_OK) {
+            code = 3;
+            Out(L"3 %ls\n", TR(L"Licența este deja activă pe acest calculator.", L"The licence is already active on this computer."));
+        } else {
+            int r = Lic_Request(argc > 2 ? argv[2] : NULL, msg, 512);
+            code = r == LIC_Q_PENDING ? 0 : r == LIC_Q_NET ? 1 : 2;
+            Out(L"%d %ls\n", code, msg);
+        }
+    } else if (!_wcsicmp(argv[1], L"/request-status")) {
+        if (!Lic_Enabled()) Out(L"0 licentiere dezactivata\n");
+        else {
+            int r = Lic_RequestStatus(msg, 512);
+            code = r == LIC_Q_APPROVED ? 0 : r == LIC_Q_NET ? 1 : r == LIC_Q_DENIED ? 2 : r == LIC_Q_PENDING ? 4 : 3;
+            if (r == LIC_Q_NONE && Lic_Check(NULL, &li) == LIC_OK) {
+                code = 0;
+                lstrcpynW(msg, TR(L"Licența este activă.", L"The licence is active."), 512);
+            } else if (r == LIC_Q_NONE && !msg[0]) {
+                lstrcpynW(msg, TR(L"Nicio cerere de acces în așteptare.", L"No pending access request."), 512);
+            }
+            Out(L"%d %ls\n", code, msg);
+        }
     } else {
         LocalFree(argv);
         return FALSE;
@@ -1441,6 +1641,8 @@ void App_State(UiState *st)
         if (!g_licChecked) LicUpdate();
         st->licOk = g_lic.status == LIC_OK;
         if (st->licOk) swprintf(lic, 160, L"\u2714 %ls", g_lic.name[0] ? g_lic.name : TR(L"Licență activă", L"Active licence"));
+        else if (g_reqState == LIC_RQ_PENDING)       /* cererea de acces trimisa, inca nerezolvata */
+            swprintf(lic, 160, L"\u231B %ls", TR(L"Așteaptă aprobarea", L"Awaiting approval"));
         else swprintf(lic, 160, L"\u26A0 %ls", TR(L"Activați TopoKit", L"Activate TopoKit"));
         st->lic = lic;
     }
@@ -1612,6 +1814,23 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
             Balloon(APP_TITLE, TR(L"Licența TopoKit de pe acest calculator a fost oprită de administrator.",
                                   L"The TopoKit licence on this computer was stopped by the administrator."));
         return 0;
+    case WM_REQDONE: {                  /* verificarea cererii de acces (ReqTick) */
+        ReqResult *q = (ReqResult *)lp;
+        g_reqBusy = FALSE;
+        Log(L"Cerere de acces: %ls", q && q->msg[0] ? q->msg : wp == LIC_Q_NONE ? L"nicio cerere" : L"-");
+        LicUpdate();
+        Ui_Refresh();
+        UpdateTray();
+        if (wp == LIC_Q_APPROVED)
+            Balloon(APP_TITLE, TR(L"Licența TopoKit a fost aprobată. Puteți lucra cu TopoKit.",
+                                  L"The TopoKit licence was approved. You can work with TopoKit."));
+        else if (wp == LIC_Q_DENIED)
+            Balloon(APP_TITLE, TR(L"Cererea de acces TopoKit a fost respinsă de administrator.",
+                                  L"The TopoKit access request was denied by the administrator."));
+        if (g_licDlg && wp != LIC_Q_PENDING && wp != LIC_Q_NET) LicDlgFill(g_licDlg, q && q->msg[0] ? q->msg : NULL);
+        if (q) HeapFree(GetProcessHeap(), 0, q);
+        return 0;
+    }
     case WM_LICDLG:
         LicenseDialog();
         return 0;
@@ -1705,6 +1924,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show)
     wchar_t arg[64];
     (void)prev; (void)cmdline; (void)show;
     g_inst = inst;
+    InitTestGui();
     if (Snapshot()) return 0;
     if (LicenseCli()) return 0;
     ParseArgs(arg, 64);
@@ -1751,14 +1971,15 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show)
     if (!g_hwnd) return 1;
     g_msgTaskbar = RegisterWindowMessageW(L"TaskbarCreated");
     AddTray();
-    RegisterHotKey(g_hwnd, HOTKEY_ID, MOD_CONTROL | MOD_ALT | MOD_SHIFT | 0x4000 /* MOD_NOREPEAT */, 'T');
+    if (!g_testGui) RegisterHotKey(g_hwnd, HOTKEY_ID, MOD_CONTROL | MOD_ALT | MOD_SHIFT | 0x4000 /* MOD_NOREPEAT */, 'T');
     Poll();
     SetTimer(g_hwnd, TIMER_POLL, POLL_MS, NULL);
     if (Lic_Enabled()) {
         LicUpdate();
-        Log(L"Licenta: %ls%ls%ls", Lic_StatusText(g_lic.status), g_lic.name[0] ? L" - " : L"", g_lic.name);
-        LicTick();
-        SetTimer(g_hwnd, TIMER_LIC, LIC_TICK_MS, NULL);
+        Log(L"Licenta: %ls%ls%ls%ls", Lic_StatusText(g_lic.status), g_lic.name[0] ? L" - " : L"", g_lic.name,
+            g_reqState == LIC_RQ_PENDING ? L" (cerere de acces in asteptare)" : L"");
+        LicTick();                              /* si cererea de acces in asteptare, imediat */
+        SetTimer(g_hwnd, TIMER_LIC, g_tickMs, NULL);
     }
 
     if (!arg[0]) ShowMain();

@@ -90,7 +90,7 @@ reîncarcă imediat în desenul curent; celelalte desene deschise trec la prima 
 
 ### Cu instalatorul (recomandat)
 
-1. Descărcați și rulați **[`dist/TopoKitSetup-1.10.0.exe`](dist/TopoKitSetup-1.10.0.exe)** (TopoKit 1.10.0). Nu sunt necesare drepturi
+1. Descărcați și rulați **[`dist/TopoKitSetup-1.11.0.exe`](dist/TopoKitSetup-1.11.0.exe)** (TopoKit 1.11.0). Nu sunt necesare drepturi
    de administrator; instalarea se face pentru utilizatorul curent.
 2. Alegeți opțiunile: scurtătură pe desktop și pornirea în fundal odată cu Windows (ambele bifate implicit).
 3. Deschideți **TopoKit** din meniul Start sau de pe desktop. Atât.
@@ -160,7 +160,7 @@ Ce face instalarea:
     o anulează prin fereastra AutoCAD (WM_COPYDATA) înainte de a trimite modulul.
 - **Dezinstalare:** *Setări → Aplicații → TopoKit* sau meniul Start → *Dezinstalare TopoKit*. Se șterg
   pachetul AutoCAD, lansatorul și setările din registru.
-- **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup-1.10.0.exe /S`; dezinstalare:
+- **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup-1.11.0.exe /S`; dezinstalare:
   `"%LOCALAPPDATA%\Programs\TopoKit\Uninstall.exe" /S`.
 
 Windows SmartScreen poate afișa *„Windows a protejat computerul”*, pentru că instalatorul nu este
@@ -703,28 +703,47 @@ arată ca în plan.
 
 ## 9. Licență – activarea TopoKit pe calculatoarele colegilor (1.8.0)
 
-TopoKit poate fi distribuit doar colegilor din firmă. Fiecare calculator se activează cu un cod, iar
-o copie a instalatorului ajunsă în afara firmei nu folosește la nimic.
+TopoKit poate fi distribuit doar colegilor din firmă. Fiecare calculator primește licența de la
+administrator – la cerere (1.11.0) sau cu un cod –, iar o copie a instalatorului ajunsă în afara
+firmei nu folosește la nimic.
 
 **Activarea este opțională.** Fără fișierul `installer/licensing.json`, instalatorul construit merge
 ca înainte, fără activare. Cu fișierul, cheia publică și adresa serverului se compilează în
 `TopoKit.exe` și orice instalare cere activarea.
 
-- **Pentru coleg:**
-  1. În fereastra TopoKit apasă eticheta portocalie **„⚠ Activați TopoKit”** (sus, dreapta).
-  2. Scrie codul de activare primit (`TKIT-XXXXX-XXXXX-XXXXX`) și apasă **Activează**.
-  3. Eticheta devine **„✔ Numele lui”**.
-  4. Licența ține 14 zile și se reînnoiește singură, zilnic, când există internet. Fără internet
-     merge până la 14 zile.
-  5. Fereastra licenței arată și **codul calculatorului** și are butoanele **Importă fișier…**
-     (licență de rezervă, fără internet) și **Dezactivează** (eliberează locul pentru alt calculator).
+- **Pentru coleg – cererea de acces (1.11.0, fără cod):**
+  1. După instalare se deschide fereastra licenței (sau apasă eticheta portocalie **„⚠ Activați
+     TopoKit”**, sus, dreapta).
+  2. Numele e propus din Windows; îl corectează dacă e nevoie și apasă **Cere acces**. Apare
+     „Cererea a fost trimisă – așteptați aprobarea administratorului”, iar eticheta devine
+     **„⌛ Așteaptă aprobarea”**.
+  3. TopoKit verifică singur cererea: la pornire, la 2 minute cât fereastra licenței e deschisă,
+     altfel la 20 de minute (butonul **Verifică** întreabă imediat).
+  4. La aprobare licența se instalează singură, apare notificarea „Licența TopoKit a fost aprobată”
+     și eticheta devine **„✔ Numele lui”**. La respingere apare „Cererea a fost respinsă”; se poate
+     trimite o cerere nouă.
+  5. Instalări automate: `TopoKit.exe /request "Nume"` și `TopoKit.exe /request-status` (codurile de
+     ieșire în [`server/README.md`](server/README.md)).
+- **Pentru coleg – cu cod:** în aceeași fereastră scrie codul primit (`TKIT-XXXXX-XXXXX-XXXXX`) și
+  apasă **Activează**.
+- **Licența** ține 14 zile și se reînnoiește singură la 6 ore când există internet. Fără internet
+  merge până la 14 zile. Fereastra licenței arată și **codul calculatorului** și are butoanele
+  **Importă fișier…** (licență de rezervă, fără internet) și **Dezactivează** (eliberează locul
+  pentru alt calculator).
+- **Anularea de la distanță:** în `/admin`, **Anulează licența** (un calculator) sau **Oprește
+  accesul (toate licențele)**. TopoKit o șterge la următoarea reînnoire: cel mult ~6 ore cu
+  lansatorul pornit și internet; altfel cel târziu la expirare, în 14 zile.
 - **Fără licență:**
   - modulele AutoCAD nu se încarcă; orice comandă TopoKit afișează cum se activează și deschide
     fereastra TopoKit;
   - DWG to KMZ și Plan Înclinare afișează același mesaj.
 - **Pentru tine (administrator):**
   - Serverul de licențe e un Cloudflare Worker gratuit, `server/worker.js`, cu pagina de
-    administrare `/admin`: colegi, coduri, calculatoare, oprirea accesului, jurnal.
+    administrare `/admin`: **cereri de acces** (Acceptă pentru un coleg existent sau nou /
+    Respinge), colegi, coduri, calculatoare, **Anulează licența**, oprirea accesului, jurnal.
+    Pagina se actualizează singură la 30 de secunde.
+  - Actualizarea la 1.11.0: se lipește noul `server/worker.js` și **Deploy**; nu trebuie nicio
+    variabilă sau legătură nouă, iar tabela cererilor se adaugă singură.
   - Punerea în funcțiune, pas cu pas, e în [`server/README.md`](server/README.md).
   - Cheia de semnare se face cu `tools/licenta.py` și **nu se pune niciodată în proiect**.
 - **Cum se verifică (1.10.0):**

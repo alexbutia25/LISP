@@ -9,8 +9,18 @@
 //   /api/activate   {code, machine, pc, version}     → {license, device, secret}
 //   /api/refresh    {device, secret, machine, version} → {license}
 //   /api/deactivate {device, secret}                 → {ok}
+//   /api/request    {machine, pc, name, winuser, version} → {request, token, status: "pending"}
+//   /api/request/status {request, token, machine}    → {status: "pending" | "denied"} sau
+//                                                       {status: "approved", device, license}
 //   erori: {error: code_invalid | code_used | code_expired | user_disabled | too_many_devices |
-//                  rate_limited | revoked | unknown_device | machine | bad_request}
+//                  rate_limited | revoked | unknown_device | machine | bad_request |
+//                  name_required | requests_full | unknown_request}
+//
+// Cererea de acces (de la 1.11.0): colegul apasă „Cere acces” în TopoKit, cererea apare în /admin, iar
+// administratorul o acceptă (pentru un coleg existent sau unul nou) sau o respinge. Tokenul cererii
+// (32 de octeți aleatori, păstrat doar ca hash) devine, la aprobare, secretul dispozitivului: serverul
+// nu ține niciun secret în clar, iar răspunsul „approved” se poate cere de câte ori e nevoie (același
+// dispozitiv, fără dubluri). Clientul folosește tokenul ca „secret” la /api/refresh și /api/deactivate.
 // Licența: "TK1.<payload>.<semnătură>" – formatul complet în tools/licenta.py.
 // Administrare: pagina /admin și /api/admin/* (antet Authorization: Bearer ADMIN_TOKEN).
 
@@ -34,6 +44,14 @@ const SCHEMA = [
      device_id TEXT, ip TEXT, detail TEXT)`,
   `CREATE INDEX IF NOT EXISTS events_at ON events (at)`,
   `CREATE INDEX IF NOT EXISTS events_ip ON events (ip, kind, at)`,
+  // 1.11.0 (doar adăugări: bazele de date existente primesc tabela la prima cerere)
+  `CREATE TABLE IF NOT EXISTS requests (
+     id TEXT PRIMARY KEY, machine TEXT NOT NULL, pc TEXT, name TEXT NOT NULL, winuser TEXT, version TEXT,
+     country TEXT, ip TEXT, token_hash TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+     created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, polled_at INTEGER, decided_at INTEGER,
+     user_id INTEGER, device_id TEXT, delivered_at INTEGER)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS requests_pending ON requests (machine) WHERE status = 'pending'`,
+  `CREATE INDEX IF NOT EXISTS requests_status ON requests (status, decided_at)`,
 ];
 
 const Q = {
@@ -72,6 +90,33 @@ const Q = {
   listCodes: `SELECT user_id, created_at, expires_at, used_at FROM codes WHERE used_at IS NULL AND expires_at >= ?`,
   listEvents: `SELECT e.at, e.kind, e.detail, e.ip, e.device_id, u.name FROM events e LEFT JOIN users u ON u.id = e.user_id
                ORDER BY e.id DESC LIMIT 150`,
+  // cererile de acces
+  requestById: `SELECT id, machine, pc, name, version, token_hash, status, user_id, device_id, delivered_at
+                FROM requests WHERE id = ?`,
+  pendingByMachine: `SELECT id FROM requests WHERE machine = ? AND status = 'pending'`,
+  // o singură cerere în așteptare pe calculator (indexul unic requests_pending) și cel mult MAX_PENDING
+  // în total, ambele verificate în aceeași instrucțiune (atomic în D1)
+  insertRequest: `INSERT OR IGNORE INTO requests (id, machine, pc, name, winuser, version, country, ip, token_hash, status,
+                    created_at, updated_at)
+                  SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?
+                  WHERE (SELECT COUNT(*) FROM requests WHERE status = 'pending') < ?`,
+  renewRequest: `UPDATE requests SET pc = ?, name = ?, winuser = ?, version = ?, country = ?, ip = ?, token_hash = ?,
+                   updated_at = ? WHERE id = ? AND status = 'pending'`,
+  pollRequest: `UPDATE requests SET polled_at = ? WHERE id = ? AND (polled_at IS NULL OR polled_at < ?)`,
+  deliverRequest: `UPDATE requests SET delivered_at = ? WHERE id = ? AND delivered_at IS NULL`,
+  // aprobarea „ia” cererea doar dacă e tot în așteptare și cu același token (o cerere reînnoită între
+  // timp are alt token: dispozitivul ar primi hash-ul vechi)
+  claimRequest: `UPDATE requests SET status = 'approved', decided_at = ?, user_id = ?, device_id = ?
+                 WHERE id = ? AND status = 'pending' AND token_hash = ?`,
+  unclaimRequest: `UPDATE requests SET status = 'pending', decided_at = NULL, user_id = NULL, device_id = NULL
+                   WHERE id = ? AND device_id = ?`,
+  setRequestUser: `UPDATE requests SET user_id = ? WHERE id = ?`,
+  denyRequest: `UPDATE requests SET status = 'denied', decided_at = ? WHERE id = ? AND status = 'pending'`,
+  pruneRequests: `DELETE FROM requests WHERE (status = 'pending' AND updated_at < ?) OR (status <> 'pending' AND decided_at < ?)`,
+  listRequests: `SELECT id, machine, pc, name, winuser, version, country, ip, status, created_at, updated_at, polled_at,
+                   decided_at, user_id, device_id, delivered_at FROM requests
+                 WHERE status = 'pending' OR decided_at >= ?
+                 ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, COALESCE(decided_at, updated_at) DESC LIMIT 300`,
 };
 
 // ------------------------------------------------------------------ utilitare
@@ -79,6 +124,9 @@ const now = () => Math.floor(Date.now() / 1000);
 const num = (v, def) => (Number.isFinite(+v) && +v > 0 ? Math.floor(+v) : def);
 
 const EVENT_DAYS = 180;                 // jurnalul de activitate și codurile expirate se șterg după 180 de zile
+const REQUEST_DAYS = 30;                // o cerere de acces nerezolvată expiră după 30 de zile
+const MAX_PENDING = 200;                // cel mult 200 de cereri în așteptare (o cerere / calculator)
+const REQUEST_LIMIT = 20;               // cereri de acces pe oră de la aceeași adresă (IPv4 sau rețea IPv6 /64)
 
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), {
@@ -216,7 +264,8 @@ async function tooMany(env, ip, kind, limit) {
 
 async function prune(env) {
   const old = now() - EVENT_DAYS * 86400;
-  await env.DB.batch([env.DB.prepare(Q.pruneEvents).bind(old), env.DB.prepare(Q.pruneCodes).bind(old)]);
+  await env.DB.batch([env.DB.prepare(Q.pruneEvents).bind(old), env.DB.prepare(Q.pruneCodes).bind(old),
+                      env.DB.prepare(Q.pruneRequests).bind(now() - REQUEST_DAYS * 86400, old)]);
 }
 
 // ------------------------------------------------------------------ semnarea licenței (ECDSA P-256)
@@ -308,9 +357,9 @@ async function deviceAuth(env, b) {
 }
 
 // O activare copiată pe alt PC (MachineGuid + seria discului falsificate, secretul scos din DPAPI) se
-// vede doar prin reînnoiri de la adrese diferite. Lansatorul reînnoiește o dată pe zi (la 20 h), deci
-// două reînnoiri la mai puțin de 6 h, din rețele diferite, apar în jurnal ca „posibilă copiere”.
-const CLONE_WINDOW = 6 * 3600;
+// vede doar prin reînnoiri de la adrese diferite. Lansatorul reînnoiește la 6 h (1.11.0; înainte la 20 h),
+// deci două reînnoiri la mai puțin de 4 h, din rețele diferite, apar în jurnal ca „posibilă copiere”.
+const CLONE_WINDOW = 4 * 3600;
 
 async function refresh(request, env) {
   const ip = clientIp(request);
@@ -345,6 +394,130 @@ async function deactivate(request, env) {
   return json({ ok: true });
 }
 
+// ------------------------------------------------------------------ cererea de acces („Cere acces” în TopoKit)
+const str = (v) => (typeof v === "string" ? v : "");
+
+async function requestAccess(request, env) {
+  const ip = clientIp(request);
+  const b = await readBody(request);
+  const machine = clip(b?.machine, 64).toUpperCase();
+  if (!b || !/^[0-9A-F]{24}$/.test(machine)) return fail("bad_request", 400);
+  if (await tooMany(env, ip, "request", REQUEST_LIMIT)) return fail("rate_limited", 429);
+  const winuser = clip(str(b.winuser), 64).trim();
+  const name = clip(str(b.name).trim() || winuser, NAME_CHARS, NAME_BYTES).trim();
+  if (!name) return fail("name_required", 400);
+  const pc = clip(str(b.pc), 64), version = clip(str(b.version), 20);
+  const country = clip(str(request.cf?.country), 2).toUpperCase() || null;
+  const token = b64u(randomBytes(32));
+  const th = await sha256hex(token);
+  const t = now();
+  // fiecare cerere (și cea repetată) intră în limita pe oră: evenimentul se scrie cu ipKey(ip)
+  await event(env, "request", null, null, ipKey(ip), `${name} · ${pc}`.trim());
+  // același calculator cere din nou (reinstalare, alt nume): aceeași cerere, cu token nou
+  const renew = async () => {
+    const p = await one(env.DB, Q.pendingByMachine, machine);
+    if (!p) return null;
+    const r = await run(env.DB, Q.renewRequest, pc, name, winuser, version, country, ip, th, t, p.id);
+    return r?.meta?.changes ? p.id : null;
+  };
+  let id = await renew();
+  if (!id) {
+    const nid = "r_" + hex(randomBytes(8));
+    const ins = await run(env.DB, Q.insertRequest, nid, machine, pc, name, winuser, version, country, ip, th, t, t, MAX_PENDING);
+    id = ins?.meta?.changes ? nid : await renew();          // cerere simultană de pe același calculator
+    if (!id) return fail("requests_full", 503);
+    if (id === nid) await prune(env);
+  }
+  return json({ request: id, token, status: "pending" });
+}
+
+async function requestStatus(request, env) {
+  const ip = clientIp(request);
+  const b = await readBody(request);
+  if (!b) return fail("bad_request", 400);
+  if (await tooMany(env, ip, "request_fail", 20)) return fail("rate_limited", 429);
+  const bad = async (error) => {
+    await event(env, "request_fail", null, null, ipKey(ip), error);
+    return fail(error);
+  };
+  const id = typeof b.request === "string" && /^r_[0-9a-f]{16}$/.test(b.request) ? b.request : null;
+  const token = typeof b.token === "string" && b.token.length <= 128 ? b.token : "";
+  const r = id ? await one(env.DB, Q.requestById, id) : null;
+  if (!r || !token || !sameHash(await sha256hex(token), r.token_hash)) return bad("unknown_request");
+  if (clip(b.machine, 64).toUpperCase() !== r.machine) return bad("machine");
+  const t = now();
+  if (r.status === "denied") return json({ status: "denied" });
+  if (r.status === "approved") {
+    // dispozitivul lipsește doar cât timp aprobarea e în curs (cerere „luată”, dispozitiv încă nescris)
+    const d = r.device_id ? await one(env.DB, Q.deviceById, r.device_id) : null;
+    if (d) {
+      if (d.revoked) return fail("revoked");
+      const user = await one(env.DB, Q.userById, d.user_id);
+      if (!user || user.disabled) return fail("user_disabled");
+      if ((await run(env.DB, Q.deliverRequest, t, r.id))?.meta?.changes) {
+        await event(env, "request_delivered", d.user_id, d.id, ip, `${r.pc || ""} ${r.version || ""}`.trim());
+      }
+      await run(env.DB, Q.seenDevice, t, r.version, ip, d.id);
+      // același dispozitiv la fiecare întrebare (idempotent); secretul lui este tokenul cererii
+      return json({ status: "approved", device: d.id, license: await makeLicense(env, user, d) });
+    }
+  }
+  await run(env.DB, Q.pollRequest, t, r.id, t - 600);      // „văzut” în /admin, scris cel mult o dată la 10 min
+  return json({ status: "pending" });
+}
+
+// Aprobarea din /admin: dispozitivul se creează ca la activarea cu cod (aceleași reguli: un loc pe
+// calculator, max_devices verificat atomic, activarea mai veche a aceluiași calculator se oprește),
+// cu hash-ul tokenului cererii ca secret.
+async function approveRequest(env, ip, r, b) {
+  const t = now();
+  let user = null, same = null, newName = null, newMax = 0;
+  const maxIn = b.max_devices ?? b.max;
+  if (b.user_id != null && b.user_id !== "" && b.user_id !== "new") {
+    user = await one(env.DB, Q.userById, num(b.user_id, 0));
+    if (!user) return fail("not_found", 404);
+    if (user.disabled) return fail("user_disabled", 409);
+    const max = maxIn == null ? 0 : Math.min(num(maxIn, user.max_devices), 10);
+    if (max > user.max_devices) {                             // administratorul a mărit limita la aprobare
+      await run(env.DB, Q.setMaxDevices, max, user.id);
+      await event(env, "user_max", user.id, null, ip, String(max));
+      user.max_devices = max;
+    }
+    same = await one(env.DB, Q.deviceByUserMachine, user.id, r.machine);
+    const { n } = await one(env.DB, Q.countOther, user.id, r.machine);
+    if (!same && n >= user.max_devices) return fail("too_many_devices", 409);
+  } else {
+    newName = clip(str(b.new_name).trim() || r.name, NAME_CHARS, NAME_BYTES).trim();
+    if (!newName) return fail("name_required", 400);
+    newMax = Math.min(num(maxIn, num(env.MAX_DEVICES, 2)), 10);
+  }
+  const device = { id: "d_" + hex(randomBytes(8)), machine: r.machine };
+  // 1) cererea se „ia” atomic: două aprobări simultane → doar una trece (și doar ea face colegul nou)
+  const c = await run(env.DB, Q.claimRequest, t, user ? user.id : null, device.id, r.id, r.token_hash);
+  if (!c?.meta?.changes) {
+    const now2 = await one(env.DB, Q.requestById, r.id);
+    return fail(now2?.status === "pending" ? "changed" : "not_pending", 409);
+  }
+  if (!user) {
+    const nu = await run(env.DB, Q.insertUser, newName, null, newMax, t);
+    user = await one(env.DB, Q.userById, nu.meta.last_row_id);
+    await run(env.DB, Q.setRequestUser, user.id, r.id);
+    await event(env, "user_add", user.id, null, ip, newName);
+  }
+  const created = same ? Math.max(t, Number(same.created_at) + 1) : t;
+  // 2) dispozitivul, doar dacă încă e loc (aceeași instrucțiune ca la activare)
+  const ins = await run(env.DB, Q.insertDevice, device.id, r.machine, r.pc, r.token_hash, r.version, created, t, null,
+                        user.id, r.machine);
+  if (!ins?.meta?.changes) {
+    await run(env.DB, Q.unclaimRequest, r.id, device.id);     // cererea rămâne în așteptare
+    return fail(user.disabled ? "user_disabled" : "too_many_devices", 409);
+  }
+  // 3) activarea mai veche a aceluiași calculator (același coleg) se oprește
+  await run(env.DB, Q.revokeOlderSame, user.id, r.machine, user.id, r.machine);
+  await event(env, "request_approve", user.id, device.id, ip, `${r.name} · ${r.pc || ""}`.trim());
+  return json({ ok: true, user_id: user.id, device: device.id });
+}
+
 // ------------------------------------------------------------------ administrare
 async function isAdmin(request, env) {
   const h = request.headers.get("authorization") || "";
@@ -372,13 +545,18 @@ async function admin(request, env, path) {
   if (m === "GET" && path === "/api/admin/state") {
     const t = now();
     await prune(env);
-    const [users, devices, codes, events] = await Promise.all([
-      all(env.DB, Q.listUsers), all(env.DB, Q.listDevices), all(env.DB, Q.listCodes, t), all(env.DB, Q.listEvents)]);
+    const [users, devices, codes, events, requests] = await Promise.all([
+      all(env.DB, Q.listUsers), all(env.DB, Q.listDevices), all(env.DB, Q.listCodes, t), all(env.DB, Q.listEvents),
+      all(env.DB, Q.listRequests, t - REQUEST_DAYS * 86400)]);
     for (const u of users) {
       u.devices = devices.filter((d) => d.user_id === u.id);
       u.open_codes = codes.filter((c) => c.user_id === u.id).length;
     }
-    return json({ now: t, users, events, license_days: num(env.LICENSE_DAYS, 14) });
+    return json({ now: t, users, events, requests, license_days: num(env.LICENSE_DAYS, 14) });
+  }
+  if (m === "GET" && path === "/api/admin/requests") {
+    const t = now();
+    return json({ now: t, requests: await all(env.DB, Q.listRequests, t - REQUEST_DAYS * 86400) });
   }
   if (m !== "POST") return fail("not_found", 404);
   const b = (await readBody(request)) || {};
@@ -418,6 +596,17 @@ async function admin(request, env, path) {
     await event(env, "device_revoke", d.user_id, d.id, ip, null);
     return json({ ok: true });
   }
+  mm = path.match(/^\/api\/admin\/requests\/(r_[0-9a-f]{16})\/(approve|deny)$/);
+  if (mm) {
+    const r = await one(env.DB, Q.requestById, mm[1]);
+    if (!r) return fail("not_found", 404);
+    if (r.status !== "pending") return fail("not_pending", 409);
+    if (mm[2] === "approve") return approveRequest(env, ip, r, b);
+    const x = await run(env.DB, Q.denyRequest, now(), r.id);
+    if (!x?.meta?.changes) return fail("not_pending", 409);
+    await event(env, "request_deny", null, null, ip, `${r.name} · ${r.pc || ""}`.trim());
+    return json({ ok: true });
+  }
   return fail("not_found", 404);
 }
 
@@ -448,6 +637,8 @@ async function route(request, env) {
   if (path === "/api/activate") return activate(request, env);
   if (path === "/api/refresh") return refresh(request, env);
   if (path === "/api/deactivate") return deactivate(request, env);
+  if (path === "/api/request") return requestAccess(request, env);
+  if (path === "/api/request/status") return requestStatus(request, env);
   return fail("not_found", 404);
 }
 
@@ -475,21 +666,26 @@ const ADMIN_HTML = `<!doctype html>
 <html lang="ro"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TopoKit – licențe</title>
 <style>
-:root{--bg:#f4f7fa;--card:#fff;--text:#1a2733;--muted:#5b6b7a;--line:#dde5ec;--accent:#1b6a8f;--ok:#23874a;--bad:#c8443a;--warn:#b7791f}
-@media (prefers-color-scheme:dark){:root{--bg:#161b21;--card:#1f262e;--text:#e6edf3;--muted:#9aa8b5;--line:#2f3a45;--accent:#5fb3dc;--ok:#4cc27a;--bad:#ef7468;--warn:#e0a84a}}
+:root{--bg:#f4f7fa;--card:#fff;--text:#1a2733;--muted:#5b6b7a;--line:#dde5ec;--accent:#1b6a8f;--ok:#23874a;--bad:#c8443a;--warn:#b7791f;--hl:#fff7e6}
+@media (prefers-color-scheme:dark){:root{--bg:#161b21;--card:#1f262e;--text:#e6edf3;--muted:#9aa8b5;--line:#2f3a45;--accent:#5fb3dc;--ok:#4cc27a;--bad:#ef7468;--warn:#e0a84a;--hl:#2b2618}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 "Segoe UI",Arial,sans-serif}
 header{background:linear-gradient(120deg,#0f3d5e,#1b6a8f);color:#fff;padding:20px 24px}header h1{margin:0;font-size:22px;font-weight:600}
 main{max-width:1100px;margin:0 auto;padding:16px}section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin:14px 0}
 h2{font-size:15px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
-input,button{font:inherit}input{padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text)}
+input,button,select{font:inherit}input,select{padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text)}
 button{padding:7px 12px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
 button.ghost{background:transparent;color:var(--accent)}button.danger{border-color:var(--bad);background:transparent;color:var(--bad)}
+button.cancel{border-color:var(--bad);background:var(--bad);color:#fff;font-weight:600}button.okb{border-color:var(--ok);background:var(--ok);color:#fff;font-weight:600}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}table{width:100%;border-collapse:collapse;font-size:14px}
 th,td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-weight:600}
-.muted{color:var(--muted)}.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+.muted{color:var(--muted)}.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}.small{font-size:13px}
 .code{font:600 20px Consolas,monospace;letter-spacing:.06em;padding:10px 14px;border:2px dashed var(--accent);border-radius:8px;display:inline-block;margin:6px 0}
 .msg{white-space:pre-wrap;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:13.5px}
-.dev{font-size:13px;margin:2px 0}.hidden{display:none}.wrap{overflow-x:auto}
+.dev{font-size:13px;margin:4px 0}.hidden{display:none}.wrap{overflow-x:auto}
+.badge{display:inline-block;min-width:22px;padding:0 7px;border-radius:11px;background:var(--bad);color:#fff;font-size:13px;text-align:center;letter-spacing:0}
+.req{border:1px solid var(--line);border-left:4px solid var(--warn);border-radius:8px;padding:10px 12px;margin:10px 0;background:var(--hl)}
+.req .who{font-size:16px;font-weight:600}.mono{font-family:Consolas,monospace}
+#reqsec{border-color:var(--warn)}
 </style></head><body>
 <header><h1>TopoKit – licențe</h1></header>
 <main>
@@ -497,14 +693,20 @@ th,td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);vertic
  <div class="row"><input id="tok" type="password" placeholder="Parola de administrare (ADMIN_TOKEN)" size="40" autocomplete="current-password">
  <button id="go">Intră</button></div><p id="lerr" class="bad"></p></section>
 <div id="app" class="hidden">
-<section><h2>Coleg nou</h2>
+<section id="reqsec"><h2>Cereri de acces <span id="reqn" class="badge hidden"></span></h2>
+ <p class="muted small" id="reqnone">Nicio cerere în așteptare. Când cineva instalează TopoKit și apasă „Cere acces”, cererea apare aici.</p>
+ <div id="reqs"></div>
+ <details id="recent"><summary class="muted">Cereri rezolvate recent (<span id="recentn">0</span>)</summary>
+ <div class="wrap"><table><thead><tr><th>Când</th><th>Cine</th><th>Calculator</th><th>Decizie</th><th>Licență</th></tr></thead><tbody id="reqdone"></tbody></table></div></details>
+ <p class="row muted small"><label><input type="checkbox" id="auto" checked> Actualizare automată (30 s)</label> <span id="upd"></span></p></section>
+<section><h2>Coleg nou (cu cod de activare)</h2>
  <div class="row"><input id="nm" placeholder="Nume (apare în TopoKit și în documente)" size="34">
  <input id="em" placeholder="E-mail (opțional)" size="24"><label class="muted">Calculatoare <input id="mx" type="number" min="1" max="10" value="2" style="width:64px"></label>
  <button id="add">Adaugă și creează cod</button></div>
  <div id="newcode" class="hidden"><p>Codul de activare pentru <b id="ncname"></b> (o singură folosire, valabil <span id="ncdays"></span> zile):</p>
  <div class="code" id="nccode"></div> <button class="ghost" id="nccopy">Copiază mesajul</button>
  <p class="muted">Mesaj de trimis colegului:</p><div class="msg" id="ncmsg"></div></div></section>
-<section><h2>Colegi</h2><div class="wrap"><table><thead><tr><th>Nume</th><th>Stare</th><th>Calculatoare</th><th></th></tr></thead><tbody id="users"></tbody></table></div></section>
+<section><h2>Colegi</h2><div class="wrap"><table><thead><tr><th>Nume</th><th>Stare</th><th>Calculatoare (licențe)</th><th></th></tr></thead><tbody id="users"></tbody></table></div></section>
 <section><h2>Activitate</h2><div class="wrap"><table><thead><tr><th>Când</th><th>Ce</th><th>Cine</th><th>Detalii</th><th>IP</th></tr></thead><tbody id="events"></tbody></table></div>
  <p><button class="ghost" id="out">Ieșire</button></p></section>
 </div></main>
@@ -513,18 +715,25 @@ const $ = (id) => document.getElementById(id);
 let token = ""; try { token = sessionStorage.getItem("tk") || ""; } catch (e) {}
 const KIND = {activate:"Activare",activate_fail:"Activare refuzată",refresh_fail:"Reînnoire refuzată",deactivate:"Dezactivare",
   user_add:"Coleg adăugat",user_disable:"Acces oprit",user_enable:"Acces repornit",user_max:"Nr. calculatoare schimbat",code:"Cod nou",
-  device_revoke:"Calculator scos",admin_fail:"Parolă admin greșită",clone_suspect:"Posibilă copiere (alt IP)"};
+  device_revoke:"Licență anulată",admin_fail:"Parolă admin greșită",clone_suspect:"Posibilă copiere (alt IP)",
+  request:"Cerere de acces",request_fail:"Cerere: token greșit",request_approve:"Cerere acceptată",request_deny:"Cerere respinsă",
+  request_delivered:"Licență preluată de TopoKit"};
+const ERR = {too_many_devices:"Colegul a atins numărul maxim de calculatoare. Măriți numărul sau anulați licența altui calculator.",
+  not_pending:"Cererea a fost deja rezolvată.",changed:"Cererea tocmai a fost retrimisă de pe calculator – încercați din nou.",
+  user_disabled:"Accesul colegului este oprit – reporniți-l întâi.",name_required:"Scrieți numele colegului.",not_found:"Nu mai există."};
 const fmt = (t) => t ? new Date(t * 1000).toLocaleString("ro-RO", {dateStyle:"short", timeStyle:"short"}) : "–";
+const grp = (m) => (m || "").replace(/(.{6})(?=.)/g, "$1-");
+function ago(s, t) { const d = Math.max(0, s - t); return d < 90 ? "acum" : d < 5400 ? "acum " + Math.round(d / 60) + " min" : d < 172800 ? "acum " + Math.round(d / 3600) + " h" : "acum " + Math.round(d / 86400) + " zile"; }
 function el(tag, text, cls) { const e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; }
-async function api(path, body) {
+async function api(path, body, quiet) {
   const r = await fetch(path, {method: body ? "POST" : "GET", headers: {"authorization": "Bearer " + token, "content-type": "application/json"},
     body: body ? JSON.stringify(body) : undefined});
   const j = await r.json().catch(() => ({}));
   if (r.status === 401) { logout("Parolă greșită."); throw new Error("401"); }
-  if (!r.ok) { alert("Eroare: " + (j.error || r.status)); throw new Error(j.error); }
+  if (!r.ok) { if (!quiet) alert(ERR[j.error] || ("Eroare: " + (j.error || r.status))); throw new Error(j.error || String(r.status)); }
   return j;
 }
-function logout(msg) { token = ""; try { sessionStorage.removeItem("tk"); } catch (e) {} $("app").classList.add("hidden"); $("login").classList.remove("hidden"); $("lerr").textContent = msg || ""; }
+function logout(msg) { token = ""; try { sessionStorage.removeItem("tk"); } catch (e) {} $("app").classList.add("hidden"); $("login").classList.remove("hidden"); $("lerr").textContent = msg || ""; document.title = "TopoKit – licențe"; }
 function showCode(name, c, days) {
   $("newcode").classList.remove("hidden"); $("ncname").textContent = name; $("nccode").textContent = c.code; $("ncdays").textContent = days;
   $("ncmsg").textContent = "Bună,\\n\\nCodul tău de activare TopoKit este:\\n\\n    " + c.code +
@@ -533,9 +742,89 @@ function showCode(name, c, days) {
     "Codul merge o singură dată, până la " + fmt(c.expires_at) + ". Te rog să nu-l dai mai departe.";
   $("newcode").scrollIntoView({behavior: "smooth"});
 }
-async function load() {
-  const s = await api("/api/admin/state");
+// ce a ales administratorul la fiecare cerere rămâne la actualizarea automată
+const drafts = {};
+async function revoke(d, who, days) {
+  if (!confirm("Anulați licența calculatorului " + (d.pc || "?") + (who ? " (" + who + ")" : "") + "?\\n\\nTopoKit se oprește pe acel calculator la următoarea verificare: de obicei în câteva ore, cel târziu în " + days + " zile dacă nu are internet.")) return;
+  await api("/api/admin/devices/" + d.id + "/revoke", {}); load();
+}
+function renderRequests(s) {
+  const pend = s.requests.filter((r) => r.status === "pending"), done = s.requests.filter((r) => r.status !== "pending");
+  const devs = {}, active = {};
+  for (const u of s.users) for (const d of u.devices) { devs[d.id] = {d, u}; if (!d.revoked && !u.disabled) (active[d.machine] = active[d.machine] || []).push(u); }
+  $("reqn").textContent = pend.length; $("reqn").classList.toggle("hidden", !pend.length); $("reqnone").classList.toggle("hidden", pend.length > 0);
+  document.title = (pend.length ? "(" + pend.length + ") " : "") + "TopoKit – licențe";
+  const box = $("reqs"); box.textContent = "";
+  for (const r of pend) {
+    const dr = drafts[r.id] || (drafts[r.id] = {});
+    const card = el("div", null, "req");
+    const top = el("div", null, "row"); top.append(el("span", r.name, "who"));
+    if (r.winuser) top.append(el("span", "Windows: " + r.winuser, "muted"));
+    card.append(top);
+    card.append(el("div", "Calculator: " + (r.pc || "?") + " · cod " + grp(r.machine) + " · TopoKit " + (r.version || "?"), "small"));
+    card.append(el("div", "Trimisă " + fmt(r.updated_at) + (r.created_at !== r.updated_at ? " (prima dată " + fmt(r.created_at) + ")" : "") +
+      (r.country ? " · țara " + r.country : "") + (r.ip ? " · IP " + r.ip : "") + (r.polled_at ? " · TopoKit a verificat " + ago(s.now, r.polled_at) : ""), "muted small"));
+    const has = active[r.machine];
+    if (has) card.append(el("div", "Acest calculator are deja licență activă pentru: " + has.map((u) => u.name).join(", ") + ".", "warn small"));
+    const act = el("div", null, "row"); act.style.marginTop = "8px";
+    act.append(el("span", "Acceptă pentru:", "small"));
+    const sel = el("select"); const onew = el("option", "➕ Coleg nou"); onew.value = "new"; sel.append(onew);
+    let pre = "new"; const lname = r.name.trim().toLowerCase();
+    for (const u of s.users) {
+      if (u.disabled) continue;
+      const n = u.devices.filter((d) => !d.revoked).length, full = n >= u.max_devices && !u.devices.some((d) => !d.revoked && d.machine === r.machine);
+      const o = el("option", u.name + " (" + n + "/" + u.max_devices + " calculatoare" + (full ? " – plin" : "") + ")"); o.value = String(u.id); sel.append(o);
+      if (u.devices.some((d) => !d.revoked && d.machine === r.machine) || (pre === "new" && u.name.trim().toLowerCase() === lname)) pre = String(u.id);
+    }
+    sel.value = dr.sel || pre;
+    const nm = el("input"); nm.size = 24; nm.value = dr.name != null ? dr.name : r.name; nm.placeholder = "Numele colegului";
+    const mxl = el("label", "Calculatoare ", "muted small"); const mx = el("input"); mx.type = "number"; mx.min = "1"; mx.max = "10"; mx.style.width = "60px"; mx.value = dr.max || "2"; mxl.append(mx);
+    const sync = () => { const isNew = sel.value === "new"; nm.classList.toggle("hidden", !isNew); mxl.classList.toggle("hidden", !isNew); };
+    sel.onchange = () => { dr.sel = sel.value; sync(); }; nm.oninput = () => { dr.name = nm.value; }; mx.oninput = () => { dr.max = mx.value; };
+    sync();
+    const ba = el("button", "✔ Acceptă", "okb");
+    ba.onclick = async () => {
+      let body;
+      if (sel.value === "new") { const name = nm.value.trim(); if (!name) { nm.focus(); return; } body = {new_name: name, max_devices: +mx.value || 2}; }
+      else {
+        const u = s.users.find((x) => String(x.id) === sel.value); body = {user_id: +sel.value};
+        const n = u.devices.filter((d) => !d.revoked).length;
+        if (n >= u.max_devices && !u.devices.some((d) => !d.revoked && d.machine === r.machine)) {
+          if (!confirm(u.name + " are deja " + n + "/" + u.max_devices + " calculatoare.\\nMăriți la " + (u.max_devices + 1) + " și acceptați?")) return;
+          body.max_devices = u.max_devices + 1;
+        }
+      }
+      ba.disabled = true;
+      try { await api("/api/admin/requests/" + r.id + "/approve", body); delete drafts[r.id]; } catch (e) {} finally { ba.disabled = false; }
+      load();
+    };
+    const bn = el("button", "✖ Respinge", "danger");
+    bn.onclick = async () => { if (!confirm("Respingeți cererea lui " + r.name + " (" + (r.pc || "?") + ")?")) return;
+      try { await api("/api/admin/requests/" + r.id + "/deny", {}); delete drafts[r.id]; } catch (e) {} load(); };
+    act.append(sel, nm, mxl, ba, bn); card.append(act); box.append(card);
+  }
+  $("recentn").textContent = done.length;
+  const tb = $("reqdone"); tb.textContent = "";
+  for (const r of done) {
+    const tr = el("tr"); const who = el("td"); who.append(el("b", r.name)); if (r.winuser) who.append(el("div", "Windows: " + r.winuser, "muted small"));
+    const dv = r.device_id ? devs[r.device_id] : null;
+    const dec = r.status === "approved" ? el("td", "Acceptată" + (dv ? " → " + dv.u.name : ""), "ok") : el("td", "Respinsă", "bad");
+    const lic = el("td");
+    if (r.status === "approved" && dv) {
+      if (dv.d.revoked) lic.append(el("span", "anulată", "muted"));
+      else if (dv.u.disabled) lic.append(el("span", "acces oprit", "bad"));
+      else {
+        lic.append(el("div", r.delivered_at ? "activă (preluată " + fmt(r.delivered_at) + ")" : "așteaptă preluarea de către TopoKit", r.delivered_at ? "ok small" : "warn small"));
+        const b = el("button", "Anulează licența", "cancel"); b.onclick = () => revoke(dv.d, dv.u.name, s.license_days); lic.append(b);
+      }
+    }
+    tr.append(el("td", fmt(r.decided_at)), who, el("td", (r.pc || "?") + " · " + grp(r.machine), "small"), dec, lic); tb.append(tr);
+  }
+}
+async function load(quiet) {
+  const s = await api("/api/admin/state", null, quiet);
   $("login").classList.add("hidden"); $("app").classList.remove("hidden");
+  renderRequests(s);
   const tb = $("users"); tb.textContent = "";
   for (const u of s.users) {
     const tr = el("tr"); const c1 = el("td"); c1.append(el("b", u.name)); if (u.email) c1.append(el("div", u.email, "muted"));
@@ -546,23 +835,29 @@ async function load() {
     for (const d of u.devices) {
       const dv = el("div", null, "dev" + (d.revoked ? " muted" : ""));
       const old = !d.revoked && s.now - d.last_seen > s.license_days * 86400;
-      dv.append(el("span", (d.pc || "?") + " · v" + (d.version || "?") + " · văzut " + fmt(d.last_seen) + (d.revoked ? " · scos" : ""), old ? "warn" : ""));
-      if (!d.revoked) { const b = el("button", "Scoate", "danger"); b.style.marginLeft = "8px"; b.style.padding = "2px 8px";
-        b.onclick = async () => { if (confirm("Scoateți calculatorul " + (d.pc || "") + "? Licența lui se oprește la următoarea verificare.")) { await api("/api/admin/devices/" + d.id + "/revoke", {}); load(); } }; dv.append(b); }
+      dv.append(el("span", (d.pc || "?") + " · v" + (d.version || "?") + " · văzut " + fmt(d.last_seen) + (d.revoked ? " · licență anulată" : ""), old ? "warn" : ""));
+      if (!d.revoked && !u.disabled) { const b = el("button", "Anulează licența", "cancel"); b.style.marginLeft = "8px"; b.style.padding = "3px 10px";
+        b.onclick = () => revoke(d, u.name, s.license_days); dv.append(b); }
       c3.append(dv);
     }
     const c4 = el("td"); const row = el("div", null, "row");
     const bc = el("button", "Cod nou", "ghost"); bc.onclick = async () => { const c = await api("/api/admin/users/" + u.id + "/code", {}); showCode(u.name, c, Math.round((c.expires_at - Date.now() / 1000) / 86400)); }; row.append(bc);
     const bm = el("button", "Nr. calculatoare", "ghost"); bm.onclick = async () => { const v = prompt("Câte calculatoare poate activa " + u.name + "?", u.max_devices); if (v) { await api("/api/admin/users/" + u.id + "/max", {max_devices: +v}); load(); } }; row.append(bm);
-    const bd = el("button", u.disabled ? "Repornește accesul" : "Oprește accesul", u.disabled ? "ghost" : "danger");
-    bd.onclick = async () => { if (u.disabled || confirm("Opriți accesul lui " + u.name + "? TopoKit se oprește pe calculatoarele lui la următoarea verificare (cel târziu în " + s.license_days + " zile fără internet).")) { await api("/api/admin/users/" + u.id + (u.disabled ? "/enable" : "/disable"), {}); load(); } };
+    const bd = el("button", u.disabled ? "Repornește accesul" : "Oprește accesul (toate licențele)", u.disabled ? "ghost" : "danger");
+    bd.onclick = async () => { if (u.disabled || confirm("Opriți accesul lui " + u.name + "? Licențele de pe toate calculatoarele lui se anulează la următoarea verificare (de obicei în câteva ore, cel târziu în " + s.license_days + " zile fără internet).")) { await api("/api/admin/users/" + u.id + (u.disabled ? "/enable" : "/disable"), {}); load(); } };
     row.append(bd); c4.append(row);
     tr.append(c1, st, c3, c4); tb.append(tr);
   }
-  if (!s.users.length) { const tr = el("tr"); const td = el("td", "Niciun coleg încă – adăugați primul mai sus.", "muted"); td.colSpan = 4; tr.append(td); tb.append(tr); }
+  if (!s.users.length) { const tr = el("tr"); const td = el("td", "Niciun coleg încă – acceptați o cerere de acces sau adăugați un coleg mai sus.", "muted"); td.colSpan = 4; tr.append(td); tb.append(tr); }
   const te = $("events"); te.textContent = "";
   for (const e of s.events) { const tr = el("tr"); tr.append(el("td", fmt(e.at)), el("td", KIND[e.kind] || e.kind, /fail|clone/.test(e.kind) ? "bad" : ""), el("td", e.name || "–"), el("td", e.detail || ""), el("td", e.ip || "", "muted")); te.append(tr); }
+  $("upd").textContent = "actualizat la " + new Date().toLocaleTimeString("ro-RO");
 }
+// actualizare automată la 30 s, doar cu pagina vizibilă și fără un câmp în lucru (o listă deschisă)
+function busy() { const a = document.activeElement; return a && (a.tagName === "SELECT" || (a.tagName === "INPUT" && a.type !== "checkbox")) && $("app").contains(a); }
+setInterval(() => { if (token && $("auto").checked && !document.hidden && !busy() && !$("app").classList.contains("hidden"))
+  load(true).catch(() => { $("upd").textContent = "actualizarea automată a eșuat – reîncerc"; }); }, 30000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden && token && $("auto").checked && !$("app").classList.contains("hidden")) load(true).catch(() => {}); });
 $("go").onclick = async () => { token = $("tok").value.trim(); try { sessionStorage.setItem("tk", token); } catch (e) {} try { await load(); } catch (e) {} };
 $("tok").onkeydown = (e) => { if (e.key === "Enter") $("go").click(); };
 $("add").onclick = async () => { const name = $("nm").value.trim(); if (!name) { $("nm").focus(); return; }

@@ -11,4 +11,7 @@
 #define IDC_LIC_STATUS  3006
 #define IDC_LIC_IMPORT  3007
 #define IDC_LIC_DEACT   3008
+#define IDC_LIC_NAMELBL 3009   /* 1.11.0: cererea de acces (numele si butonul "Cere acces") */
+#define IDC_LIC_NAME    3010
+#define IDC_LIC_REQUEST 3011
 #define IDR_ICON1 211      /* IDR_ICON1 ... IDR_ICON1 + 19: iconitele modulelor */

@@ -10,6 +10,10 @@ binding = "DB"
 database_name = "topokit-licente"
 database_id = "COMPLETATI-ID-UL-AFISAT-DE-wrangler-d1-create"
 
+# curatarea zilnica a jurnalului (optional; fara ea se curata la activari si in /admin)
+[triggers]
+crons = ["17 3 * * *"]
+
 [vars]
 LICENSE_DAYS = "14"   # cat e valabila o licenta (se reinnoieste zilnic cand e internet)
 CODE_DAYS = "14"      # cat e valabil un cod de activare nefolosit

@@ -115,7 +115,7 @@ n0 = len(acad.dcl.log)
 fn("c:TOPOKIT")
 assert acad.dcl.log[n0:] == ["topokit_main", "tki_main"], acad.dcl.log[n0:]
 snap = acad.dcl.snapshots["topokit_main"]
-assert snap["tiles"]["tx_titlu"].startswith("TopoKit 1.9.0") and "INCLINARE" in snap["tiles"]["tx_incl"]
+assert snap["tiles"]["tx_titlu"].startswith("TopoKit 1.10.0") and "INCLINARE" in snap["tiles"]["tx_incl"]
 assert "TransDatRO" in snap["tiles"]["tx_status"] or "Helmert" in snap["tiles"]["tx_status"], snap["tiles"]["tx_status"]
 icons = snap["images"]
 assert len(icons) == 11 and all(icons[k] for k in icons), sorted(icons)          # antet + 10 pictograme

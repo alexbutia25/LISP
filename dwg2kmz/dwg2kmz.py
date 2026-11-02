@@ -29,6 +29,7 @@ from pyproj import Transformer
 
 from transdatro import OutsideGrid, stereo70_to_etrs89
 import dwg
+import tklic
 
 try:
     from tkinterdnd2 import TkinterDnD, DND_FILES
@@ -37,7 +38,7 @@ except Exception:
     HAS_DND = False
 
 APP_NAME = "DWG to KMZ"
-TOPOKIT = "TopoKit 1.9.0"   # programul face parte din TopoKit
+TOPOKIT = "TopoKit 1.10.0"   # programul face parte din TopoKit
 HELP_FILE = "Instructiuni DWG to KMZ.html"
 FLAT_DIST = 0.05  # metri - precizia aproximarii arcelor / curbelor
 
@@ -593,6 +594,8 @@ def build_kml(feats, doc_name, swap, opts):
 
 
 def save_kmz(path, kml_text):
+    if not tklic.valid():
+        raise PermissionError(tklic.text())
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("doc.kml", kml_text.encode("utf-8"))
 
@@ -1597,6 +1600,8 @@ class App(BaseTk):
 
     # ---------- export ----------
     def _export(self):
+        if not tklic.gate():
+            return
         feats = self.selected()
         if not feats:
             messagebox.showwarning(APP_NAME, "Selectează cel puțin o categorie și un layer.")
@@ -1686,43 +1691,6 @@ def open_help():
     return False
 
 
-def licenta_ok():
-    """Programul instalat porneste doar cu licenta TopoKit valabila pe acest calculator.
-
-    Verificarea o face TopoKit.exe /license (cod de iesire 0 = licenta buna sau licentiere
-    dezactivata la build), din folderul TopoKit (parintele folderului acestui program).
-    Rulat din sursa (dezvoltare, teste) nu se verifica nimic. Compilat cu Nuitka nu exista
-    sys.frozen, dar modulul are __compiled__ (PyInstaller: sys.frozen)."""
-    if not (getattr(sys, "frozen", False) or "__compiled__" in globals()):
-        return True
-    exe = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(sys.executable))), "TopoKit.exe")
-    try:
-        r = subprocess.run([exe, "/license"], capture_output=True, timeout=60,
-                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        if r.returncode == 0:
-            return True
-    except (OSError, subprocess.SubprocessError):
-        pass
-    en = False
-    try:
-        with open(os.path.join(os.environ.get("LOCALAPPDATA", ""), "TopoKit", "language.txt"), encoding="ascii") as f:
-            en = f.read(2).upper() == "EN"
-    except OSError:
-        pass
-    import ctypes
-    ctypes.windll.user32.MessageBoxW(
-        None, "TopoKit is not activated on this computer.\n\nIn the TopoKit window enter the activation code "
-              "you received from the administrator." if en else
-              "TopoKit nu este activat pe acest calculator.\n\nÎn fereastra TopoKit introduceți codul de activare "
-              "primit de la administrator.", "TopoKit", 0x30)
-    if os.path.exists(exe):
-        try:
-            os.startfile(exe)
-        except OSError:
-            pass
-    return False
-
-
 def main():
     theme = asset("topokit.json")
     if theme:
@@ -1730,7 +1698,7 @@ def main():
     if "--ajutor" in sys.argv:          # ghidul programului
         open_help()
         return
-    if not licenta_ok():
+    if not tklic.gate():
         return
     app = App()
     if len(sys.argv) > 1 and sys.argv[1].lower().endswith((".dxf", ".dwg")):

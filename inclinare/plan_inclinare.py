@@ -28,6 +28,8 @@ import unicodedata
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
+import tklic
+
 # ca .exe setarile si PlanInclinareCogo.dll stau langa executabil: PyInstaller (sys.frozen) -> folderul
 # exe-ului; Nuitka standalone -> __file__ e in folderul exe-ului (PlanInclinare.dist), la fel ca din sursa
 APP_DIR = os.path.dirname(os.path.abspath(sys.executable if getattr(sys, "frozen", False) else __file__))
@@ -227,30 +229,56 @@ def parse_dxf_points(path):
     return pts
 
 
+def script_path(path):
+    """Cale scrisa intr-un script .scr (citit de AutoCAD in codepage-ul ANSI): cu diacritice sau alte
+    caractere ne-ASCII (ex. numele utilizatorului in %TEMP%) se foloseste numele scurt 8.3 al
+    folderului existent. Fara nume scurt (dezactivat pe volum) -> RuntimeError cu un mesaj clar."""
+    path = os.path.abspath(path)
+    if path.isascii():
+        return path
+    folder, name = os.path.split(path)
+    if os.path.exists(path):
+        folder, name = path, ""
+    short = folder
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            buf = ctypes.create_unicode_buffer(1024)
+            if ctypes.windll.kernel32.GetShortPathNameW(folder, buf, 1024):
+                short = buf.value
+        except Exception:
+            pass
+    out = os.path.join(short, name) if name else short
+    if not out.isascii():
+        raise RuntimeError(f"Calea conține caractere pe care AutoCAD Core Console nu le poate citi:\n{path}")
+    return out
+
+
 def import_cad(path, acc):
     """Citeste punctele COGO (Civil 3D) si punctele AutoCAD dintr-un DWG/DXF prin AutoCAD Core Console."""
     if not os.path.exists(COGO_DLL):
         raise RuntimeError("Lipseste PlanInclinareCogo.dll langa program.")
     tmp = tempfile.mkdtemp(prefix="planincl_")
-    src = os.path.join(tmp, "sursa" + os.path.splitext(path)[1].lower())
-    shutil.copy2(path, src)  # lucram pe o copie: fisierul original poate fi deschis in AutoCAD
-    out = os.path.join(tmp, "puncte.txt")
-    scr = os.path.join(tmp, "imp.scr")
-    with open(scr, "w", encoding="ascii", newline="\r\n") as fh:
-        fh.write('(setq *pi_sl* (getvar "SECURELOAD") *pi_fd* (getvar "FILEDIA"))\n')
-        fh.write('(setvar "SECURELOAD" 0)\n(setvar "FILEDIA" 0)\n')
-        fh.write(f'_.NETLOAD\n"{COGO_DLL}"\n')
-        fh.write(f"PLANINCL_EXPORTPUNCTE\n{out}\n")
-        fh.write('(setvar "SECURELOAD" *pi_sl*)\n(setvar "FILEDIA" *pi_fd*)\n')
-        fh.write("_.QUIT\n_Y\n")
-    r = subprocess.run([acc, "/i", src, "/s", scr, "/product", "C3D", "/l", "en-US"], cwd=tmp,
-                       capture_output=True, timeout=600, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    log = r.stdout.decode("utf-16-le", "ignore").replace("\x00", "") if r.stdout else ""
-    if not os.path.exists(out):
-        raise RuntimeError("AutoCAD nu a putut citi punctele.\n\n" + log[-1200:])
-    pts = parse_points(read_text_file(out), {}, cols="N,X,Y,Z,COD", sep=";")
-    shutil.rmtree(tmp, ignore_errors=True)
-    return pts
+    try:
+        src = os.path.join(tmp, "sursa" + os.path.splitext(path)[1].lower())
+        shutil.copy2(path, src)  # lucram pe o copie: fisierul original poate fi deschis in AutoCAD
+        out = os.path.join(tmp, "puncte.txt")
+        scr = os.path.join(tmp, "imp.scr")
+        with open(scr, "w", encoding="ascii", newline="\r\n") as fh:
+            fh.write('(setq *pi_sl* (getvar "SECURELOAD") *pi_fd* (getvar "FILEDIA"))\n')
+            fh.write('(setvar "SECURELOAD" 0)\n(setvar "FILEDIA" 0)\n')
+            fh.write(f'_.NETLOAD\n"{script_path(COGO_DLL)}"\n')
+            fh.write(f"PLANINCL_EXPORTPUNCTE\n{script_path(out)}\n")
+            fh.write('(setvar "SECURELOAD" *pi_sl*)\n(setvar "FILEDIA" *pi_fd*)\n')
+            fh.write("_.QUIT\n_Y\n")
+        r = subprocess.run([acc, "/i", src, "/s", scr, "/product", "C3D", "/l", "en-US"], cwd=tmp,
+                           capture_output=True, timeout=600, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        log = r.stdout.decode("utf-16-le", "ignore").replace("\x00", "") if r.stdout else ""
+        if not os.path.exists(out):
+            raise RuntimeError("AutoCAD nu a putut citi punctele.\n\n" + log[-1200:])
+        return parse_points(read_text_file(out), {}, cols="N,X,Y,Z,COD", sep=";")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def load_points_from(path, cfg, acc):
@@ -575,6 +603,8 @@ def layout(rows, cfg):
 
 # ============================================================================ export DXF / DWG
 def write_dxf(g, path, layer):
+    if not tklic.valid():
+        raise PermissionError(tklic.text())
     layer = ascii_text(layer) or "0"
     out = ["0", "SECTION", "2", "HEADER", "9", "$ACADVER", "1", "AC1009", "0", "ENDSEC",
            "0", "SECTION", "2", "TABLES", "0", "TABLE", "2", "LAYER", "70", "1",
@@ -608,18 +638,32 @@ def write_dxf(g, path, layer):
 
 
 def dxf_to_dwg(dxf_path, dwg_path, acc):
+    """DXF -> DWG cu AutoCAD Core Console. Desenul se salveaza intai in folderul temporar, cu nume
+    ASCII (scriptul .scr e citit in codepage-ul ANSI: un nume ca "Plan înclinare ș.dwg" nu ar
+    ajunge intreg), apoi se muta la destinatie."""
     tmp = tempfile.mkdtemp(prefix="planincl_")
-    scr = os.path.join(tmp, "s.scr")
-    with open(scr, "w", encoding="ascii", newline="\r\n") as fh:
-        fh.write("_.ZOOM\n_E\n")
-        fh.write(f'_.SAVEAS\n2018\n"{dwg_path.replace(os.sep, "/")}"\n')
-        if os.path.exists(dwg_path):
-            fh.write("_Y\n")
-        fh.write("_.QUIT\n_Y\n")
-    r = subprocess.run([acc, "/i", dxf_path, "/s", scr, "/l", "en-US"], cwd=tmp, capture_output=True,
-                       timeout=300, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    log = r.stdout.decode("utf-16-le", "ignore").replace("\x00", "") if r.stdout else ""
-    return os.path.exists(dwg_path), log
+    try:
+        scr = os.path.join(tmp, "s.scr")
+        tmp_dwg = os.path.join(tmp, "plan.dwg")
+        with open(scr, "w", encoding="ascii", newline="\r\n") as fh:
+            fh.write("_.ZOOM\n_E\n")
+            fh.write(f'_.SAVEAS\n2018\n"{script_path(tmp_dwg).replace(os.sep, "/")}"\n')
+            fh.write("_.QUIT\n_Y\n")
+        r = subprocess.run([acc, "/i", dxf_path, "/s", scr, "/l", "en-US"], cwd=tmp, capture_output=True,
+                           timeout=300, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        log = r.stdout.decode("utf-16-le", "ignore").replace("\x00", "") if r.stdout else ""
+        if not os.path.exists(tmp_dwg):
+            return False, log
+        try:
+            os.replace(tmp_dwg, dwg_path)
+        except OSError:
+            try:
+                shutil.move(tmp_dwg, dwg_path)       # alt volum
+            except OSError as ex:                     # destinatia e deschisa in AutoCAD / fara drept de scriere
+                return False, f"{log}\n{ex}"
+        return os.path.exists(dwg_path), log
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 # ============================================================================ drag & drop (Windows)
@@ -923,8 +967,12 @@ class App(tk.Tk):
                                             initialfile=os.path.basename(CONFIG_FILE), filetypes=[("Setări", "*.json")])
         if not path:
             return
-        with open(path, "w", encoding="utf-8") as fh:
-            json.dump(self.cfg, fh, indent=2, ensure_ascii=False)
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(self.cfg, fh, indent=2, ensure_ascii=False)
+        except OSError as ex:
+            messagebox.showerror("Setări", f"Nu pot salva setările:\n{path}\n\n{ex}")
+            return
         auto = os.path.abspath(path) == os.path.abspath(CONFIG_FILE)
         self.set_status(f"Setări salvate: {path}" + ("  (se încarcă automat la pornire)" if auto else ""))
 
@@ -1270,6 +1318,8 @@ class App(tk.Tk):
 
     # ---------------------------------------------------------------- export
     def export(self, kind):
+        if not tklic.gate():
+            return
         self.read_vars()
         self.refresh()
         if not self.geo.items:
@@ -1286,7 +1336,11 @@ class App(tk.Tk):
         path = os.path.abspath(path)
         self.cfg["folder_export"] = os.path.dirname(path)
         if kind == "dxf":
-            write_dxf(self.geo, path, self.cfg["strat"])
+            try:
+                write_dxf(self.geo, path, self.cfg["strat"])
+            except OSError as ex:                     # fisier deschis in alt program / fara drept de scriere
+                messagebox.showerror("Export DXF", f"Nu pot scrie fișierul:\n{path}\n\n{ex}")
+                return
             self.set_status(f"DXF salvat: {path}")
             self.ask_open(path)
             return
@@ -1295,17 +1349,19 @@ class App(tk.Tk):
             messagebox.showerror("Export DWG", "Nu găsesc accoreconsole.exe (vine cu AutoCAD / Civil 3D).\n"
                                                "Alege-l în tabul Date, sau folosește Export DXF.")
             return
-        tmpdxf = os.path.join(tempfile.mkdtemp(prefix="planincl_"), "plan.dxf")
-        write_dxf(self.geo, tmpdxf, self.cfg["strat"])
+        tmpdir = tempfile.mkdtemp(prefix="planincl_")
+        tmpdxf = os.path.join(tmpdir, "plan.dxf")
         self.set_status("Se creează DWG-ul cu AutoCAD Core Console...")
         self.config(cursor="watch")
         self.update()
         try:
+            write_dxf(self.geo, tmpdxf, self.cfg["strat"])
             ok, log = dxf_to_dwg(tmpdxf, path, acc)
         except Exception as ex:
             ok, log = False, str(ex)
         finally:
             self.config(cursor="")
+            shutil.rmtree(tmpdir, ignore_errors=True)
         if ok:
             self.set_status(f"DWG salvat: {path}")
             self.ask_open(path)
@@ -1388,56 +1444,23 @@ def run_cli(argv):
     if len(argv) >= 4:
         out = os.path.abspath(argv[3])
         if out.lower().endswith(".dwg"):
-            tmpdxf = os.path.join(tempfile.mkdtemp(prefix="planincl_"), "plan.dxf")
-            write_dxf(g, tmpdxf, cfg["strat"])
-            print("dwg ok:", dxf_to_dwg(tmpdxf, out, acc)[0])
+            tmpdir = tempfile.mkdtemp(prefix="planincl_")
+            try:
+                tmpdxf = os.path.join(tmpdir, "plan.dxf")
+                write_dxf(g, tmpdxf, cfg["strat"])
+                print("dwg ok:", dxf_to_dwg(tmpdxf, out, acc)[0])
+            finally:
+                shutil.rmtree(tmpdir, ignore_errors=True)
         else:
             write_dxf(g, out, cfg["strat"])
             print("scris", out)
 
 
-def licenta_ok():
-    """Programul instalat porneste doar cu licenta TopoKit valabila pe acest calculator.
-
-    Verificarea o face TopoKit.exe /license (cod de iesire 0 = licenta buna sau licentiere
-    dezactivata la build), din folderul TopoKit (parintele folderului acestui program).
-    Rulat din sursa (dezvoltare, teste) nu se verifica nimic. Compilat cu Nuitka nu exista
-    sys.frozen, dar modulul are __compiled__ (PyInstaller: sys.frozen)."""
-    if not (getattr(sys, "frozen", False) or "__compiled__" in globals()):
-        return True
-    exe = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(sys.executable))), "TopoKit.exe")
-    try:
-        r = subprocess.run([exe, "/license"], capture_output=True, timeout=60,
-                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        if r.returncode == 0:
-            return True
-    except (OSError, subprocess.SubprocessError):
-        pass
-    en = False
-    try:
-        with open(os.path.join(os.environ.get("LOCALAPPDATA", ""), "TopoKit", "language.txt"), encoding="ascii") as f:
-            en = f.read(2).upper() == "EN"
-    except OSError:
-        pass
-    import ctypes
-    ctypes.windll.user32.MessageBoxW(
-        None, "TopoKit is not activated on this computer.\n\nIn the TopoKit window enter the activation code "
-              "you received from the administrator." if en else
-              "TopoKit nu este activat pe acest calculator.\n\nÎn fereastra TopoKit introduceți codul de activare "
-              "primit de la administrator.", "TopoKit", 0x30)
-    if os.path.exists(exe):
-        try:
-            os.startfile(exe)
-        except OSError:
-            pass
-    return False
-
-
 if __name__ == "__main__":
+    if not tklic.gate():
+        sys.exit(1)
     if len(sys.argv) >= 3 and sys.argv[1] == "--test":
         run_cli(sys.argv)
-    elif not licenta_ok():
-        sys.exit(1)
     else:
         app = App()
         files = [a for a in sys.argv[1:] if os.path.exists(a)]

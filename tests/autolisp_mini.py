@@ -101,7 +101,9 @@ def ev(x):
         if x=='T': return T
         if x=='NIL': return None
         if x=='PI': return math.pi
-        return env.get(x)
+        v=env.get(x)
+        if v is None and x in funcs: return funcs[x]     # (eval 'open) etc. -> functia incorporata
+        return v
     if not isinstance(x,list): return x
     h=x[0]
     if h=='QUOTE': return x[1]
@@ -169,7 +171,7 @@ funcs.update({Sym(k):v for k,v in {
  '*':lambda *a: math.prod(a),'/':num_div,'1+':lambda a:a+1,'1-':lambda a:a-1,
  'ABS':abs,'SQRT':lambda a: math.sqrt(a),'SIN':math.sin,'COS':math.cos,'EXP':math.exp,'LOG':math.log,
  'ATAN':lambda a,b=None: math.atan(a) if b is None else math.atan2(a,b),
- 'EXPT':lambda a,b: a**b,'FIX':lambda a:int(a),'FLOAT':float,'REM':lambda a,b: math.fmod(a,b) if isinstance(a,float) or isinstance(b,float) else int(math.fmod(a,b)),
+ 'EXPT':lambda a,b: a**b,'FIX':lambda a:int(a),'FLOAT':float,'REM':lambda *a: __import__('functools').reduce(lambda a,b: math.fmod(a,b) if isinstance(a,float) or isinstance(b,float) else int(math.fmod(a,b)), a) if a else 0,
  'MIN':lambda *a: min(a),'MAX':lambda *a: max(a),'MINUSP':lambda a: T if a<0 else None,'ZEROP':lambda a: T if a==0 else None,
  'LOGAND':lambda *a: __import__('functools').reduce(lambda x,y:x&y,a),
  '=':lambda *a: T if all(a[i]==a[i+1] for i in range(len(a)-1)) else None,
@@ -183,7 +185,7 @@ funcs.update({Sym(k):v for k,v in {
  'LENGTH':lambda a: len(lst(a)),'REVERSE':lambda a: list(reversed(lst(a))) or None,
  'APPEND':lambda *a: sum((lst(x) for x in a),[]) or None,
  'NTH':lambda n,l: lst(l)[n] if n<len(lst(l)) else None,
- 'LAST':lambda l: l[-1],'STRCAT':lambda *a:''.join(a),'ITOA':lambda a:str(a),'STRLEN':len,
+ 'LAST':lambda l: l[-1],'STRCAT':lambda *a:''.join(a),'ITOA':lambda a:str(a),'STRLEN':lambda *a: sum(len(s) for s in a),
  'SUBSTR':lambda s,i,n=None: s[i-1:] if n is None else s[i-1:i-1+n],
  'VL-STRING-SEARCH':lambda p,s,st=0: (lambda r: None if r<0 else r)(s.find(p,st)),
  'VL-STRING-TRIM':lambda c,s: s.strip(c),'VL-STRING-RIGHT-TRIM':lambda c,s: s.rstrip(c),
@@ -192,6 +194,20 @@ funcs.update({Sym(k):v for k,v in {
  'SET':lambda s,v: env.__setitem__(s,v) or v,'EVAL':lambda x: ev(x),
  'VL-LOAD-COM':lambda:None,'NUMBERP':lambda a: T if isinstance(a,(int,float)) else None,
 }.items()})
+# operatii pe biti cu semantica motorului (intregi pe 32 de biti cu semn, ca in accoreconsole):
+def _u32(x): return x & 0xFFFFFFFF
+def _i32(x): x = x & 0xFFFFFFFF; return x - 0x100000000 if x & 0x80000000 else x
+_BOP = {1: lambda x, y: x & y, 6: lambda x, y: x ^ y, 7: lambda x, y: x | y}
+def _boole(op, *a):
+    import functools
+    return _i32(functools.reduce(_BOP[op], [_u32(v) for v in a]))
+funcs[Sym('BOOLE')] = _boole
+funcs[Sym('LOGIOR')] = lambda *a: _i32(__import__('functools').reduce(lambda x, y: _u32(x) | _u32(y), a, 0))
+funcs[Sym('LOGAND')] = lambda *a: _i32(__import__('functools').reduce(lambda x, y: _u32(x) & _u32(y), a))
+funcs[Sym('LSH')] = lambda v, n: _i32((_u32(v) << n) if n >= 0 else (_u32(v) >> (-n)))
+funcs[Sym('VL-STRING->LIST')] = lambda s: [ord(c) for c in s] if s else None
+funcs[Sym('VL-FILENAME-MKTEMP')] = lambda *a: __import__('tempfile').mktemp(suffix=(a[0] if a else '.tmp'))
+funcs[Sym('VL-FILE-DELETE')] = lambda p: (__import__('os').remove(p), T)[1] if __import__('os').path.exists(p) else None
 def car(x): return x.car if isinstance(x,DP) else (x[0] if x else None)
 def cdr(x):
     if isinstance(x,DP): return x.cdr
@@ -269,7 +285,19 @@ def _trans(p,frm,to):
 @B('rtos')
 def _rtos(v,m=2,pr=4): return f"{v:.{pr}f}"
 @B('type')
-def _type(x): return Sym('STR') if isinstance(x,str) else None
+def _type(x):
+    # ca AutoCAD 2026 (ambele motoare, verificat in accoreconsole): si functiile definite cu defun / lambda
+    # au tipul SUBR - tipul singur nu deosebeste o redefinire de functia incorporata
+    if isinstance(x,Sym): return Sym('SYM')
+    if isinstance(x,str): return Sym('STR')
+    if isinstance(x,bool): return Sym('SYM')
+    if isinstance(x,int): return Sym('INT')
+    if isinstance(x,float): return Sym('REAL')
+    if isinstance(x,(list,DP)): return Sym('LIST')
+    if isinstance(x,UFun): return Sym('SUBR')
+    if callable(x): return Sym('SUBR')
+    if hasattr(x,'readline'): return Sym('FILE')
+    return None
 def load(path):
     for form in parse(tokenize(open(path,encoding='utf-8').read())): ev(form)
 class CErr:
@@ -307,8 +335,12 @@ funcs[Sym('READ')] = lambda s: parse(tokenize(s))[0] if s and s.strip() else Non
 funcs[Sym('VL-REMOVE')] = lambda x, l: [e for e in lst(l) if e != x] or None
 funcs[Sym('VL-STRING->LIST')] = lambda s: [ord(c) for c in s] or None
 funcs[Sym('BOUNDP')] = lambda s: T if env.get(s) is not None else None
+def _fname(x):
+    if isinstance(x, UFun): return '-lambda-' if x.name == 'lambda' else str(x.name)
+    return next((str(k) for k, v in funcs.items() if v is x), '?')
 def prin1(x):
     if x is None: return 'nil'
+    if isinstance(x, UFun) or callable(x): return f"#<SUBR @{id(x):016x} {_fname(x)}>"   # forma din AutoCAD
     if isinstance(x, Sym): return str(x)
     if isinstance(x, str): return '"' + x.replace('\\', '\\\\').replace('"', '\\"') + '"'
     if isinstance(x, bool): return 'T'

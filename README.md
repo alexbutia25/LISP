@@ -90,7 +90,7 @@ reîncarcă imediat în desenul curent; celelalte desene deschise trec la prima 
 
 ### Cu instalatorul (recomandat)
 
-1. Descărcați și rulați **[`dist/TopoKitSetup-1.9.0.exe`](dist/TopoKitSetup-1.9.0.exe)** (TopoKit 1.9.0). Nu sunt necesare drepturi
+1. Descărcați și rulați **[`dist/TopoKitSetup-1.10.0.exe`](dist/TopoKitSetup-1.10.0.exe)** (TopoKit 1.10.0). Nu sunt necesare drepturi
    de administrator; instalarea se face pentru utilizatorul curent.
 2. Alegeți opțiunile: scurtătură pe desktop și pornirea în fundal odată cu Windows (ambele bifate implicit).
 3. Deschideți **TopoKit** din meniul Start sau de pe desktop. Atât.
@@ -160,7 +160,7 @@ Ce face instalarea:
     o anulează prin fereastra AutoCAD (WM_COPYDATA) înainte de a trimite modulul.
 - **Dezinstalare:** *Setări → Aplicații → TopoKit* sau meniul Start → *Dezinstalare TopoKit*. Se șterg
   pachetul AutoCAD, lansatorul și setările din registru.
-- **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup-1.9.0.exe /S`; dezinstalare:
+- **Instalare silențioasă** (pentru mai multe calculatoare): `TopoKitSetup-1.10.0.exe /S`; dezinstalare:
   `"%LOCALAPPDATA%\Programs\TopoKit\Uninstall.exe" /S`.
 
 Windows SmartScreen poate afișa *„Windows a protejat computerul”*, pentru că instalatorul nu este
@@ -727,10 +727,24 @@ ca înainte, fără activare. Cu fișierul, cheia publică și adresa serverului
     administrare `/admin`: colegi, coduri, calculatoare, oprirea accesului, jurnal.
   - Punerea în funcțiune, pas cu pas, e în [`server/README.md`](server/README.md).
   - Cheia de semnare se face cu `tools/licenta.py` și **nu se pune niciodată în proiect**.
-- **Cum se verifică:** `TopoKit.exe /license` iese cu codul 0 când licența e bună. Îl folosesc
-  încărcătorul AutoCAD (o dată pe sesiune) și cele două programe Python.
-  - Licența (`%LOCALAPPDATA%\TopoKit\license.lic`) e semnată ECDSA P-256 și legată de calculator.
-  - Secretul dispozitivului (`state.dat`) e protejat cu DPAPI.
+- **Cum se verifică (1.10.0):**
+  - Licența (`%LOCALAPPDATA%\TopoKit\license.lic`) e semnată ECDSA P-256 și legată de calculator;
+    secretul dispozitivului (`state.dat`) e protejat cu DPAPI; ceasul dat înapoi e detectat.
+  - **Modulele AutoCAD** cer de la `TopoKit.exe /license /proof <nonce> <fișier>` un răspuns semnat
+    HMAC-SHA256 cu o cheie nouă la fiecare build (în `TopoKit.exe` și în fiecare `.fas`, mascată) și
+    îl verifică în AutoLISP; semnătura include codul calculatorului, calculat separat de modul, iar un
+    `TopoKit.exe` fals nu o poate produce. Fără licență, codul modulului nu rulează deloc. Dacă
+    modulul nu poate citi codul calculatorului (componenta Windows `Scripting.FileSystemObject`
+    dezactivată), folosește codul raportat de `TopoKit.exe`; dacă cele două coduri diferă, afișează
+    ambele, pentru diagnostic. Funcțiile de sistem
+    folosite la verificare trebuie să fie cele originale. Fără licență, **tot** modulul (comenzi și
+    funcții interne) este blocat.
+  - **Plan Înclinare și DWG to KMZ** verifică singure semnătura licenței (`tklic.py`, cheia publică
+    inclusă la build), la pornire și din nou la export.
+  - Nicio protecție a unui program care rulează pe calculatorul utilizatorului nu e de nespart:
+    cine decompilează `.fas` / `TopoKit.exe` poate scoate cheia. Protecțiile ridică mult efortul;
+    serverul (dezactivare, oprirea accesului, „Posibilă copiere (alt IP)” în `/admin`) rămâne
+    controlul final.
 
 ### Cod compilat (1.9.0)
 
@@ -750,7 +764,7 @@ ca înainte, fără activare. Cu fișierul, cheia publică și adresa serverului
 - `python tools/build_installer.py --compile auto|yes|no`: `yes` forțează compilarea, `no` o oprește,
   iar `auto` (implicit) compilează doar când licențierea e activă (există `installer/licensing.json`).
 - Build-ul de dezvoltare / test (fără licențiere sau cu `--compile no`) păstrează fișierele `.lsp`.
-- `--build C:	kb`: folderul de lucru al build-ului. Pe Windows folosiți o cale scurtă – `makensis` nu deschide fișiere cu calea mai lungă de 260 de caractere (unele fișiere din pachetele Nuitka au căi adânci).
+- `--build C:\tkb`: folderul de lucru al build-ului. Pe Windows folosiți o cale scurtă – `makensis` nu deschide fișiere cu calea mai lungă de 260 de caractere (unele fișiere din pachetele Nuitka au căi adânci).
 - Programele Python (Plan Înclinare, DWG to KMZ) se compilează cu **Nuitka** în cod nativ, deci nu
   mai există bytecode ușor de extras:
   - necesar: `pip install nuitka`; dacă Nuitka lipsește, build-ul cade pe PyInstaller, cu avertisment

@@ -26,7 +26,7 @@ Cheia privata NU intra in depozit: o pastrati intr-un folder sigur (si o copie o
 pe server ajunge ca secret (SIGNING_KEY). Cheia publica se scrie in installer/licensing.json
 si se compileaza in TopoKit.exe.
 """
-import argparse, base64, ctypes, hashlib, json, os, pathlib, secrets, sys, time
+import argparse, base64, ctypes, hashlib, json, os, pathlib, re, secrets, subprocess, sys, time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CONFIG = ROOT / "installer" / "licensing.json"
@@ -129,16 +129,22 @@ def make_license(jwk, payload: dict) -> str:
     return body + "." + b64u(sign(jwk, body.encode("ascii")))
 
 
+_B64U = re.compile(r"[A-Za-z0-9_-]+=*")
+
+
 def read_license(text, pub_hex, kid=None):
     """(payload, motiv): motiv None = semnatura buna si kid potrivit."""
-    text = text.strip()
+    text = text.lstrip(" \r\n\t\ufeff").rstrip(" \r\n\t")   # ca Trim() din lansator
     parts = text.split(".")
-    if len(parts) != 3 or parts[0] != "TK1":
+    # base64url strict, ca lansatorul (B64uDec): alte caractere = licenta stricata, nu ignorate
+    if len(parts) != 3 or parts[0] != "TK1" or not all(_B64U.fullmatch(x) for x in parts[1:]):
         return None, "format"
     try:
-        payload = json.loads(b64u_dec(parts[1]).decode("utf-8"))
-        sig = b64u_dec(parts[2])
-    except (ValueError, UnicodeDecodeError):
+        payload = json.loads(b64u_dec(parts[1].rstrip("=")).decode("utf-8"))
+        sig = b64u_dec(parts[2].rstrip("="))
+    except ValueError:                      # si UnicodeDecodeError / binascii.Error
+        return None, "format"
+    if not isinstance(payload, dict):
         return None, "format"
     if not verify(pub_hex, (parts[0] + "." + parts[1]).encode("ascii"), sig):
         return payload, "semnatura"
@@ -153,15 +159,44 @@ def license_status(text, pub_hex, kid, machine, now=None):
     p, why = read_license(text, pub_hex, kid)
     if why:
         return why, p
-    if p.get("v") != 1:
+    if type(p.get("v")) is not int or p["v"] != 1:  # true nu este versiunea 1 (ca in lansator)
         return "format", p
-    if p.get("machine") != machine_plain(machine):
+    exp, iat = p.get("exp"), p.get("iat")          # obligatorii, numere intregi (ca in lansator)
+    if not all(isinstance(x, int) and not isinstance(x, bool) for x in (exp, iat)):
+        return "format", p
+    if not isinstance(p.get("machine"), str):       # lipsa / nu e sir: licenta stricata (lansatorul: LIC_BAD)
+        return "format", p
+    if len(p["machine"]) != 24 or p["machine"].upper() != machine_plain(machine):
         return "calculator", p
-    if now >= int(p.get("exp", 0)):
+    if now >= exp:
         return "expirata", p
-    if now + 86400 < int(p.get("iat", 0)):
+    if now + 86400 < iat:
         return "ceas", p
     return "ok", p
+
+
+# ---------------------------------------------------------------- cheia publica pentru programele Python
+PUB_MODULE = "_tk_pub.py"
+
+
+def write_pub_module(path, pub_hex=None, kid=None):
+    """Scrie modulul generat _tk_pub.py (langa dwg2kmz.py / plan_inclinare.py, inainte de Nuitka) din
+    care tklic.py ia cheia publica si kid-ul. Cheia nu apare in clar: A = cheie XOR B, B aleator, C =
+    kid XOR B. Fara pub_hex (build fara licentiere): A = B = C = b"" -> programele pornesc fara licenta.
+    Un exe compilat FARA acest modul refuza sa porneasca (nu se deschide in tacere)."""
+    if pub_hex is None:
+        a = b = c = b""
+    else:
+        pub = bytes.fromhex(pub_hex)
+        k = str(kid or "").encode("ascii")
+        if len(pub) != 64 or not re.fullmatch(rb"[A-Za-z0-9_-]{1,16}", k):
+            raise ValueError("cheie publica (128 cifre hex) sau kid gresit")
+        b = secrets.token_bytes(64)
+        a = bytes(x ^ y for x, y in zip(pub, b))
+        c = bytes(x ^ y for x, y in zip(k, b))
+    path = pathlib.Path(path)
+    path.write_text(f"A = {a!r}\nB = {b!r}\nC = {c!r}\n", encoding="ascii")
+    return path
 
 
 # ---------------------------------------------------------------- codul calculatorului
@@ -201,15 +236,57 @@ def save_config(cfg, path=CONFIG):
     pathlib.Path(path).write_text(json.dumps(cfg, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def _inside_repo(path):
+    """Folderul e in depozit (sau chiar depozitul)? Cheia privata nu are voie acolo: ar ajunge in
+    git, in arhive sau in folderul de build al instalatorului."""
+    p = pathlib.Path(path).resolve()
+    return p == ROOT or ROOT in p.parents
+
+
+def _protect(path):
+    """Fisierul cheii: doar utilizatorul curent si SYSTEM, fara drepturile mostenite (radacina unui
+    disc ca D:\\ da implicit "Authenticated Users: Modify"). Pe alte sisteme: chmod 600."""
+    if os.name != "nt":
+        os.chmod(path, 0o600)
+        return
+    sid = subprocess.run(["whoami", "/user", "/fo", "csv", "/nh"], capture_output=True, text=True,
+                         check=True).stdout.strip().split(",")[-1].strip('"')
+    if not sid.startswith("S-1-"):
+        raise OSError(f"SID necunoscut: {sid!r}")
+    subprocess.run(["icacls", str(path), "/inheritance:r", "/grant:r", f"*{sid}:F", "*S-1-5-18:F"],
+                   capture_output=True, check=True)
+
+
 def _cmd_cheie(a):
     out = pathlib.Path(a.out)
+    if _inside_repo(out):
+        sys.exit(f"Cheia privata nu se pune in depozit ({ROOT}). Alegeti un folder sigur in afara lui "
+                 "(ex. D:\\TopoKit-chei).")
     out.mkdir(parents=True, exist_ok=True)
     f = out / KEYFILE
-    if f.exists() and not a.force:
-        sys.exit(f"Exista deja {f}. O cheie noua invalideaza licentele emise cu cea veche (folositi alt --kid si --force).")
-    jwk = gen_key(a.kid)
-    f.write_text(json.dumps(jwk, indent=2) + "\n", encoding="utf-8")
     cfg = load_config()
+    if f.exists():
+        if not a.force:
+            sys.exit(f"Exista deja {f}. O cheie noua invalideaza licentele emise cu cea veche (folositi alt --kid si --force).")
+        try:
+            old_kid = json.loads(f.read_text(encoding="utf-8")).get("kid")
+        except (OSError, ValueError, AttributeError):
+            old_kid = None
+        if a.kid in (old_kid, cfg.get("kid")):
+            sys.exit(f"--kid {a.kid} este deja folosit; o cheie noua are nevoie de alt kid (ex. k2).")
+        # cheia veche nu se pierde (inainte --force o suprascria): se muta langa, cu kid-ul si data
+        backup = out / f"topokit_cheie_semnare.{old_kid or 'vechi'}.{time.strftime('%Y%m%d-%H%M%S')}.json"
+        f.replace(backup)
+        print(f"Cheia veche pastrata in {backup}")
+    jwk = gen_key(a.kid)
+    # fisierul se creeaza gol, primeste drepturile restranse si abia apoi cheia
+    f.touch(exist_ok=False)
+    try:
+        _protect(f)
+    except (OSError, subprocess.SubprocessError) as ex:
+        f.unlink()
+        sys.exit(f"Nu pot restrange drepturile pe {f}: {ex}")
+    f.write_text(json.dumps(jwk, indent=2) + "\n", encoding="utf-8")
     cfg.update({"kid": a.kid, "public_key": public_hex(jwk)})
     save_config(cfg)
     print(f"Cheia privata: {f}\n  -> pastrati-o in siguranta (si o copie offline); NU o puneti in depozit.")
@@ -218,8 +295,11 @@ def _cmd_cheie(a):
 
 
 def _cmd_server(a):
-    if not a.url.startswith(("https://", "http://127.0.0.1", "http://localhost")):
-        sys.exit("Adresa serverului trebuie sa inceapa cu https://")
+    from urllib.parse import urlsplit
+    u = urlsplit(a.url)
+    local = u.scheme == "http" and u.hostname in ("127.0.0.1", "localhost")
+    if not (u.scheme == "https" or local) or not u.hostname or u.query or u.fragment:
+        sys.exit("Adresa serverului trebuie sa inceapa cu https:// (fara ?parametri)")
     cfg = load_config()
     cfg["server"] = a.url.rstrip("/")
     save_config(cfg)
@@ -227,7 +307,19 @@ def _cmd_server(a):
 
 
 def _cmd_emite(a):
-    jwk = json.loads(pathlib.Path(a.cheie).read_text(encoding="utf-8"))
+    try:
+        jwk = json.loads(pathlib.Path(a.cheie).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as ex:
+        sys.exit(f"Nu pot citi cheia de semnare {a.cheie}: {ex}")
+    if not isinstance(jwk, dict) or not all(isinstance(jwk.get(k), str) for k in ("x", "y", "d")):
+        sys.exit(f"{a.cheie} nu este cheia privata de semnare (lipseste x / y / d).")
+    pub = load_config().get("public_key")
+    if pub and public_hex(jwk) != pub.upper():
+        sys.exit(f"Cheia {a.cheie} nu corespunde cheii publice din {CONFIG}: licenta nu ar fi acceptata.")
+    if not 1 <= a.zile <= 3650:
+        sys.exit("--zile intre 1 si 3650.")
+    if not a.nume.strip():
+        sys.exit("--nume nu poate fi gol.")
     now = int(time.time())
     payload = {"v": 1, "kid": jwk.get("kid", "k1"), "typ": "offline", "lid": "offline-" + secrets.token_hex(4),
                "uid": 0, "name": a.nume, "machine": machine_plain(a.calculator), "features": ["all"],

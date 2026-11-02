@@ -71,9 +71,14 @@ def _convert_oda(exe, src, out_dir):
 
 
 def _convert_libredwg(exe, src, out_dir):
+    # dwg2dxf.exe (MinGW) primeste argumentele in codepage-ul ANSI: caile cu diacritice (ș, ț, ă...)
+    # sau cu un nume de utilizator ne-ASCII in %TEMP% ajung cu "?" si fisierul "nu exista".
+    # Lucram pe o copie cu nume ASCII si cu cai relative la folderul temporar (cwd); DLL-urile
+    # LibreDWG se incarca oricum din folderul exe-ului.
+    shutil.copyfile(src, os.path.join(out_dir, "desen.dwg"))
     dxf = os.path.join(out_dir, "desen.dxf")
-    r = subprocess.run([exe, "-y", "-o", dxf, src], capture_output=True, text=True, errors="replace",
-                       timeout=300, creationflags=CREATE_NO_WINDOW, cwd=os.path.dirname(exe))
+    r = subprocess.run([exe, "-y", "-o", "desen.dxf", "desen.dwg"], capture_output=True, text=True,
+                       errors="replace", timeout=300, creationflags=CREATE_NO_WINDOW, cwd=out_dir)
     if not os.path.isfile(dxf) or os.path.getsize(dxf) < 100:
         raise DwgError(f"LibreDWG nu a putut converti fișierul.\n{(r.stderr or r.stdout)[-300:]}")
     return dxf

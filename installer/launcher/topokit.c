@@ -1174,6 +1174,14 @@ static void LicDlgFill(HWND d, const wchar_t *status)
         swprintf(t, 600, TR(L"Licență activă pentru %ls.\nValabilă până la %ls%ls.", L"Active licence for %ls.\nValid until %ls%ls."),
                  g_lic.name, date, g_lic.device ? TR(L" – se reînnoiește singură când există internet",
                                                        L" – renewed automatically when online") : L"");
+    } else if (g_lic.status == LIC_CLOCK) {
+        swprintf(t, 600, L"%ls.\n%ls", Lic_StatusText(g_lic.status),
+                 TR(L"Corectați data și ora din Windows, apoi apăsați Activează (fără cod: se reînnoiește licența).",
+                    L"Correct the Windows date and time, then press Activate (without a code: the licence is renewed)."));
+    } else if (g_lic.device) {
+        swprintf(t, 600, L"%ls.\n%ls", Lic_StatusText(g_lic.status),
+                 TR(L"Apăsați Activează fără cod pentru a reînnoi activarea existentă sau introduceți un cod nou.",
+                    L"Press Activate without a code to renew the existing activation, or enter a new code."));
     } else {
         swprintf(t, 600, L"%ls.\n%ls", Lic_StatusText(g_lic.status),
                  TR(L"Introduceți codul de activare primit de la administrator și apăsați Activează.",
@@ -1189,7 +1197,8 @@ static void LicDlgFill(HWND d, const wchar_t *status)
     SetDlgItemTextW(d, IDC_LIC_COPY, TR(L"Copiază codul", L"Copy code"));
     SetDlgItemTextW(d, IDC_LIC_IMPORT, TR(L"Importă fișier...", L"Import file..."));
     SetDlgItemTextW(d, IDC_LIC_DEACT, TR(L"Dezactivează", L"Deactivate"));
-    ShowWindow(GetDlgItem(d, IDC_LIC_DEACT), ok ? SW_SHOW : SW_HIDE);
+    /* dezactivarea elibereaza locul si cu licenta expirata, cat timp exista activarea online */
+    ShowWindow(GetDlgItem(d, IDC_LIC_DEACT), ok || g_lic.device ? SW_SHOW : SW_HIDE);
     SetDlgItemTextW(d, IDOK, ok ? TR(L"Reînnoiește", L"Renew") : TR(L"Activează", L"Activate"));
     EnableWindow(GetDlgItem(d, IDOK), !ok || g_lic.device);
     SetDlgItemTextW(d, IDCANCEL, TR(L"Închide", L"Close"));
@@ -1228,11 +1237,14 @@ static INT_PTR CALLBACK LicDlgProc(HWND d, UINT msg, WPARAM wp, LPARAM lp)
             old = SetCursor(LoadCursorW(NULL, IDC_WAIT));
             SetDlgItemTextW(d, IDC_LIC_STATUS, TR(L"Se contactează serverul de licențe...", L"Contacting the licence server..."));
             UpdateWindow(d);
-            if (g_lic.status == LIC_OK) {
+            code[0] = 0;
+            if (g_lic.status != LIC_OK) GetDlgItemTextW(d, IDC_LIC_CODE, code, 64);
+            /* licenta buna, sau activare online existenta si niciun cod: reinnoire (si dupa
+             * corectarea ceasului sau o licenta expirata) */
+            if (g_lic.status == LIC_OK || (g_lic.device && !code[0])) {
                 int r = Lic_Refresh(msgt, 512);
                 if (r == LIC_R_OK) lstrcpyW(msgt, TR(L"Licența a fost reînnoită.", L"The licence was renewed."));
             } else {
-                GetDlgItemTextW(d, IDC_LIC_CODE, code, 64);
                 if (Lic_Activate(code, msgt, 512) == LIC_OK && !msgt[0])
                     lstrcpyW(msgt, TR(L"TopoKit a fost activat pe acest calculator.", L"TopoKit was activated on this computer."));
             }
@@ -1317,6 +1329,52 @@ static void Out(const wchar_t *fmt, ...)
     if (n > 1) WriteFile(h, u8, n - 1, &n, NULL);
 }
 
+/* scrie exact len octeti ASCII in fisier (raspunsul /proof pentru modulele AutoLISP) */
+static BOOL WriteAsciiFile(const wchar_t *path, const char *data)
+{
+    HANDLE h = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    DWORD n = 0, len = (DWORD)strlen(data);
+    BOOL ok;
+    if (h == INVALID_HANDLE_VALUE) return FALSE;
+    ok = WriteFile(h, data, len, &n, NULL) && n == len;
+    CloseHandle(h);
+    return ok;
+}
+
+/* Reinnoirea sincrona din liniile de comanda (/license, /license /proof - AutoCAD asteapta raspunsul):
+ * doar daca e nevoie (Lic_NeedsRefresh: licenta lipsa / stricata / expirata / ceasul gresit, sau expira
+ * in < 3 zile si e mai veche de 20 h), nu in ora de dupa o reinnoire esuata (fara internet: altfel
+ * incarcatorul si cele 6 module ar astepta fiecare dupa server). CLI_BUDGET_MS = limita totala
+ * (mutex + server); dupa mutex conditia se verifica din nou (LIC_RF_CLI). */
+#define CLI_BUDGET_MS 8000
+static BOOL CliRefresh(int code, const LicInfo *li)
+{
+    wchar_t msg[512];
+    if (!Lic_NeedsRefresh(code, li)) return FALSE;
+    Lic_RefreshEx(msg, 512, CLI_BUDGET_MS, LIC_RF_CLI);
+    return TRUE;
+}
+
+/*   /license /proof <nonce> <fisier>: aceeasi verificare (si reinnoire) ca /license, apoi scrie
+ *   in fisier linia semnata pentru modulul AutoLISP. Codul de iesire ramane cel al licentei. */
+static int ProofCli(int argc, wchar_t **argv)
+{
+    char nonce[96], line[256];
+    LicInfo li;
+    long long exp = 0;
+    int code = LIC_OK, k;
+    if (argc < 5) return LIC_BAD;
+    k = WideCharToMultiByte(CP_UTF8, 0, argv[3], -1, nonce, sizeof nonce, NULL, NULL);
+    if (k <= 0 || !Lic_NonceOk(nonce)) return LIC_BAD;
+    if (Lic_Enabled()) {
+        code = Lic_Check(NULL, &li);
+        if (CliRefresh(code, &li)) code = Lic_Check(NULL, &li);
+        exp = (code == LIC_OK) ? li.exp : 0;
+    }
+    if (Lic_Proof(code, exp, nonce, line, sizeof line)) WriteAsciiFile(argv[4], line);
+    return code;
+}
+
 static BOOL LicenseCli(void)
 {
     int argc, code = 0;
@@ -1325,15 +1383,19 @@ static BOOL LicenseCli(void)
     if (!argv || argc < 2) { LocalFree(argv); return FALSE; }
     LoadLang();
     if (!_wcsicmp(argv[1], L"/license")) {
+        if (argc > 2 && !_wcsicmp(argv[2], L"/proof")) {
+            code = ProofCli(argc, argv);
+            LocalFree(argv);
+            ExitProcess((UINT)code);
+            return TRUE;
+        }
         if (!Lic_Enabled()) Out(L"0 licentiere dezactivata\n");
         else {
             const wchar_t *f = argc > 2 ? argv[2] : NULL;
             code = Lic_Check(f, &li);
-            if (!f && li.device && (code == LIC_NONE || code == LIC_EXPIRED || code == LIC_BAD ||
-                                    (code == LIC_OK && li.exp - Lic_Now() < 3 * 86400))) {
-                Lic_Refresh(msg, 512);
-                code = Lic_Check(NULL, &li);
-            }
+            /* reinnoire inainte de raspuns; si la LIC_CLOCK: o ora gresita ramasa din viitor se
+             * corecteaza cu data serverului (ceasul dat inapoi ramane LIC_CLOCK) */
+            if (!f && CliRefresh(code, &li)) code = Lic_Check(NULL, &li);
             if (code == LIC_OK) {
                 Lic_FormatDate(li.exp, buf, 64);
                 Out(L"0 %ls %ls\n", li.name, buf);
@@ -1511,7 +1573,16 @@ static void ShowMenu(void)
 /* Comanda primita de la o a doua pornire a TopoKit.exe (WM_COPYDATA) */
 static void Remote(const wchar_t *arg)
 {
+    const wchar_t *p;
+    /* aceleasi reguli ca ParseArgs: orice proces poate trimite WM_COPYDATA, iar textul ajunge in
+     * linia de comanda AutoCAD - doar nume de comenzi, fara expresii LISP */
+    for (p = arg; *arg != L'/' && *p; p++)
+        if (!iswalnum(*p) && *p != L'_' && *p != L'-') {
+            Log(L"Cerere respinsa (caractere nepermise)");
+            return;
+        }
     Log(L"Cerere: %ls", arg);
+    if (arg[0] == L'/' && wcscmp(arg, L"/quit") && wcscmp(arg, L"/background") && wcscmp(arg, L"/diag")) return;
     if (!wcscmp(arg, L"/quit")) DestroyWindow(g_hwnd);
     else if (!wcscmp(arg, L"/background")) Poll();
     else if (!wcscmp(arg, L"/diag")) Diagnostic();

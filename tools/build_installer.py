@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Construieste instalatorul Windows TopoKitSetup.exe.
 
-    python3 tools/build_installer.py [--version 1.9.0] [--out dist]
+    python3 tools/build_installer.py [--version 1.10.0] [--out dist]
 
 Necesita (Linux: apt install nsis mingw-w64; Windows: NSIS 3 + MinGW-w64 in PATH):
     makensis, x86_64-w64-mingw32-gcc, x86_64-w64-mingw32-windres
@@ -54,9 +54,63 @@ def tool(*names):
     sys.exit("Lipseste: " + " / ".join(names) + " (Linux: apt install nsis mingw-w64)")
 
 
-def run(cmd, **kw):
-    print("+", " ".join(str(c) for c in cmd))
-    subprocess.run([str(c) for c in cmd], check=True, **kw)
+SECRET_ARGS = ("TK_PROOF",)            # argumente care nu se afiseaza (secretul build-ului / calea lui)
+
+
+def shown(c):
+    """Argumentul asa cum apare in jurnal: cele cu secrete mascate (B3: cheia nu ajunge in loguri)."""
+    c = str(c)
+    for s in SECRET_ARGS:
+        if s in c:
+            return c[:c.index(s) + len(s)] + "...=***"
+    return c
+
+
+SECRET_MARKS = ("tk_pk_", "TK_PK_", "tk_proof")    # numele din antetul secretului (lic_gate.proof_header)
+
+
+def filtered_cc(text, hidden):
+    """Iesirea gcc fara nimic din antetul secretului (B5): diagnosticele pentru acel fisier devin o
+    linie fara continut, iar liniile de cod citate ("  12 | ...", "     | ^~~") nu se afiseaza deloc
+    (gcc citeaza si liniile antetului: octetii mascati ai cheii)."""
+    out, masked = [], 0
+    hidden = [str(h).replace("\\", "/").lower() for h in hidden]
+    for line in text.splitlines():
+        norm = line.replace("\\", "/").lower()
+        if re.match(r"\s*\d*\s*\|", line):                 # sursa citata / sublinierea ^~~
+            continue
+        if any(h in norm for h in hidden) or any(m in line for m in SECRET_MARKS):
+            masked += 1
+            continue
+        out.append(line)
+    if masked:
+        out.append(f"[{masked} linii despre antetul secretului build-ului ascunse]")
+    return "\n".join(out)
+
+
+def run(cmd, hidden=None, **kw):
+    """hidden = fisiere secrete folosite de comanda (antetul /proof): iesirea se filtreaza (filtered_cc)."""
+    print("+", " ".join(shown(c) for c in cmd))
+    if hidden:
+        r = subprocess.run([str(c) for c in cmd], capture_output=True, text=True, errors="replace", **kw)
+        msg = filtered_cc((r.stdout or "") + (r.stderr or ""), hidden)
+        if msg.strip():
+            print(msg)
+        if r.returncode:
+            sys.exit(f"Comanda a esuat (cod {r.returncode}): {shown(cmd[0])}")
+        return
+    try:
+        subprocess.run([str(c) for c in cmd], check=True, **kw)
+    except subprocess.CalledProcessError as e:      # mesajul implicit ar contine toata linia de comanda
+        sys.exit(f"Comanda a esuat (cod {e.returncode}): {shown(cmd[0])}")
+
+
+def secret_in(path, secret):
+    """secret (octeti) apare in fisier: in clar, ca hex (mici / mari, si UTF-16) - B7."""
+    data = pathlib.Path(path).read_bytes()
+    hx = secret.hex()
+    return any(x in data for x in (secret, hx.encode(), hx.upper().encode(), hx.encode("utf-16-le"),
+                                    hx.upper().encode("utf-16-le")))
 
 
 def licensing_config():
@@ -74,11 +128,15 @@ def licensing_config():
 
 
 def module_commands():
-    """Comenzile AutoCAD definite in module (defun c:NUME), fara cele ale incarcatorului."""
+    """Comenzile AutoCAD definite in module (defun c:NUME), fara cele ale incarcatorului.
+    Foloseste exact acelasi extractor ca poarta de licenta (lic_gate.commands), ca lista
+    stub-urilor din incarcator (*TKL:CMDS*) sa nu difere niciodata de cea din footerele modulelor."""
+    sys.path.insert(0, str(ROOT / "tools"))
+    import lic_gate
     cmds = set()
     for f in LSP:
         if f != "TopoKitLoad.lsp":
-            cmds |= {m.upper() for m in re.findall(r"\(defun\s+c:([A-Za-z0-9_-]+)", (ROOT / f).read_text(encoding="utf-8"), re.I)}
+            cmds |= set(lic_gate.commands((ROOT / f).read_text(encoding="utf-8")))
     return sorted(cmds)
 
 
@@ -106,14 +164,15 @@ def compiled_source(text, fmt):
     return re.sub(rf'"({names})\.lsp"', rf'"{fmt}\\\\\1.fas"', text)
 
 
-def module_source(text, module, fmt):
+def module_source(text, module, fmt, key):
     """Textul compilat pentru modulul module ("TopoKit", "TopoKitAnexe" ...) in formatul fmt.
-    Singurul loc in care se pregateste sursa inainte de compilare."""
-    # poarta de licenta (tools/lic_gate.py): fiecare modul compilat isi verifica singur licenta,
-    # pentru ambele formate si en/ ("en/TopoKit" -> mesaj in engleza)
+    Singurul loc in care se pregateste sursa inainte de compilare. key = secretul build-ului
+    (32 de octeti; vezi tools/lic_gate.py) sau None pentru un build fara licentiere (fara poarta)."""
+    # poarta de licenta (tools/lic_gate.py): fiecare modul compilat isi verifica singur licenta prin
+    # provocare-raspuns cu TopoKit.exe (HMAC pe secretul build-ului), pentru ambele formate si en/
     sys.path.insert(0, str(ROOT / "tools"))
     import lic_gate
-    text = lic_gate.inject(text, module)
+    text = lic_gate.inject(text, module, key)
     return compiled_source(text, fmt)
 
 
@@ -132,33 +191,55 @@ def compile_lisp(files, fmt):
     return outs
 
 
-def compile_modules(contents, work):
+def compile_modules(contents, work, key):
     """Modulele din contents (si contents/en) -> contents[/en]/fas5|fas4/*.fas; sursele lor se sterg.
-    Incarcatorul TopoKitLoad.lsp ramane necompilat. work = folder temporar pentru sursele pregatite."""
+    Incarcatorul TopoKitLoad.lsp ramane necompilat. work = folder temporar pentru sursele pregatite.
+    key = secretul build-ului (32 de octeti) incorporat in poarta fiecarui modul."""
     langs = [d for d in (contents, contents / "en") if (d / "TopoKit.lsp").exists()]
     srcs = {d: [d / f"{m}.lsp" for m in MODULES if (d / f"{m}.lsp").exists()] for d in langs}
     n = 0
-    for fmt in FAS_FORMATS:
-        if work.exists():
-            shutil.rmtree(work)
-        files = []
-        for d in langs:
-            wd = work / fmt / d.relative_to(contents)
-            wd.mkdir(parents=True, exist_ok=True)
-            for f in srcs[d]:
-                w = wd / f.name
-                w.write_text(module_source(f.read_text(encoding="utf-8"), f.relative_to(contents).with_suffix("").as_posix(), fmt), encoding="utf-8")
-                files.append(w)
-        for o in compile_lisp(files, fmt):
-            dst = contents / o.parent.parent.relative_to(work / fmt) / fmt / o.name
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(o, dst)
-            n += 1
-    shutil.rmtree(work, ignore_errors=True)
+    try:      # sursele pregatite contin poarta (constantele secretului): sterse si la eroare (B3)
+        for fmt in FAS_FORMATS:
+            if work.exists():
+                shutil.rmtree(work)
+            files = []
+            for d in langs:
+                wd = work / fmt / d.relative_to(contents)
+                wd.mkdir(parents=True, exist_ok=True)
+                for f in srcs[d]:
+                    w = wd / f.name
+                    w.write_text(module_source(f.read_text(encoding="utf-8"), f.relative_to(contents).with_suffix("").as_posix(), fmt, key), encoding="utf-8")
+                    files.append(w)
+            for o in compile_lisp(files, fmt):
+                dst = contents / o.parent.parent.relative_to(work / fmt) / fmt / o.name
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(o, dst)
+                n += 1
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
     for d in langs:
         for f in srcs[d]:
             f.unlink()
     return n
+
+
+def public_readme(md_text):
+    """README-ul livrat: fara sectiunile pentru administrator / dezvoltare (cum functioneaza
+    licentierea, build-ul, testele) - acelea raman doar in proiect."""
+    s = md_text
+    a = s.find("- **Pentru tine (administrator):**")
+    b = s.find("## Detalii tehnice")
+    if 0 <= a < b:
+        s = s[:a].rstrip() + "\n\n" + s[b:]
+    a, b = s.find("**Activarea este opțională.**"), s.find("- **Pentru coleg:**")
+    if 0 <= a < b:
+        s = s[:a] + s[b:]
+    d = s.find("## Dezvoltare")
+    if d >= 0:
+        s = s[:d].rstrip() + "\n"
+    # optiunea /license din lista liniei de comanda e pentru administrator / module (B6)
+    s = re.sub(r",?[ \t]*`/license`[ \t]*\([^)\n]*\)", "", s)
+    return s
 
 
 def readme_html(md_text):
@@ -206,9 +287,17 @@ def main():
     # 1. lansatorul (cu cheia publica a licentelor, daca exista installer/licensing.json)
     lic = licensing_config()
     lic_defs = []
+    proof_key = None
+    proof_h = build / "tk_proof.h"
     if lic:
+        # secretul build-ului pentru provocare-raspuns (modulele AutoLISP + TopoKit.exe): 32 de octeti
+        # aleatori, niciodata in depozit. In TopoKit.exe intra printr-un antet generat (bucati amestecate
+        # si mascate, lic_gate.proof_header), nu prin linia de comanda; antetul se sterge dupa compilare.
+        sys.path.insert(0, str(ROOT / "tools"))
+        import lic_gate
+        proof_key = os.urandom(32)
         lic_defs = [f'-DTK_LIC_PUB="{lic["public_key"].upper()}"', f'-DTK_LIC_KID="{lic["kid"]}"',
-                    f'-DTK_LIC_URL="{lic["server"].rstrip("/")}"']
+                    f'-DTK_LIC_URL="{lic["server"].rstrip("/")}"', f'-DTK_PROOF_FILE="{proof_h.as_posix()}"']
         print(f"Licentiere: DA (kid {lic['kid']}, server {lic['server']})")
     else:
         print("Licentiere: nu (lipseste installer/licensing.json) - TopoKit merge fara activare")
@@ -217,17 +306,28 @@ def main():
     res = build / "topokit_res.o"
     run([windres, f"-DTK_VER_COMMA={ver_comma}", f'-DTK_VER_STR=\\"{a.version}\\"',
          "topokit.rc", "-O", "coff", "-o", res], cwd=INST / "launcher")
-    run([gcc, "-municode", "-mwindows", "-O2", "-Wall", "-Wextra", "-s", "-static", f'-DTK_VERSION="{a.version}"',
-         *lic_defs, "-o", app / "TopoKit.exe", INST / "launcher" / "topokit.c", INST / "launcher" / "ui.c",
-         INST / "launcher" / "license.c", res,
-         "-lgdiplus", "-lshlwapi", "-lole32", "-loleaut32", "-luuid", "-lshell32", "-lgdi32", "-luser32",
-         "-lbcrypt", "-lwinhttp", "-lcrypt32", "-lcomdlg32"])
+    try:
+        if proof_key:       # antetul exista doar pe durata compilarii (sters in finally, si la eroare)
+            build.mkdir(parents=True, exist_ok=True)
+            proof_h.write_text(lic_gate.proof_header(proof_key), encoding="ascii")
+        run([gcc, "-municode", "-mwindows", "-O2", "-Wall", "-Wextra", "-s", "-static", f'-DTK_VERSION="{a.version}"',
+             *lic_defs, "-o", app / "TopoKit.exe", INST / "launcher" / "topokit.c", INST / "launcher" / "ui.c",
+             INST / "launcher" / "license.c", res,
+             "-lgdiplus", "-lshlwapi", "-lole32", "-loleaut32", "-luuid", "-lshell32", "-lgdi32", "-luser32",
+             "-lbcrypt", "-lwinhttp", "-lcrypt32", "-lcomdlg32"],
+            hidden=[proof_h] if proof_key else None)
+    finally:
+        proof_h.unlink(missing_ok=True)
+    if proof_key and secret_in(app / "TopoKit.exe", proof_key):
+        sys.exit("Secretul build-ului apare in clar in TopoKit.exe")
 
     # 2. pachetul AutoCAD
     xml = (INST / "bundle" / "PackageContents.xml").read_text(encoding="utf-8")
     (bundle / "PackageContents.xml").write_text(xml.replace("@VERSION@", a.version), encoding="utf-8")
-    for f in LSP + DCL + [GRID, TDGRID, "README.md"]:
+    for f in LSP + DCL + [GRID, TDGRID]:
         shutil.copy2(ROOT / f, contents / f)
+    (contents / "README.md").write_text(public_readme((ROOT / "README.md").read_text(encoding="utf-8")),
+                                        encoding="utf-8")
     if lic:
         loader = contents / "TopoKitLoad.lsp"
         loader.write_text(licensed_loader(loader.read_text(encoding="utf-8"), module_commands()), encoding="utf-8")
@@ -244,14 +344,14 @@ def main():
     if a.compile == "yes" or (a.compile == "auto" and lic):
         if os.name != "nt":
             sys.exit("Compilarea .fas are nevoie de Windows si AutoCAD")
-        n = compile_modules(contents, build / "fas_src")
+        n = compile_modules(contents, build / "fas_src", proof_key)
         print(f"Module compilate: {n} fisiere .fas in {' / '.join(FAS_FORMATS)} (sursele modulelor nu intra "
               "in pachet; incarcatorul ramane TopoKitLoad.lsp)")
     else:
         print("Module necompilate (.lsp) - build de dezvoltare / test")
     import make_functions                                      # toate functiile (RO / EN)
     make_functions.build(app, a.version)
-    (app / "README.html").write_text(readme_html((ROOT / "README.md").read_text(encoding="utf-8")),
+    (app / "README.html").write_text(readme_html(public_readme((ROOT / "README.md").read_text(encoding="utf-8"))),
                                      encoding="utf-8")
     shutil.copytree(ROOT / "docs", app / "docs")
     shutil.copy2(INST / "launcher" / "topokit.ico", app / "topokit.ico")
@@ -283,7 +383,7 @@ def main():
                    f"--output-dir={out}", f"--output-filename={name}.exe", "--remove-output",
                    "--product-name=TopoKit", f"--file-description={name}",
                    f"--product-version={re.match(r'[0-9.]*', a.version).group().strip('.') or '0'}",
-                   "--progress-bar=none"]
+                   "--progress-bar=none", "--include-module=_tk_pub", "--python-flag=no_docstrings"]
             if os.name == "nt":
                 # fara descarcari: depends.exe inlocuit cu pefile (inclus in Nuitka), iar daca e gcc
                 # (MinGW-w64 / winlibs) in PATH il folosim pe acela in locul gcc-ului descarcat de Nuitka
@@ -304,7 +404,8 @@ def main():
         else:
             sep = ";" if os.name == "nt" else ":"
             cmd = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--onefile", "--windowed", "--name", name,
-                   "--icon", ico, "--distpath", out / "dist", "--workpath", out / "work", "--specpath", out]
+                   "--icon", ico, "--distpath", out / "dist", "--workpath", out / "work", "--specpath", out,
+                   "--hidden-import", "_tk_pub"]
             for d in list(data_dirs) + list(raw_dirs):
                 cmd += ["--add-data", f"{d}{sep}{d.name}"]
             for pk in packages:
@@ -313,18 +414,38 @@ def main():
             dest.mkdir(parents=True, exist_ok=True)
             shutil.copy2(out / "dist" / f"{name}.exe", dest / f"{name}.exe")
 
-    # Plan Inclinare (calcul inclinatie): doar biblioteca standard + tkinter
-    pi = app / "PlanInclinare"
-    python_app(ROOT / "inclinare" / "plan_inclinare.py", "PlanInclinare", pi)
-    for f in ("PlanInclinareCogo.dll", "exemplu_siloz.csv"):
-        shutil.copy2(ROOT / "inclinare" / f, pi / f)
-
-    # 2c. convertorul DXF/DWG -> KMZ "DWG to KMZ" (dwg2kmz/): customtkinter, tkinterdnd2, pyproj (cu
-    # datele PROJ), ezdxf; assets/ si grids/ ca date, tools/ (LibreDWG dwg2dxf.exe + DLL-uri) copiat ca atare
+    # cheia publica pentru verificarea licentei in programele Python (tklic.py): modulul generat
+    # _tk_pub.py (mascat) langa fiecare program, doar pe durata compilarii; mereu, si fara licentiere
+    # (atunci gol), pentru ca tklic compilat fara el refuza pornirea
+    import licenta
     d2k = ROOT / "dwg2kmz"
-    python_app(d2k / "dwg2kmz.py", "DWGtoKMZ", app / "modules",
-               data_dirs=(d2k / "assets", d2k / "grids"), raw_dirs=(d2k / "tools",),
-               packages=("customtkinter", "tkinterdnd2", "pyproj", "ezdxf"))
+    pubs = [ROOT / "inclinare" / licenta.PUB_MODULE, d2k / licenta.PUB_MODULE]
+    for p in pubs:
+        licenta.write_pub_module(p, lic["public_key"] if lic else None, lic["kid"] if lic else None)
+    try:
+        # Plan Inclinare (calcul inclinatie): doar biblioteca standard + tkinter
+        pi = app / "PlanInclinare"
+        python_app(ROOT / "inclinare" / "plan_inclinare.py", "PlanInclinare", pi)
+        for f in ("PlanInclinareCogo.dll", "exemplu_siloz.csv"):
+            shutil.copy2(ROOT / "inclinare" / f, pi / f)
+
+        # 2c. convertorul DXF/DWG -> KMZ "DWG to KMZ" (dwg2kmz/): customtkinter, tkinterdnd2, pyproj (cu
+        # datele PROJ), ezdxf; assets/ si grids/ ca date, tools/ (LibreDWG dwg2dxf.exe + DLL-uri) ca atare
+        python_app(d2k / "dwg2kmz.py", "DWGtoKMZ", app / "modules",
+                   data_dirs=(d2k / "assets", d2k / "grids"), raw_dirs=(d2k / "tools",),
+                   packages=("customtkinter", "tkinterdnd2", "pyproj", "ezdxf"))
+    finally:
+        for p in pubs:
+            p.unlink(missing_ok=True)
+    if lic:   # cheia publica nu trebuie sa apara in clar (hex sau cei 64 de octeti) in programele compilate
+        raw = bytes.fromhex(lic["public_key"])
+        for exe in (pi / "PlanInclinare.exe", app / "modules" / "DWGtoKMZ.exe"):
+            if secret_in(exe, raw):
+                sys.exit(f"Cheia publica apare in clar in {exe}")
+    if proof_key:   # secretul build-ului: nici in .fas (acolo sunt doar starile intermediare HMAC)
+        for f in contents.rglob("*.fas"):
+            if secret_in(f, proof_key):
+                sys.exit(f"Secretul build-ului apare in clar in {f}")
     shutil.copy2(d2k / "Instructiuni DWG to KMZ.html", app / "modules" / "Instructiuni DWG to KMZ.html")
 
     # 3. instalatorul

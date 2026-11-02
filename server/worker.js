@@ -39,16 +39,28 @@ const SCHEMA = [
 const Q = {
   codeByHash: `SELECT hash, user_id, expires_at, used_at FROM codes WHERE hash = ?`,
   useCode: `UPDATE codes SET used_at = ?, device_id = ? WHERE hash = ? AND used_at IS NULL AND expires_at >= ?`,
+  releaseCode: `UPDATE codes SET used_at = NULL, device_id = NULL WHERE hash = ? AND device_id = ?`,
   insertCode: `INSERT INTO codes (hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)`,
+  pruneCodes: `DELETE FROM codes WHERE used_at IS NULL AND expires_at < ?`,
   userById: `SELECT id, name, email, max_devices, features, disabled FROM users WHERE id = ?`,
   insertUser: `INSERT INTO users (name, email, max_devices, created_at) VALUES (?, ?, ?, ?)`,
   setDisabled: `UPDATE users SET disabled = ? WHERE id = ?`,
   setMaxDevices: `UPDATE users SET max_devices = ? WHERE id = ?`,
-  countDevices: `SELECT COUNT(*) AS n FROM devices WHERE user_id = ? AND revoked = 0`,
-  deviceByUserMachine: `SELECT id FROM devices WHERE user_id = ? AND machine = ? AND revoked = 0`,
-  deviceById: `SELECT id, user_id, machine, secret_hash, revoked FROM devices WHERE id = ?`,
+  countOther: `SELECT COUNT(*) AS n FROM devices WHERE user_id = ? AND revoked = 0 AND machine <> ?`,
+  // cea mai nouă activare a calculatorului: ordinea e (created_at, id), nu rowid-ul implicit (tabelă cu
+  // cheie TEXT: rowid-ul se poate renumerota la VACUUM / export-import)
+  deviceByUserMachine: `SELECT id, created_at FROM devices WHERE user_id = ? AND machine = ? AND revoked = 0
+                        ORDER BY created_at DESC, id DESC LIMIT 1`,
+  deviceById: `SELECT id, user_id, machine, secret_hash, revoked, last_seen, last_ip FROM devices WHERE id = ?`,
   insertDevice: `INSERT INTO devices (id, user_id, machine, pc, secret_hash, version, created_at, last_seen, last_ip)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                 SELECT ?, u.id, ?, ?, ?, ?, ?, ?, ? FROM users u WHERE u.id = ? AND u.disabled = 0 AND (
+                   EXISTS (SELECT 1 FROM devices WHERE user_id = u.id AND machine = ? AND revoked = 0) OR
+                   (SELECT COUNT(*) FROM devices WHERE user_id = u.id AND revoked = 0) < u.max_devices)`,
+  // rămâne activă doar cea mai nouă activare (created_at, id) a calculatorului; fiecare activare rulează
+  // instrucțiunea după INSERT-ul ei, deci ultima rulată le vede pe toate -> exact una rămâne
+  revokeOlderSame: `UPDATE devices SET revoked = 1 WHERE user_id = ? AND machine = ? AND revoked = 0
+                    AND id <> (SELECT id FROM devices WHERE user_id = ? AND machine = ? AND revoked = 0
+                               ORDER BY created_at DESC, id DESC LIMIT 1)`,
   seenDevice: `UPDATE devices SET last_seen = ?, version = ?, last_ip = ? WHERE id = ?`,
   revokeDevice: `UPDATE devices SET revoked = 1 WHERE id = ?`,
   failures: `SELECT COUNT(*) AS n FROM events WHERE ip = ? AND kind = ? AND at > ?`,
@@ -66,10 +78,13 @@ const Q = {
 const now = () => Math.floor(Date.now() / 1000);
 const num = (v, def) => (Number.isFinite(+v) && +v > 0 ? Math.floor(+v) : def);
 
+const EVENT_DAYS = 180;                 // jurnalul de activitate și codurile expirate se șterg după 180 de zile
+
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), {
     status,
-    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
+    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store",
+               "x-content-type-options": "nosniff" },
   });
 }
 const fail = (error, status = 403) => json({ error }, status);
@@ -112,11 +127,31 @@ function normCode(raw) {
   return /^[A-Z0-9]{15}$/.test(c) ? c : null;
 }
 
+// corpul cererii: cel mult 8 KiB, citit pe bucăți (fără content-length nu se încarcă tot în memorie)
+const MAX_BODY = 8192;
 async function readBody(request) {
   const len = +(request.headers.get("content-length") || 0);
-  if (len > 8192) return null;
-  const text = await request.text();
-  if (text.length > 8192) return null;
+  if (!(len <= MAX_BODY)) return null;
+  let text = "";
+  if (request.body) {
+    const reader = request.body.getReader();
+    const parts = [];
+    let n = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      n += value.byteLength;
+      if (n > MAX_BODY) {
+        try { await reader.cancel(); } catch { /* nimic */ }
+        return null;
+      }
+      parts.push(value);
+    }
+    const buf = new Uint8Array(n);
+    let o = 0;
+    for (const p of parts) { buf.set(p, o); o += p.byteLength; }
+    try { text = new TextDecoder("utf-8", { fatal: true }).decode(buf); } catch { return null; }
+  }
   try {
     const b = JSON.parse(text || "{}");
     return b && typeof b === "object" && !Array.isArray(b) ? b : null;
@@ -125,8 +160,38 @@ async function readBody(request) {
   }
 }
 
+// Singura adresă de încredere e CF-Connecting-IP (pusă de Cloudflare; X-Forwarded-For & co. le poate
+// trimite oricine). Pentru limitarea încercărilor IPv6 contează rețeaua /64: un atacator are de obicei
+// un /64 întreg, deci altfel ar primi câte 20 de încercări pentru fiecare adresă.
 const clientIp = (request) => request.headers.get("cf-connecting-ip") || "";
-const clip = (v, n) => String(v ?? "").replace(/[\u0000-\u001f]/g, "").slice(0, n);
+function ipKey(ip) {
+  ip = String(ip || "").split("%")[0];
+  if (!ip.includes(":")) return ip;
+  const v4 = ip.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i);
+  if (v4) return v4[1];
+  const [head, tail] = ip.split("::");
+  const h = head ? head.split(":") : [];
+  const t = tail === undefined ? [] : tail ? tail.split(":") : [];
+  const g = tail === undefined ? h : [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill("0"), ...t];
+  return g.slice(0, 4).map((x) => (parseInt(x, 16) || 0).toString(16)).join(":") + "::/64";
+}
+
+// text de la client: fără caractere de control / de direcție (ar păcăli afișarea din /admin),
+// tăiat la n caractere întregi (nu la jumătatea unei perechi surogat) și, opțional, la maxBytes UTF-8
+const BAD_CHARS = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb]/g;
+function clip(v, n, maxBytes = Infinity) {
+  let out = "", bytes = 0, k = 0;
+  for (const ch of String(v ?? "").replace(BAD_CHARS, "")) {
+    const b = ch.length > 1 ? 4 : ch.charCodeAt(0) < 0x80 ? 1 : ch.charCodeAt(0) < 0x800 ? 2 : 3;
+    if (k >= n || bytes + b > maxBytes) break;
+    out += ch.length > 1 || (ch.charCodeAt(0) & 0xf800) !== 0xd800 ? ch : String.fromCharCode(0xfffd);  // surogat singur
+    bytes += b;
+    k++;
+  }
+  return out;
+}
+// numele din licență: TopoKit.exe îl citește într-un tampon de 160 de octeți (license.c, CheckText)
+const NAME_CHARS = 80, NAME_BYTES = 150;
 
 // ------------------------------------------------------------------ baza de date
 let schemaReady = null;
@@ -143,9 +208,15 @@ function event(env, kind, userId, deviceId, ip, detail) {
   return run(env.DB, Q.insertEvent, now(), kind, userId ?? null, deviceId ?? null, ip || null, detail ?? null);
 }
 
+// limitarea încercărilor: evenimentele *_fail se scriu cu ipKey(ip) (adresa IPv4 sau rețeaua IPv6 /64)
 async function tooMany(env, ip, kind, limit) {
-  const r = await one(env.DB, Q.failures, ip, kind, now() - 3600);
+  const r = await one(env.DB, Q.failures, ipKey(ip), kind, now() - 3600);
   return (r?.n || 0) >= limit;
+}
+
+async function prune(env) {
+  const old = now() - EVENT_DAYS * 86400;
+  await env.DB.batch([env.DB.prepare(Q.pruneEvents).bind(old), env.DB.prepare(Q.pruneCodes).bind(old)]);
 }
 
 // ------------------------------------------------------------------ semnarea licenței (ECDSA P-256)
@@ -167,7 +238,8 @@ async function makeLicense(env, user, device) {
   try { features = JSON.parse(user.features || '["all"]'); } catch { /* implicit */ }
   const t = now();
   const payload = {
-    v: 1, kid, typ: "internal", lid: device.id, uid: user.id, name: user.name, machine: device.machine,
+    v: 1, kid, typ: "internal", lid: device.id, uid: user.id, name: clip(user.name, NAME_CHARS, NAME_BYTES),
+    machine: device.machine,
     features, iat: t, exp: t + num(env.LICENSE_DAYS, 14) * 86400,
   };
   const body = "TK1." + b64u(enc.encode(JSON.stringify(payload)));
@@ -183,7 +255,10 @@ async function activate(request, env) {
   const code = normCode(b?.code);
   if (!b || !/^[0-9A-F]{24}$/.test(machine)) return fail("bad_request", 400);
   if (await tooMany(env, ip, "activate_fail", 20)) return fail("rate_limited", 429);
-  const bad = async (error) => { await event(env, "activate_fail", null, null, ip, error); return fail(error); };
+  const bad = async (error, userId) => {
+    await event(env, "activate_fail", userId, null, ipKey(ip), error);
+    return fail(error);
+  };
   if (!code) return bad("code_invalid");
   const hash = await sha256hex(code);
   const c = await one(env.DB, Q.codeByHash, hash);
@@ -193,29 +268,49 @@ async function activate(request, env) {
   const user = await one(env.DB, Q.userById, c.user_id);
   if (!user || user.disabled) return bad("user_disabled");
   // același calculator activat din nou (reinstalare): înlocuim activarea veche, fără loc nou
+  // (se numără doar celelalte calculatoare: o reactivare simultană pe același calculator nu schimbă nimic)
   const same = await one(env.DB, Q.deviceByUserMachine, user.id, machine);
-  const { n } = await one(env.DB, Q.countDevices, user.id);
-  if (!same && n >= user.max_devices) {
-    await event(env, "activate_fail", user.id, null, ip, "too_many_devices");
-    return fail("too_many_devices");
-  }
+  const { n } = await one(env.DB, Q.countOther, user.id, machine);
+  if (!same && n >= user.max_devices) return bad("too_many_devices", user.id);
   const device = { id: "d_" + hex(randomBytes(8)), machine };
   const secret = b64u(randomBytes(32));
+  const pc = clip(b.pc, 64), version = clip(b.version, 20);
   const t = now();
+  // reactivare în aceeași secundă: activarea nouă trebuie să fie „mai nouă” decât cea veche
+  // (ordinea (created_at, id)), altfel id-ul aleator ar putea păstra activarea veche
+  const created = same ? Math.max(t, Number(same.created_at) + 1) : t;
+  // 1) codul se consumă atomic (UPDATE ... WHERE used_at IS NULL): două activări simultane cu
+  //    același cod → doar una trece
   const used = await run(env.DB, Q.useCode, t, device.id, hash, t);
   if (!used?.meta?.changes) return bad("code_used");                  // folosit în paralel
-  if (same) await run(env.DB, Q.revokeDevice, same.id);
-  await run(env.DB, Q.insertDevice, device.id, user.id, machine, clip(b.pc, 64), await sha256hex(secret),
-            clip(b.version, 20), t, t, ip);
-  await event(env, "activate", user.id, device.id, ip, `${clip(b.pc, 64)} ${clip(b.version, 20)}`.trim());
+  // 2) calculatorul se adaugă doar dacă încă e loc, verificat în aceeași instrucțiune (atomic în D1):
+  //    două activări simultane cu coduri diferite nu pot depăși max_devices
+  const ins = await run(env.DB, Q.insertDevice, device.id, machine, pc, await sha256hex(secret), version, created, t, ip,
+                        user.id, machine);
+  if (!ins?.meta?.changes) {
+    await run(env.DB, Q.releaseCode, hash, device.id);                // codul rămâne valabil
+    return bad("too_many_devices", user.id);
+  }
+  // 3) activările mai vechi de pe același calculator se opresc (rămâne doar cea mai nouă după
+  //    (created_at, id): la reactivări simultane rămâne exact una)
+  await run(env.DB, Q.revokeOlderSame, user.id, machine, user.id, machine);
+  await event(env, "activate", user.id, device.id, ip, `${pc} ${version}`.trim());
+  await prune(env);
   return json({ license: await makeLicense(env, user, device), device: device.id, secret });
 }
 
 async function deviceAuth(env, b) {
-  const d = typeof b?.device === "string" ? await one(env.DB, Q.deviceById, clip(b.device, 40)) : null;
-  if (!d || !sameHash(await sha256hex(String(b.secret || "")), d.secret_hash)) return { error: "unknown_device" };
+  const id = typeof b?.device === "string" && /^d_[0-9a-f]{16}$/.test(b.device) ? b.device : null;
+  const d = id ? await one(env.DB, Q.deviceById, id) : null;
+  const secret = typeof b?.secret === "string" && b.secret.length <= 128 ? b.secret : "";
+  if (!d || !secret || !sameHash(await sha256hex(secret), d.secret_hash)) return { error: "unknown_device" };
   return { d };
 }
+
+// O activare copiată pe alt PC (MachineGuid + seria discului falsificate, secretul scos din DPAPI) se
+// vede doar prin reînnoiri de la adrese diferite. Lansatorul reînnoiește o dată pe zi (la 20 h), deci
+// două reînnoiri la mai puțin de 6 h, din rețele diferite, apar în jurnal ca „posibilă copiere”.
+const CLONE_WINDOW = 6 * 3600;
 
 async function refresh(request, env) {
   const ip = clientIp(request);
@@ -230,7 +325,11 @@ async function refresh(request, env) {
   }
   const user = await one(env.DB, Q.userById, d.user_id);
   if (!user || user.disabled) return fail("user_disabled");
-  await run(env.DB, Q.seenDevice, now(), clip(b.version, 20), ip, d.id);
+  const t = now();
+  if (d.last_ip && ip && ipKey(d.last_ip) !== ipKey(ip) && t - d.last_seen < CLONE_WINDOW) {
+    await event(env, "clone_suspect", d.user_id, d.id, ip, `${d.last_ip} → ${ip}`);
+  }
+  await run(env.DB, Q.seenDevice, t, clip(b.version, 20), ip, d.id);
   return json({ license: await makeLicense(env, user, d) });
 }
 
@@ -266,13 +365,13 @@ async function admin(request, env, path) {
   if (!env.ADMIN_TOKEN) return fail("admin_disabled", 503);
   if (await tooMany(env, ip, "admin_fail", 10)) return fail("rate_limited", 429);
   if (!(await isAdmin(request, env))) {
-    await event(env, "admin_fail", null, null, ip, null);
+    await event(env, "admin_fail", null, null, ipKey(ip), null);
     return fail("unauthorized", 401);
   }
   const m = request.method;
   if (m === "GET" && path === "/api/admin/state") {
     const t = now();
-    await run(env.DB, Q.pruneEvents, t - 180 * 86400);
+    await prune(env);
     const [users, devices, codes, events] = await Promise.all([
       all(env.DB, Q.listUsers), all(env.DB, Q.listDevices), all(env.DB, Q.listCodes, t), all(env.DB, Q.listEvents)]);
     for (const u of users) {
@@ -284,7 +383,7 @@ async function admin(request, env, path) {
   if (m !== "POST") return fail("not_found", 404);
   const b = (await readBody(request)) || {};
   if (path === "/api/admin/users") {
-    const name = clip(b.name, 80).trim();
+    const name = clip(b.name, NAME_CHARS, NAME_BYTES).trim();
     if (!name) return fail("name_required", 400);
     const max = Math.min(num(b.max_devices, num(env.MAX_DEVICES, 2)), 10);
     const r = await run(env.DB, Q.insertUser, name, clip(b.email, 120) || null, max, now());
@@ -302,7 +401,9 @@ async function admin(request, env, path) {
       return json(await issueCode(env, id));
     }
     if (mm[2] === "max") {
-      await run(env.DB, Q.setMaxDevices, Math.min(num(b.max_devices, user.max_devices), 10), id);
+      const max = Math.min(num(b.max_devices, user.max_devices), 10);
+      await run(env.DB, Q.setMaxDevices, max, id);
+      await event(env, "user_max", id, null, ip, String(max));
       return json({ ok: true });
     }
     await run(env.DB, Q.setDisabled, mm[2] === "disable" ? 1 : 0, id);
@@ -325,11 +426,13 @@ async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "") || "/";
   if (request.method === "GET" && path === "/admin") {
-    return new Response(ADMIN_HTML, {
+    // scriptul paginii rulează doar cu nonce-ul acestei cereri (un eventual <script> injectat nu rulează)
+    const nonce = b64u(randomBytes(16));
+    return new Response(ADMIN_HTML.replace("<script>", `<script nonce="${nonce}">`), {
       headers: {
         "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-frame-options": "DENY",
-        "referrer-policy": "no-referrer",
-        "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; " +
+        "referrer-policy": "no-referrer", "x-content-type-options": "nosniff",
+        "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; ` +
           "connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
       },
     });
@@ -357,10 +460,15 @@ export default {
       return fail("server", 500);
     }
   },
+  // opțional (Settings → Triggers → Cron, de ex. zilnic): curăță jurnalul și când nu intră nimeni în /admin
+  async scheduled(event, env, ctx) {
+    if (!env.DB) return;
+    ctx.waitUntil(ensureSchema(env.DB).then(() => prune(env)));
+  },
 };
 
 // pentru teste (tests/server_harness.py)
-export const _test = { SCHEMA, Q, normCode, showCode, newCode };
+export const _test = { SCHEMA, Q, normCode, showCode, newCode, ipKey, clip };
 
 // ------------------------------------------------------------------ pagina de administrare
 const ADMIN_HTML = `<!doctype html>
@@ -404,7 +512,8 @@ th,td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);vertic
 const $ = (id) => document.getElementById(id);
 let token = ""; try { token = sessionStorage.getItem("tk") || ""; } catch (e) {}
 const KIND = {activate:"Activare",activate_fail:"Activare refuzată",refresh_fail:"Reînnoire refuzată",deactivate:"Dezactivare",
-  user_add:"Coleg adăugat",user_disable:"Acces oprit",user_enable:"Acces repornit",code:"Cod nou",device_revoke:"Calculator scos",admin_fail:"Parolă admin greșită"};
+  user_add:"Coleg adăugat",user_disable:"Acces oprit",user_enable:"Acces repornit",user_max:"Nr. calculatoare schimbat",code:"Cod nou",
+  device_revoke:"Calculator scos",admin_fail:"Parolă admin greșită",clone_suspect:"Posibilă copiere (alt IP)"};
 const fmt = (t) => t ? new Date(t * 1000).toLocaleString("ro-RO", {dateStyle:"short", timeStyle:"short"}) : "–";
 function el(tag, text, cls) { const e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; }
 async function api(path, body) {
@@ -452,7 +561,7 @@ async function load() {
   }
   if (!s.users.length) { const tr = el("tr"); const td = el("td", "Niciun coleg încă – adăugați primul mai sus.", "muted"); td.colSpan = 4; tr.append(td); tb.append(tr); }
   const te = $("events"); te.textContent = "";
-  for (const e of s.events) { const tr = el("tr"); tr.append(el("td", fmt(e.at)), el("td", KIND[e.kind] || e.kind, /fail/.test(e.kind) ? "bad" : ""), el("td", e.name || "–"), el("td", e.detail || ""), el("td", e.ip || "", "muted")); te.append(tr); }
+  for (const e of s.events) { const tr = el("tr"); tr.append(el("td", fmt(e.at)), el("td", KIND[e.kind] || e.kind, /fail|clone/.test(e.kind) ? "bad" : ""), el("td", e.name || "–"), el("td", e.detail || ""), el("td", e.ip || "", "muted")); te.append(tr); }
 }
 $("go").onclick = async () => { token = $("tok").value.trim(); try { sessionStorage.setItem("tk", token); } catch (e) {} try { await load(); } catch (e) {} };
 $("tok").onkeydown = (e) => { if (e.key === "Enter") $("go").click(); };

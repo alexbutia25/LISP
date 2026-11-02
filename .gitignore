@@ -3,3 +3,4 @@ __pycache__/
 build/
 topokit_cheie_semnare.json
 *.jwk
+_tk_pub.py

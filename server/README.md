@@ -53,6 +53,15 @@ python tools/licenta.py secret
    - `SIGNING_KEY` = tot conținutul fișierului `topokit_cheie_semnare.json`;
    - `ADMIN_TOKEN` = parola de la pasul 1.
 6. Tabelele bazei de date se creează singure la prima cerere.
+7. Opțional: Worker → **Settings → Triggers → Cron Triggers → Add**, de exemplu `17 3 * * *` (zilnic).
+   Curăță jurnalul (180 de zile) și când nimeni nu intră în `/admin` și nu se face nicio activare.
+
+### Actualizarea serverului
+
+Lipește din nou `server/worker.js` în **Edit code** → **Deploy**. Baza de date rămâne cum e:
+versiunile noi nu schimbă tabelele, iar TopoKit-ul deja instalat (1.9.0) merge mai departe.
+(De la 1.10.0, la reactivarea aceluiași calculator rămâne activarea cu cel mai nou `created_at`, apoi
+`id`; nu se mai folosește `rowid`-ul implicit, care se poate renumerota. Rândurile existente rămân valabile.)
 
 ### 3b. Sau cu wrangler (dacă ai Node.js)
 
@@ -121,9 +130,26 @@ python tools/licenta.py emite --cheie D:\TopoKit-chei\topokit_cheie_semnare.json
   `TopoKit.exe`, deci fără cheia privată nu se pot face licențe.
 - **Pe calculatorul colegului:** secretul dispozitivului e protejat cu DPAPI, adică doar acel
   utilizator Windows îl poate citi.
-- **Codurile de activare:** se păstrează doar ca hash.
+- **Ceasul dat înapoi:** `TopoKit.exe` ține minte cea mai nouă oră văzută (`seen.dat` și registrul) și
+  refuză o licență dacă ceasul a fost dat înapoi cu peste o zi. Programele Python (DWG to KMZ, Plan
+  Înclinare, `tklic.py`) doar citesc această oră, nu o avansează; o avansează lansatorul, de fiecare
+  dată când găsește o licență bună (rulează în fundal și la `TopoKit.exe /license` din AutoCAD).
+- **Codurile de activare:** se păstrează doar ca hash. Un cod are ~73 de biți aleatori, deci nu se
+  poate ghici. Fiecare cod merge o singură dată, și la activări simultane. Nici activările simultane
+  cu coduri diferite nu trec de numărul maxim de calculatoare.
 - **Încercări:** după 20 de coduri greșite pe oră de la aceeași adresă se refuză orice încercare.
   La pagina de administrare limita e 10 parole greșite pe oră.
+  - Adresa e cea dată de Cloudflare (`CF-Connecting-IP`). Antete ca `X-Forwarded-For` nu contează.
+  - La IPv6 se numără toată rețeaua `/64`, nu fiecare adresă din ea.
+  - Pentru atacuri din multe rețele, poți adăuga o regulă gratuită în Cloudflare: **Security → WAF →
+    Rate limiting rules**, de exemplu 30 de cereri pe minut / IP pentru `/api/`.
+- **Parola de administrare:** folosește-o pe cea dată de `licenta.py secret` (256 de biți), nu una
+  aleasă de mână.
+- **Copierea unei activări pe alt calculator:** licența e legată de codul calculatorului. Cineva cu
+  drepturi de administrator poate totuși copia pe alt PC codul calculatorului (MachineGuid și seria
+  discului) și secretul din `state.dat`. Serverul nu poate opri asta, dar o arată: două reînnoiri ale
+  aceluiași calculator, din rețele diferite, la mai puțin de 6 ore, apar în jurnal ca **„Posibilă
+  copiere (alt IP)”**. Atunci scoate calculatorul și dă-i colegului un cod nou.
 - **Cheia pierdută sau compromisă:**
   1. Fă o cheie nouă: `licenta.py cheie --out ... --kid k2 --force`.
   2. Pune-o ca `SIGNING_KEY` pe server.
@@ -141,5 +167,9 @@ python tools/licenta.py emite --cheie D:\TopoKit-chei\topokit_cheie_semnare.json
 
 - `python tests/test_licenta.py` (offline): formatul licenței, `TopoKit.exe` compilat cu o cheie de
   test, contra unui server simulat, interogările SQL, încărcătorul AutoCAD, programele Python.
-- `python tests/server_harness.py --launcher ... --key ...`: testul complet cu `worker.js` real,
-  rulat într-un browser, pentru că pe calculatorul de dezvoltare nu există Node.js.
+- `python tests/server_harness.py`: testul complet cu `worker.js` real, rulat într-un browser
+  (Chrome/Edge headless), pentru că pe calculatorul de dezvoltare nu există Node.js.
+  - Compilează singur `TopoKit.exe` cu o cheie de test.
+  - Verifică activări simultane, limitele de încercări, cereri stricate, antetele și jurnalul.
+  - Variante: `--api-only` (fără gcc), `--browser none` (deschizi tu pagina), `--launcher-src DIR`
+    (altă versiune a lansatorului, de ex. 1.9.0, pentru compatibilitate).

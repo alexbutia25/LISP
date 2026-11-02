@@ -59,8 +59,8 @@ try:
 except AssertionError:
     pass
 bi = (ROOT / "tools" / "build_installer.py").read_text(encoding="utf-8")
-ms = re.search(r"def module_source\(text, module, fmt\):(.*?)\n\n\n", bi, re.S)
-assert ms and "lic_gate.inject(text, module)" in ms.group(1) and "compiled_source(text, fmt)" in ms.group(1), \
+ms = re.search(r"def module_source\(text, module, fmt, key\):(.*?)\n\n\n", bi, re.S)
+assert ms and "lic_gate.inject(text, module, key)" in ms.group(1) and "compiled_source(text, fmt)" in ms.group(1), \
     "module_source: locul marcat pentru poarta de licenta"
 assert bi.count("module_source(") == 2, "module_source se apeleaza intr-un singur loc"
 print(f"compiled_source: {len(srcs)} module x {len(B.FAS_FORMATS)} formate, {total} referinte -> <fmt>\\\\X.fas")
@@ -91,7 +91,7 @@ def fake_compile(files, fmt):
 real = B.compile_lisp
 B.compile_lisp = fake_compile
 try:
-    n = B.compile_modules(contents, TMP / "work")
+    n = B.compile_modules(contents, TMP / "work", os.urandom(32))   # secretul build-ului (poarta de licenta)
 finally:
     B.compile_lisp = real
 assert [c[0] for c in calls] == ["fas5", "fas4"], "o compilare (o consola) pe format"
@@ -110,6 +110,60 @@ assert not list(contents.glob("*.fas")) and not (TMP / "work").exists()
 assert '"fas5\\\\TopoKitAnexe.fas"' in (contents / "fas5" / "TopoKit.fas").read_bytes().decode("utf-8", "replace")
 assert '"fas4\\\\TopoKit.fas"' in (contents / "en" / "fas4" / "TopoKitAnexe.fas").read_bytes().decode("utf-8", "replace")
 print(f"compile_modules: {n} fisiere in Contents[/en]/fas5 + fas4; TopoKitLoad.lsp ramane sursa")
+
+# B3: la o compilare esuata sursele pregatite (cu poarta = constantele secretului) se sterg oricum;
+# comenzile afisate nu contin secretul; README-ul livrat nu mai listeaza /license (B6)
+c2 = TMP / "Contents2"
+c2.mkdir()
+for f in B.LSP:
+    shutil.copy2(ROOT / f, c2 / f)
+
+
+def failing_compile(files, fmt):
+    assert all(pathlib.Path(f).exists() for f in files)
+    sys.exit("compilare esuata (simulat)")
+
+
+B.compile_lisp = failing_compile
+try:
+    B.compile_modules(c2, TMP / "work2", os.urandom(32))
+    raise AssertionError("compilarea esuata nu a oprit build-ul")
+except SystemExit:
+    pass
+finally:
+    B.compile_lisp = real
+assert not (TMP / "work2").exists(), "sursele cu poarta au ramas dupa o compilare esuata"
+assert B.shown('-DTK_PROOF_FILE="C:/b/tk_proof.h"') == "-DTK_PROOF...=***"
+assert B.shown('-DTK_LIC_KID="k1"') == '-DTK_LIC_KID="k1"'
+assert "TK_PROOF_KEYX" not in bi and "proof_h.unlink(missing_ok=True)" in bi and "secret_in(" in bi
+rd = B.public_readme((ROOT / "README.md").read_text(encoding="utf-8"))
+assert "`/license`" not in rd and "`/machine`" in rd and "/snapshot" in rd
+sk = os.urandom(32)
+(TMP / "s.bin").write_bytes(b"x" + sk.hex().upper().encode("utf-16-le") + b"y")
+assert B.secret_in(TMP / "s.bin", sk) and not B.secret_in(TMP / "s.bin", os.urandom(32))
+(TMP / "s.bin").write_bytes(b"x" + sk + b"y")
+assert B.secret_in(TMP / "s.bin", sk)
+# B5: gcc esuat cu antetul secretului: iesirea (care citeaza liniile antetului) se filtreaza
+gcc_ = shutil.which("gcc")
+if gcc_:
+    import contextlib, io  # noqa: E401
+    hd = TMP / "tk_proof.h"
+    hd.write_text("#define TK_PK_SEED 0x1234ABCDu\nstatic const unsigned char tk_pk_data[32] = {201, 77, MASKEDKEY 13};\n",
+                  encoding="ascii")
+    (TMP / "pc.c").write_text(f'#include "{hd.as_posix()}"\nint main(void) {{ return undeclared_x; }}\n', encoding="ascii")
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        try:
+            B.run([gcc_, "-fsyntax-only", TMP / "pc.c"], hidden=[hd])
+            raise AssertionError("gcc trebuia sa esueze")
+        except SystemExit as e:
+            assert "Comanda a esuat" in str(e), e
+    o = buf.getvalue()
+    assert "undeclared_x" in o, o                                   # diagnosticele din alte fisiere raman
+    assert not any(s in o for s in ("MASKEDKEY", "201, 77", "1234ABCD", "tk_pk", "tk_proof.h")), o
+    assert "ascunse" in o, o
+print("build: sursele cu poarta sterse si la eroare, secretul mascat in comenzi, cautat in clar / hex / UTF-16; "
+      "README fara /license; iesirea gcc fara antetul secretului")
 
 # ---------------------------------------------------------------- TopoKitLoad.lsp (simulator)
 acad = Acad(str(ROOT), str(TMP))
